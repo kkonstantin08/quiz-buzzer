@@ -1,0 +1,50 @@
+// Shared Event Types and States
+
+export enum RoomState {
+  WAITING = 'WAITING',
+  ACTIVE = 'ACTIVE',
+  BUZZED_HIDDEN = 'BUZZED_HIDDEN',
+  REVEALED = 'REVEALED',
+}
+
+export interface Participant {
+  id: string;
+  displayName: string;
+  socketId: string;
+  joinedAt: number;
+  isConnected: boolean;
+}
+
+export interface RoomData {
+  roomId: string;
+  roomCode: string;
+  hostUserId: string;
+  participants: Participant[];
+  roundState: RoomState;
+  firstBuzzerId: string | null;
+  createdAt: number;
+}
+
+// Client -> Server Events
+export interface ClientToServerEvents {
+  ROOM_CREATE: (token: string, callback: (res: { success: boolean, room?: RoomData, error?: string }) => void) => void;
+  ROOM_JOIN: (data: { roomCode: string, displayName: string }, callback: (res: { success: boolean, participant?: Participant, error?: string }) => void) => void;
+  ROUND_START: (callback?: (res: { success: boolean, error?: string }) => void) => void;
+  BUZZ_SUBMIT: (callback?: (res: { success: boolean, error?: string }) => void) => void;
+  FIRST_REVEAL: (callback?: (res: { success: boolean, error?: string }) => void) => void;
+  ROUND_RESET: (callback?: (res: { success: boolean, error?: string }) => void) => void;
+  ROOM_LEAVE: () => void;
+}
+
+// Server -> Client Events
+export interface ServerToClientEvents {
+  ROOM_STATE_UPDATED: (room: RoomData) => void;
+  PARTICIPANT_JOINED: (participant: Participant) => void;
+  PARTICIPANT_LEFT: (participantId: string) => void;
+  ROUND_STARTED: () => void;
+  ROUND_LOCKED: () => void;
+  BUZZ_RECORDED_HIDDEN: () => void;
+  FIRST_REVEALED: (firstBuzzerId: string) => void;
+  ROUND_RESET_DONE: () => void;
+  ERROR_EVENT: (error: string) => void;
+}
