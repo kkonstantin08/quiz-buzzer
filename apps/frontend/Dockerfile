@@ -7,10 +7,11 @@ COPY package*.json ./
 
 # Copy workspace package.json files
 COPY packages/shared/package.json ./packages/shared/
+COPY apps/backend/package.json ./apps/backend/
 COPY apps/frontend/package.json ./apps/frontend/
 
 # Install dependencies (ignoring legacy peer deps for Vite project)
-RUN npm i --legacy-peer-deps
+RUN npm i --include=dev --legacy-peer-deps
 
 # Copy source code
 COPY packages/shared ./packages/shared

@@ -1,12 +1,21 @@
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import rateLimit from 'express-rate-limit';
 import { prisma } from '../prisma';
 import { config } from '../config';
 
 export const authRouter = Router();
 
-authRouter.post('/login', async (req, res) => {
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 attempts
+  message: { error: 'Слишком много попыток входа, пожалуйста, подождите 15 минут' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+authRouter.post('/login', loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     
@@ -86,9 +95,18 @@ authRouter.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
+    const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!EMAIL_REGEX.test(email)) {
+      return res.status(400).json({ error: 'Неверный формат email' });
+    }
+
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Пароль должен содержать минимум 8 символов' });
+    }
+
     const existingUser = await prisma.hostUser.findUnique({ where: { email } });
     if (existingUser) {
-      return res.status(400).json({ error: 'Email already exists' });
+      return res.status(400).json({ error: 'Пользователь с таким email уже существует' });
     }
 
     const passwordHash = await bcrypt.hash(password, 10);

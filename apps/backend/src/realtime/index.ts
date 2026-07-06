@@ -21,7 +21,7 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
           return callback({ success: false, error: 'Для создания комнаты нужна активная подписка' });
         }
 
-        const room = createRoom(user.id);
+        const room = createRoom(user.id, socket.id);
         socket.join(room.roomId);
         socketToRoom.set(socket.id, room.roomId);
         callback({ success: true, room });
@@ -36,6 +36,12 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
         return callback({ success: false, error: 'Name is required' });
       }
 
+      // Sanitize displayName to prevent injection
+      const safeDisplayName = displayName.replace(/[<>]/g, '').trim().substring(0, 20);
+      if (safeDisplayName.length === 0) {
+        return callback({ success: false, error: 'Invalid name' });
+      }
+
       const room = getRoomByCode(roomCode);
       if (!room) {
         return callback({ success: false, error: 'Room not found' });
@@ -47,10 +53,11 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
 
       const participant = {
         id: socket.id,
-        displayName: displayName.trim().substring(0, 20),
+        displayName: safeDisplayName,
         socketId: socket.id,
         joinedAt: Date.now(),
         isConnected: true,
+        score: 0,
       };
 
       room.participants.push(participant);
@@ -61,7 +68,7 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       io.to(room.roomId).emit('PARTICIPANT_JOINED', participant);
       io.to(room.roomId).emit('ROOM_STATE_UPDATED', room);
       
-      callback({ success: true, participant });
+      callback({ success: true, participant, room });
     });
 
     // Start Round (Host)
@@ -72,10 +79,9 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       const room = rooms.get(roomId);
       if (!room) return callback && callback({ success: false, error: 'Room not found' });
 
-      // In real scenario, we should verify the socket is the host.
-      // But for MVP, if you are in the room and send this, we assume host or skip strict check.
-      // Better: store hostSocketId in room, but we only have hostUserId.
-      // We will allow anyone in the room to trigger it (since only host UI has the button).
+      if (room.hostSocketId !== socket.id) {
+        return callback && callback({ success: false, error: 'Unauthorized: Only host can perform this action' });
+      }
 
       room.roundState = RoomState.ACTIVE;
       room.firstBuzzerId = null;
@@ -85,8 +91,18 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       if (callback) callback({ success: true });
     });
 
+    // Rate limiting map for BUZZ_SUBMIT
+    const buzzRateLimits = new Map<string, number>();
+
     // Submit Buzz (Participant)
     socket.on('BUZZ_SUBMIT', (callback) => {
+      const now = Date.now();
+      const lastBuzz = buzzRateLimits.get(socket.id) || 0;
+      if (now - lastBuzz < 500) { // 500ms limit
+        return callback && callback({ success: false, error: 'Too many requests' });
+      }
+      buzzRateLimits.set(socket.id, now);
+
       const roomId = socketToRoom.get(socket.id);
       if (!roomId) return callback && callback({ success: false, error: 'Not in a room' });
       
@@ -103,11 +119,11 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       }
 
       room.firstBuzzerId = socket.id;
-      room.roundState = RoomState.BUZZED_HIDDEN;
+      room.roundState = RoomState.REVEALED;
 
       io.to(roomId).emit('ROOM_STATE_UPDATED', room);
-      io.to(roomId).emit('ROUND_LOCKED'); // Locks everyone
-      io.to(roomId).emit('BUZZ_RECORDED_HIDDEN'); // Host sees it
+      io.to(roomId).emit('ROUND_LOCKED'); // Locks everyone optimistically
+      io.to(roomId).emit('FIRST_REVEALED', room.firstBuzzerId);
 
       if (callback) callback({ success: true });
     });
@@ -119,6 +135,10 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       
       const room = rooms.get(roomId);
       if (!room) return callback && callback({ success: false, error: 'Room not found' });
+
+      if (room.hostSocketId !== socket.id) {
+        return callback && callback({ success: false, error: 'Unauthorized: Only host can perform this action' });
+      }
 
       if (room.roundState !== RoomState.BUZZED_HIDDEN) {
         return callback && callback({ success: false, error: 'Cannot reveal now' });
@@ -132,18 +152,81 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
     });
 
     // Reset Round (Host)
-    socket.on('ROUND_RESET', (callback) => {
+    socket.on('ROUND_RESET', (dataOrCallback?: any, maybeCallback?: any) => {
+      const data = typeof dataOrCallback === 'function' ? undefined : dataOrCallback;
+      const callback = typeof dataOrCallback === 'function' ? dataOrCallback : maybeCallback;
+
       const roomId = socketToRoom.get(socket.id);
       if (!roomId) return callback && callback({ success: false, error: 'Not in a room' });
       
       const room = rooms.get(roomId);
       if (!room) return callback && callback({ success: false, error: 'Room not found' });
 
+      if (room.hostSocketId !== socket.id) {
+        return callback && callback({ success: false, error: 'Unauthorized: Only host can perform this action' });
+      }
+
+      if (data?.winnerId) {
+        const winner = room.participants.find(p => p.id === data.winnerId);
+        if (winner) winner.score += 1;
+      }
+
       room.roundState = RoomState.WAITING;
       room.firstBuzzerId = null;
 
       io.to(roomId).emit('ROOM_STATE_UPDATED', room);
       io.to(roomId).emit('ROUND_RESET_DONE');
+      
+      if (callback) callback({ success: true });
+    });
+
+    // Finish Room (Host)
+    socket.on('ROOM_FINISH', async (callback) => {
+      const roomId = socketToRoom.get(socket.id);
+      if (!roomId) return callback && callback({ success: false, error: 'Not in a room' });
+      
+      const room = rooms.get(roomId);
+      if (!room) return callback && callback({ success: false, error: 'Room not found' });
+
+      if (room.hostSocketId !== socket.id) {
+        return callback && callback({ success: false, error: 'Unauthorized: Only host can perform this action' });
+      }
+
+      if (room.roundState === RoomState.FINISHED) {
+        return callback && callback({ success: false, error: 'Room already finished' });
+      }
+
+      room.roundState = RoomState.FINISHED;
+
+      // Find winner
+      let winnerName: string | null = null;
+      let winnerScore = 0;
+
+      if (room.participants.length > 0) {
+        const sorted = [...room.participants].sort((a, b) => b.score - a.score);
+        winnerScore = sorted[0].score;
+        if (winnerScore > 0) {
+          winnerName = sorted[0].displayName;
+        }
+      }
+
+      // Save to history
+      try {
+        await prisma.gameHistory.create({
+          data: {
+            hostUserId: room.hostUserId,
+            roomCode: room.roomCode,
+            winnerName: winnerName || 'Ничья / Нет победителя',
+            winnerScore,
+            participants: room.participants.length,
+          }
+        });
+      } catch (err) {
+        console.error('Failed to save game history:', err);
+      }
+
+      io.to(roomId).emit('ROOM_STATE_UPDATED', room);
+      io.to(roomId).emit('ROOM_FINISHED', { winnerName, winnerScore });
       
       if (callback) callback({ success: true });
     });

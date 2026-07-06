@@ -17,6 +17,8 @@ model HostUser {
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
   subscription Subscription?
+  settings     HostSettings?
+  gameHistory  GameHistory[]
 }
 
 model Subscription {
@@ -28,4 +30,26 @@ model Subscription {
   currentPeriodEnd   DateTime
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+}
+
+model HostSettings {
+  id             String   @id @default(uuid())
+  hostUserId     String   @unique
+  hostUser       HostUser @relation(fields: [hostUserId], references: [id], onDelete: Cascade)
+  soundEnabled   Boolean  @default(true)
+  soundTheme     String   @default("classic")
+  customLogoUrl  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model GameHistory {
+  id           String   @id @default(uuid())
+  hostUserId   String
+  hostUser     HostUser @relation(fields: [hostUserId], references: [id], onDelete: Cascade)
+  roomCode     String
+  winnerName   String
+  winnerScore  Int
+  participants Int
+  createdAt    DateTime @default(now())
 }

@@ -2,48 +2,47 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { socket } from '../realtime/socket';
-import { RoomData } from 'shared';
+import type { RoomData } from 'shared';
+import { Button } from '@/components/ui/button';
+import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
+import { Play, History, Plus } from 'lucide-react';
+import { DashboardLayout } from '../components/DashboardLayout';
+import { toast } from 'sonner';
 
 export function HostDashboard() {
   const navigate = useNavigate();
+  const [token] = useState(localStorage.getItem('hostToken') || '');
+  const [hasSubscription, setHasSubscription] = useState(true);
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [isLogin, setIsLogin] = useState(true);
-  const [token, setToken] = useState(localStorage.getItem('hostToken') || '');
-  const [hasSubscription, setHasSubscription] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [history, setHistory] = useState<any[]>([]);
+  const [gamesCount, setGamesCount] = useState(0);
 
   useEffect(() => {
-    if (token) {
-      checkAuth(token);
+    if (!token) {
+      navigate('/login', { replace: true });
+      return;
     }
-  }, [token]);
+    checkAuth(token);
+  }, [token, navigate]);
 
   const checkAuth = async (t: string) => {
     try {
+      setLoading(true);
       const data = await api.getMe(t);
       setHasSubscription(data.hasActiveSubscription);
+      setEmail(data.email || 'host@example.com');
+      
+      try {
+        const histData = await api.getHistory(t);
+        setHistory(histData.history || []);
+        setGamesCount(histData.count || 0);
+      } catch (err) {
+        console.error('Failed to load history', err);
+      }
     } catch (err) {
       localStorage.removeItem('hostToken');
-      setToken('');
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    try {
-      const data = isLogin 
-        ? await api.login(email, password)
-        : await api.register(email, password);
-      
-      localStorage.setItem('hostToken', data.token);
-      setToken(data.token);
-      setHasSubscription(data.hasActiveSubscription);
-    } catch (err: any) {
-      setError(err.message);
+      navigate('/login', { replace: true });
     } finally {
       setLoading(false);
     }
@@ -56,79 +55,114 @@ export function HostDashboard() {
     
     socket.emit('ROOM_CREATE', token, (res: { success: boolean, room?: RoomData, error?: string }) => {
       if (res.success && res.room) {
-        navigate(`/host/room/${res.room.roomId}`);
+        navigate(`/host/room/${res.room.roomId}`, { state: { room: res.room } });
       } else {
-        alert(res.error || 'Failed to create room');
+        toast.error('Не удалось создать комнату', {
+          description: res.error || 'Внутренняя ошибка сервера. Пожалуйста, попробуйте позже.'
+        });
       }
     });
   };
 
-  if (token) {
-    return (
-      <div className="container flex-col flex-center" style={{ minHeight: '100vh' }}>
-        <div className="card" style={{ maxWidth: '400px', width: '100%', textAlign: 'center' }}>
-          <h2>Панель управления (Host)</h2>
-          
-          {hasSubscription ? (
-            <div style={{ marginTop: '2rem' }}>
-              <p style={{ color: 'var(--success)', marginBottom: '1rem', fontWeight: 500 }}>Подписка активна</p>
-              <button className="btn btn-primary" onClick={handleCreateRoom} style={{ width: '100%' }}>
-                Создать комнату
-              </button>
-            </div>
-          ) : (
-            <div style={{ marginTop: '2rem' }}>
-              <p style={{ color: 'var(--danger)', marginBottom: '1rem', fontWeight: 500 }}>
-                Для создания комнаты нужна активная подписка
-              </p>
-            </div>
-          )}
-          
-          <button 
-            className="btn" 
-            style={{ marginTop: '2rem', background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-color)' }}
-            onClick={() => {
-              localStorage.removeItem('hostToken');
-              setToken('');
-            }}
-          >
-            Выйти
-          </button>
-        </div>
-      </div>
-    );
+  const handleLogout = () => {
+    localStorage.removeItem('hostToken');
+    navigate('/', { replace: true });
+  };
+
+  if (loading) {
+    return <div className="min-h-[100dvh] flex items-center justify-center bg-slate-50">Загрузка...</div>;
   }
 
   return (
-    <div className="container flex-col flex-center" style={{ minHeight: '100vh' }}>
-      <div className="card" style={{ maxWidth: '400px', width: '100%' }}>
-        <h2 style={{ textAlign: 'center' }}>{isLogin ? 'Вход (Host)' : 'Регистрация (Host)'}</h2>
-        {error && <p style={{ color: 'var(--danger)', marginBottom: '1rem', textAlign: 'center' }}>{error}</p>}
-        <form onSubmit={handleSubmit}>
-          <input
-            className="input-field"
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            required
-          />
-          <input
-            className="input-field"
-            type="password"
-            placeholder="Пароль"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            required
-          />
-          <button className="btn btn-primary" style={{ width: '100%' }} disabled={loading}>
-            {loading ? 'Загрузка...' : isLogin ? 'Войти' : 'Зарегистрироваться'}
-          </button>
-        </form>
-        <p style={{ textAlign: 'center', marginTop: '1rem', cursor: 'pointer', opacity: 0.8 }} onClick={() => setIsLogin(!isLogin)}>
-          {isLogin ? 'Нет аккаунта? Зарегистрироваться' : 'Уже есть аккаунт? Войти'}
-        </p>
+    <DashboardLayout
+      email={email}
+      hasSubscription={hasSubscription}
+      onLogout={handleLogout}
+      onCreateRoom={handleCreateRoom}
+      onActivated={() => checkAuth(token)}
+    >
+      <div className="p-4 sm:p-6 md:p-10 max-w-5xl mx-auto w-full space-y-6 md:space-y-8 pb-20">
+        <div className="space-y-1">
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">Добро пожаловать</h1>
+          <p className="text-sm sm:text-base text-slate-500">Управляйте вашими играми и запускайте новые квизы</p>
+        </div>
+
+        {/* Hero Action Card */}
+        <Card className="border-0 shadow-xl shadow-red-500/10 bg-gradient-to-br from-red-500 to-red-700 text-white overflow-hidden relative">
+          <div className="absolute right-0 top-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
+          <div className="absolute left-0 bottom-0 w-48 h-48 bg-black/10 rounded-full blur-2xl translate-y-1/3 -translate-x-1/4"></div>
+          
+          <CardContent className="p-6 sm:p-8 md:p-12 relative z-10 flex flex-col lg:flex-row items-center gap-6 lg:gap-8 justify-between">
+            <div className="space-y-3 text-center lg:text-left">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight drop-shadow-sm">Готовы начать игру?</h2>
+              <p className="text-red-100 max-w-md text-sm sm:text-base md:text-lg">
+                Создайте новую комнату в один клик. Игроки смогут присоединиться по QR-коду со своих смартфонов.
+              </p>
+            </div>
+            <Button 
+              onClick={handleCreateRoom} 
+              className="h-14 sm:h-16 px-6 sm:px-8 text-base sm:text-lg bg-white text-red-600 hover:bg-slate-50 hover:text-red-700 shadow-xl shadow-black/20 shrink-0 w-full lg:w-auto rounded-2xl transition-all hover:scale-105 active:scale-95 font-bold"
+            >
+              <Play className="mr-2 h-5 w-5 sm:h-6 sm:w-6 fill-current" />
+              Создать комнату
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* Mobile Quick Action */}
+        <div className="md:hidden">
+          <Button onClick={handleCreateRoom} className="w-full h-12 bg-slate-900 text-white shadow-md">
+            <Plus size={18} className="mr-2" />
+            Быстрый старт
+          </Button>
+        </div>
+
+        {/* Stats / Recent placeholder */}
+        <div className="grid sm:grid-cols-2 gap-4 md:gap-6">
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base md:text-lg">Последние игры</CardTitle>
+              <CardDescription>История запущенных комнат</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {history.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 md:py-10 text-slate-400">
+                  <History className="w-10 h-10 md:w-12 md:h-12 mb-3 opacity-20" />
+                  <p className="text-sm md:text-base">Пока нет завершенных игр</p>
+                </div>
+              ) : (
+                <div className="space-y-4 pt-2">
+                  {history.slice(0, 5).map((game: any) => (
+                    <div key={game.id} className="flex justify-between items-center pb-3 border-b border-slate-100 last:border-0 last:pb-0">
+                      <div>
+                        <div className="font-medium text-slate-800">
+                          {game.winnerName} <span className="text-amber-500 text-xs">👑 {game.winnerScore}</span>
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          Игроков: {game.participants} • {new Date(game.createdAt).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <div className="text-xs font-mono bg-slate-100 px-2 py-1 rounded text-slate-500">
+                        {game.roomCode}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+          <Card className="border-slate-200 shadow-sm bg-slate-50/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base md:text-lg">Статистика</CardTitle>
+              <CardDescription>Сводка по всем мероприятиям</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col items-center justify-center py-8 md:py-10 text-slate-400">
+              <div className="text-3xl md:text-4xl font-black text-slate-800 mb-1">{gamesCount}</div>
+              <p className="text-sm md:text-base">Сыграно игр</p>
+            </CardContent>
+          </Card>
+        </div>
       </div>
-    </div>
+    </DashboardLayout>
   );
 }

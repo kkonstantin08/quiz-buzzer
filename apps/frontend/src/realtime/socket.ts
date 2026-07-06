@@ -1,7 +1,10 @@
 import { io, Socket } from 'socket.io-client';
-import { ClientToServerEvents, ServerToClientEvents } from 'shared';
+import type { ClientToServerEvents, ServerToClientEvents } from 'shared';
 
-const SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const isDev = import.meta.env.DEV;
+const BASE_URL = isDev ? `http://${window.location.hostname}:3001` : (import.meta.env.VITE_SERVER_URL || import.meta.env.VITE_API_URL || 'http://localhost:3001');
+const cleanBaseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
+const SERVER_URL = cleanBaseUrl.endsWith('/api') ? cleanBaseUrl.slice(0, -4) : cleanBaseUrl;
 
 export const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(SERVER_URL, {
   autoConnect: false,

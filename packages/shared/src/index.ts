@@ -5,6 +5,7 @@ export enum RoomState {
   ACTIVE = 'ACTIVE',
   BUZZED_HIDDEN = 'BUZZED_HIDDEN',
   REVEALED = 'REVEALED',
+  FINISHED = 'FINISHED',
 }
 
 export interface Participant {
@@ -13,12 +14,14 @@ export interface Participant {
   socketId: string;
   joinedAt: number;
   isConnected: boolean;
+  score: number;
 }
 
 export interface RoomData {
   roomId: string;
   roomCode: string;
   hostUserId: string;
+  hostSocketId: string;
   participants: Participant[];
   roundState: RoomState;
   firstBuzzerId: string | null;
@@ -28,11 +31,12 @@ export interface RoomData {
 // Client -> Server Events
 export interface ClientToServerEvents {
   ROOM_CREATE: (token: string, callback: (res: { success: boolean, room?: RoomData, error?: string }) => void) => void;
-  ROOM_JOIN: (data: { roomCode: string, displayName: string }, callback: (res: { success: boolean, participant?: Participant, error?: string }) => void) => void;
+  ROOM_JOIN: (data: { roomCode: string, displayName: string }, callback: (res: { success: boolean, participant?: Participant, room?: RoomData, error?: string }) => void) => void;
   ROUND_START: (callback?: (res: { success: boolean, error?: string }) => void) => void;
   BUZZ_SUBMIT: (callback?: (res: { success: boolean, error?: string }) => void) => void;
   FIRST_REVEAL: (callback?: (res: { success: boolean, error?: string }) => void) => void;
-  ROUND_RESET: (callback?: (res: { success: boolean, error?: string }) => void) => void;
+  ROUND_RESET: (data?: { winnerId?: string | null }, callback?: (res: { success: boolean, error?: string }) => void) => void;
+  ROOM_FINISH: (callback?: (res: { success: boolean, error?: string }) => void) => void;
   ROOM_LEAVE: () => void;
 }
 
@@ -46,5 +50,6 @@ export interface ServerToClientEvents {
   BUZZ_RECORDED_HIDDEN: () => void;
   FIRST_REVEALED: (firstBuzzerId: string) => void;
   ROUND_RESET_DONE: () => void;
+  ROOM_FINISHED: (data: { winnerName: string | null, winnerScore: number }) => void;
   ERROR_EVENT: (error: string) => void;
 }

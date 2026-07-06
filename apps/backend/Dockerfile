@@ -8,9 +8,10 @@ COPY package*.json ./
 # Copy workspace package.json files
 COPY packages/shared/package.json ./packages/shared/
 COPY apps/backend/package.json ./apps/backend/
+COPY apps/frontend/package.json ./apps/frontend/
 
 # Install dependencies
-RUN npm ci
+RUN npm ci --include=dev
 
 # Copy source code
 COPY packages/shared ./packages/shared

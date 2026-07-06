@@ -1,0 +1,122 @@
+import React from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { BillingModal } from './BillingModal';
+import { LayoutDashboard, History, Settings, LogOut, Plus, Crown, Target } from 'lucide-react';
+
+const LogoIcon = () => (
+  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-red-400 to-red-600 flex items-center justify-center shadow-sm shrink-0">
+    <Target className="w-5 h-5 text-white" strokeWidth={2.5} />
+  </div>
+);
+
+interface DashboardLayoutProps {
+  children: React.ReactNode;
+  email: string;
+  hasSubscription: boolean;
+  onLogout: () => void;
+  onCreateRoom: () => void;
+  onActivated?: () => void;
+}
+
+export function DashboardLayout({ 
+  children, 
+  email, 
+  hasSubscription, 
+  onLogout, 
+  onCreateRoom,
+  onActivated 
+}: DashboardLayoutProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const isDashboard = location.pathname === '/dashboard';
+  const isSettings = location.pathname === '/settings';
+
+  return (
+    <div className="flex min-h-[100dvh] bg-slate-50">
+      {!hasSubscription && <BillingModal onActivated={onActivated || (() => {})} />}
+
+      {/* Sidebar (Desktop) */}
+      <aside className="w-64 bg-white border-r border-slate-200 flex-col hidden md:flex shrink-0">
+        <div className="h-16 flex items-center px-6 border-b border-slate-100 gap-3 shrink-0">
+          <LogoIcon />
+          <span className="font-black text-xl text-slate-800 tracking-tight">КвизПульт</span>
+        </div>
+        
+        <div className="p-4 shrink-0">
+          <Button onClick={onCreateRoom} className="w-full justify-start gap-2 h-11 bg-slate-900 hover:bg-slate-800 text-white shadow-md">
+            <Plus size={18} />
+            Новая игра
+          </Button>
+        </div>
+
+        <nav className="flex-1 px-4 py-2 space-y-1 overflow-y-auto">
+          <Button 
+            variant="ghost" 
+            className={`w-full justify-start gap-3 font-medium ${isDashboard ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'}`}
+            onClick={() => navigate('/dashboard')}
+          >
+            <LayoutDashboard size={18} />
+            Дашборд
+          </Button>
+          <Button variant="ghost" className="w-full justify-start gap-3 text-slate-500 hover:text-slate-900 hover:bg-slate-50" disabled>
+            <History size={18} />
+            История игр
+          </Button>
+          <Button 
+            variant="ghost" 
+            className={`w-full justify-start gap-3 font-medium ${isSettings ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'}`}
+            onClick={() => navigate('/settings')}
+          >
+            <Settings size={18} />
+            Настройки
+          </Button>
+        </nav>
+
+        <div className="p-4 border-t border-slate-100 shrink-0 bg-slate-50/50">
+          <div className="flex items-center gap-3 mb-4 px-2">
+            <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center shrink-0 border border-slate-300">
+              <span className="font-bold text-slate-600">{email ? email.charAt(0).toUpperCase() : 'U'}</span>
+            </div>
+            <div className="overflow-hidden flex-1">
+              <p className="text-sm font-semibold text-slate-900 truncate" title={email}>{email}</p>
+              <div className="flex items-center gap-1 mt-0.5">
+                <Crown size={12} className="text-amber-500" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded-sm">
+                  PRO Plan
+                </span>
+              </div>
+            </div>
+          </div>
+          <Button variant="ghost" className="w-full justify-start gap-3 text-slate-500 hover:text-red-600 hover:bg-red-50" onClick={onLogout}>
+            <LogOut size={18} />
+            Выйти
+          </Button>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col h-[100dvh] overflow-y-auto">
+        {/* Mobile Header */}
+        <header className="md:hidden h-16 bg-white border-b flex items-center justify-between px-4 shrink-0 shadow-sm z-10">
+          <div className="flex items-center gap-2">
+            <LogoIcon />
+            <span className="font-black text-lg text-slate-800">КвизПульт</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Crown size={16} className="text-amber-500" />
+            <Button variant="ghost" size="icon" onClick={() => navigate(isDashboard ? '/settings' : '/dashboard')} className="text-slate-500">
+              {isDashboard ? <Settings size={20} /> : <LayoutDashboard size={20} />}
+            </Button>
+            <Button variant="ghost" size="icon" onClick={onLogout} className="text-slate-500 hover:text-red-600">
+              <LogOut size={20} />
+            </Button>
+          </div>
+        </header>
+
+        {children}
+      </main>
+    </div>
+  );
+}
