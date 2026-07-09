@@ -11,14 +11,17 @@ datasource db {
 }
 
 model HostUser {
-  id           String         @id @default(uuid())
-  email        String         @unique
-  passwordHash String
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  subscription Subscription?
-  settings     HostSettings?
-  gameHistory  GameHistory[]
+  id              String         @id @default(uuid())
+  name            String?
+  avatarUrl       String?
+  email           String         @unique
+  passwordHash    String
+  freeTrialUsed   Boolean        @default(false)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  subscription    Subscription?
+  settings        HostSettings?
+  gameHistory     GameHistory[]
 }
 
 model Subscription {

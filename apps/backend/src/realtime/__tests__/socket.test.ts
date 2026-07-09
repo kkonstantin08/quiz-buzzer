@@ -135,15 +135,18 @@ describe('Socket.IO Realtime Logic', () => {
           if (joined === 2) {
             // Both joined. Start round.
             hostSocket.emit('ROUND_START', () => {
-              // Now both buzz!
+              // Now P1 buzzes
               p1Socket.emit('BUZZ_SUBMIT', (buzz1Res: any) => {
-                p2Socket.emit('BUZZ_SUBMIT', (buzz2Res: any) => {
-                  // Only one should succeed
-                  expect(buzz1Res.success).toBe(true); // Since P1 emitted first
-                  expect(buzz2Res.success).toBe(false); // P2 is too late
-                  expect(buzz2Res.error).toBe('Round is not active');
-                  done();
-                });
+                expect(buzz1Res.success).toBe(true); // Since P1 emitted first
+                // Wait for the 250ms grace period to expire and lock the round
+                setTimeout(() => {
+                  // Now P2 buzzes and should be rejected
+                  p2Socket.emit('BUZZ_SUBMIT', (buzz2Res: any) => {
+                    expect(buzz2Res.success).toBe(false); // P2 is too late
+                    expect(buzz2Res.error).toBe('Round is not active');
+                    done();
+                  });
+                }, 300);
               });
             });
           }

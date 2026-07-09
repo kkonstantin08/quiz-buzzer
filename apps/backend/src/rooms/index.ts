@@ -4,7 +4,7 @@ import crypto from 'crypto';
 export const rooms = new Map<string, RoomData>();
 export const socketToRoom = new Map<string, string>();
 
-export function createRoom(hostUserId: string, hostSocketId: string): RoomData {
+export function createRoom(hostUserId: string, hostSocketId: string, customLogoUrl?: string | null): RoomData {
   const roomCode = crypto.randomBytes(3).toString('hex').toUpperCase(); // 6 chars, cryptographically secure
   const roomId = `room_${Date.now()}_${roomCode}`;
   
@@ -17,6 +17,7 @@ export function createRoom(hostUserId: string, hostSocketId: string): RoomData {
     roundState: RoomState.WAITING,
     firstBuzzerId: null,
     createdAt: Date.now(),
+    customLogoUrl: customLogoUrl || null,
   };
   
   rooms.set(roomId, newRoom);

@@ -11,37 +11,41 @@ import { toast } from 'sonner';
 
 export function HostDashboard() {
   const navigate = useNavigate();
-  const [token] = useState(localStorage.getItem('hostToken') || '');
   const [hasSubscription, setHasSubscription] = useState(true);
   const [email, setEmail] = useState('');
+  const [name, setName] = useState<string | undefined>(undefined);
+  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
+  const [customLogoUrl, setCustomLogoUrl] = useState<string | null>(null);
+  const [subscriptionEndDate, setSubscriptionEndDate] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [history, setHistory] = useState<any[]>([]);
   const [gamesCount, setGamesCount] = useState(0);
 
   useEffect(() => {
-    if (!token) {
-      navigate('/login', { replace: true });
-      return;
-    }
-    checkAuth(token);
-  }, [token, navigate]);
+    checkAuth();
+  }, []);
 
-  const checkAuth = async (t: string) => {
+  const checkAuth = async () => {
     try {
       setLoading(true);
-      const data = await api.getMe(t);
+      const data = await api.getMe();
       setHasSubscription(data.hasActiveSubscription);
       setEmail(data.email || 'host@example.com');
+      setName(data.name);
+      setAvatarUrl(data.avatarUrl);
+      setCustomLogoUrl(data.customLogoUrl);
+      if (data.subscription) {
+        setSubscriptionEndDate(data.subscription.currentPeriodEnd);
+      }
       
       try {
-        const histData = await api.getHistory(t);
+        const histData = await api.getHistory();
         setHistory(histData.history || []);
         setGamesCount(histData.count || 0);
       } catch (err) {
         console.error('Failed to load history', err);
       }
     } catch (err) {
-      localStorage.removeItem('hostToken');
       navigate('/login', { replace: true });
     } finally {
       setLoading(false);
@@ -53,7 +57,7 @@ export function HostDashboard() {
       socket.connect();
     }
     
-    socket.emit('ROOM_CREATE', token, (res: { success: boolean, room?: RoomData, error?: string }) => {
+    socket.emit('ROOM_CREATE', '', (res: { success: boolean, room?: RoomData, error?: string }) => {
       if (res.success && res.room) {
         navigate(`/host/room/${res.room.roomId}`, { state: { room: res.room } });
       } else {
@@ -64,8 +68,8 @@ export function HostDashboard() {
     });
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('hostToken');
+  const handleLogout = async () => {
+    await api.logout();
     navigate('/', { replace: true });
   };
 
@@ -76,15 +80,24 @@ export function HostDashboard() {
   return (
     <DashboardLayout
       email={email}
+      name={name}
+      avatarUrl={avatarUrl}
+      customLogoUrl={customLogoUrl}
       hasSubscription={hasSubscription}
+      subscriptionEndDate={subscriptionEndDate}
       onLogout={handleLogout}
       onCreateRoom={handleCreateRoom}
-      onActivated={() => checkAuth(token)}
+      onActivated={() => checkAuth()}
+      onProfileUpdated={(newName, newEmail, newAvatar) => {
+        if (newName !== undefined) setName(newName);
+        if (newEmail !== undefined) setEmail(newEmail);
+        if (newAvatar !== undefined) setAvatarUrl(newAvatar);
+      }}
     >
       <div className="p-4 sm:p-6 md:p-10 max-w-5xl mx-auto w-full space-y-6 md:space-y-8 pb-20">
         <div className="space-y-1">
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">Добро пожаловать</h1>
-          <p className="text-sm sm:text-base text-slate-500">Управляйте вашими играми и запускайте новые квизы</p>
+          <p className="text-sm sm:text-base text-slate-600">Управляйте вашими играми и запускайте новые квизы</p>
         </div>
 
         {/* Hero Action Card */}
@@ -126,7 +139,7 @@ export function HostDashboard() {
             </CardHeader>
             <CardContent>
               {history.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 md:py-10 text-slate-400">
+                <div className="flex flex-col items-center justify-center py-8 md:py-10 text-slate-500">
                   <History className="w-10 h-10 md:w-12 md:h-12 mb-3 opacity-20" />
                   <p className="text-sm md:text-base">Пока нет завершенных игр</p>
                 </div>
@@ -138,11 +151,11 @@ export function HostDashboard() {
                         <div className="font-medium text-slate-800">
                           {game.winnerName} <span className="text-amber-500 text-xs">👑 {game.winnerScore}</span>
                         </div>
-                        <div className="text-xs text-slate-400">
+                        <div className="text-xs text-slate-500">
                           Игроков: {game.participants} • {new Date(game.createdAt).toLocaleDateString()}
                         </div>
                       </div>
-                      <div className="text-xs font-mono bg-slate-100 px-2 py-1 rounded text-slate-500">
+                      <div className="text-xs font-mono bg-slate-100 px-2 py-1 rounded text-slate-600">
                         {game.roomCode}
                       </div>
                     </div>
@@ -156,7 +169,7 @@ export function HostDashboard() {
               <CardTitle className="text-base md:text-lg">Статистика</CardTitle>
               <CardDescription>Сводка по всем мероприятиям</CardDescription>
             </CardHeader>
-            <CardContent className="flex flex-col items-center justify-center py-8 md:py-10 text-slate-400">
+            <CardContent className="flex flex-col items-center justify-center py-8 md:py-10 text-slate-500">
               <div className="text-3xl md:text-4xl font-black text-slate-800 mb-1">{gamesCount}</div>
               <p className="text-sm md:text-base">Сыграно игр</p>
             </CardContent>

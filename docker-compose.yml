@@ -7,13 +7,13 @@ services:
       dockerfile: apps/backend/Dockerfile
     environment:
       - DATABASE_URL=file:./dev.db
-      - JWT_SECRET=${JWT_SECRET:-super_secret_jwt_for_production}
-      - CORS_ORIGIN=*
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET environment variable is required}
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:5173}
       - PORT=3001
+      - NODE_ENV=production
       - SEED_ADMIN_EMAIL=${SEED_ADMIN_EMAIL:-admin@example.com}
       - SEED_ADMIN_PASSWORD=${SEED_ADMIN_PASSWORD:-admin123}
-    ports:
-      - "3001:3001"
+    # ports are intentionally NOT exposed — access only through nginx
     volumes:
       - backend_data:/app/prisma
 
@@ -23,8 +23,7 @@ services:
       dockerfile: apps/frontend/Dockerfile
       args:
         - VITE_API_URL=/api
-    ports:
-      - "5173:80" # direct access to frontend container if needed
+    # ports are intentionally NOT exposed — access only through nginx
     depends_on:
       - backend
 

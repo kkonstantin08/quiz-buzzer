@@ -1,6 +1,6 @@
 // Use VITE_SERVER_URL for base host, fallback to VITE_API_URL for backwards compatibility
 const isDev = import.meta.env.DEV;
-const BASE_URL = isDev ? `http://${window.location.hostname}:3001` : (import.meta.env.VITE_SERVER_URL || import.meta.env.VITE_API_URL || 'http://localhost:3001');
+export const BASE_URL = isDev ? `http://${window.location.hostname}:3001` : (import.meta.env.VITE_SERVER_URL || import.meta.env.VITE_API_URL || 'http://localhost:3001');
 // Strip trailing slash if any
 const cleanBaseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
 // If the URL already ends with /api, use it as is, otherwise append /api
@@ -19,9 +19,18 @@ const translateError = (errorMsg: string) => {
   return errorMsg;
 };
 
+// All requests include credentials so httpOnly cookies are sent automatically
+const customFetch = async (url: string, options?: RequestInit) => {
+  try {
+    return await fetch(url, { credentials: 'include', ...options });
+  } catch (error: any) {
+    throw new Error(translateError(error.message || 'Failed to fetch'));
+  }
+};
+
 export const api = {
   async login(email: string, password: string) {
-    const res = await fetch(`${API_URL}/auth/login`, {
+    const res = await customFetch(`${API_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -38,7 +47,7 @@ export const api = {
   },
 
   async register(email: string, password: string) {
-    const res = await fetch(`${API_URL}/auth/register`, {
+    const res = await customFetch(`${API_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -54,10 +63,13 @@ export const api = {
     return res.json();
   },
 
-  async getMe(token: string) {
-    const res = await fetch(`${API_URL}/auth/me`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
+  async logout() {
+    // Clears the httpOnly cookie server-side
+    await customFetch(`${API_URL}/auth/logout`, { method: 'POST' });
+  },
+
+  async getMe() {
+    const res = await customFetch(`${API_URL}/auth/me`);
     if (!res.ok) {
       let errorMsg = 'Unauthorized';
       try {
@@ -69,10 +81,63 @@ export const api = {
     return res.json();
   },
 
-  async getSettings(token: string) {
-    const res = await fetch(`${API_URL}/settings`, {
-      headers: { 'Authorization': `Bearer ${token}` },
+  async updateProfile(data: { name?: string, email?: string }) {
+    const res = await customFetch(`${API_URL}/auth/me`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
     });
+    if (!res.ok) {
+      let errorMsg = 'Failed to update profile';
+      try {
+        const error = await res.json();
+        errorMsg = error.error || errorMsg;
+      } catch (e) {}
+      throw new Error(translateError(errorMsg));
+    }
+    return res.json();
+  },
+
+  async uploadAvatar(file: File) {
+    const formData = new FormData();
+    formData.append('avatar', file);
+
+    const res = await customFetch(`${API_URL}/auth/avatar`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) {
+      let errorMsg = 'Failed to upload avatar';
+      try {
+        const error = await res.json();
+        errorMsg = error.error || errorMsg;
+      } catch (e) {}
+      throw new Error(translateError(errorMsg));
+    }
+    return res.json();
+  },
+
+  async uploadLogo(file: File) {
+    const formData = new FormData();
+    formData.append('logo', file);
+
+    const res = await customFetch(`${API_URL}/settings/upload-logo`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) {
+      let errorMsg = 'Failed to upload logo';
+      try {
+        const error = await res.json();
+        errorMsg = error.error || errorMsg;
+      } catch (e) {}
+      throw new Error(translateError(errorMsg));
+    }
+    return res.json();
+  },
+
+  async getSettings() {
+    const res = await customFetch(`${API_URL}/settings`);
     if (!res.ok) {
       let errorMsg = 'Failed to fetch settings';
       try {
@@ -84,13 +149,10 @@ export const api = {
     return res.json();
   },
 
-  async updateSettings(token: string, data: any) {
-    const res = await fetch(`${API_URL}/settings`, {
+  async updateSettings(data: any) {
+    const res = await customFetch(`${API_URL}/settings`, {
       method: 'PATCH',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}` 
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
     if (!res.ok) {
@@ -104,13 +166,21 @@ export const api = {
     return res.json();
   },
 
-  async getHistory(token: string) {
-    const res = await fetch(`${API_URL}/history`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-    });
+  async getHistory() {
+    const res = await customFetch(`${API_URL}/history`);
     if (!res.ok) {
       throw new Error('Failed to fetch history');
     }
     return res.json();
   },
+
+  async clearHistory() {
+    const res = await customFetch(`${API_URL}/history`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      throw new Error('Failed to clear history');
+    }
+    return res.json();
+  }
 };

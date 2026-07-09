@@ -8,4 +8,5 @@ const SERVER_URL = cleanBaseUrl.endsWith('/api') ? cleanBaseUrl.slice(0, -4) : c
 
 export const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(SERVER_URL, {
   autoConnect: false,
+  withCredentials: true, // send httpOnly cookie during handshake
 });

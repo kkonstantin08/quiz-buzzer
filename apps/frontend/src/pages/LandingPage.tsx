@@ -46,7 +46,7 @@ export function LandingPage() {
             </Link>
           </div>
           
-          <div className="pt-8 flex flex-col sm:flex-row gap-6 justify-center lg:justify-start items-center lg:items-start text-sm text-slate-500 font-medium">
+          <div className="pt-8 flex flex-col sm:flex-row gap-6 justify-center lg:justify-start items-center lg:items-start text-sm text-slate-600 font-medium">
             <div className="flex items-center gap-2">
               <div className="w-6 h-6 rounded-full bg-green-100 text-green-600 flex items-center justify-center shrink-0">✓</div>
               <span>Мгновенная реакция</span>
@@ -70,12 +70,12 @@ export function LandingPage() {
             <div className="absolute w-[300px] h-[300px] bg-red-200/40 rounded-full mix-blend-multiply blur-[80px] -translate-x-10 translate-y-20"></div>
             
             {/* Floating geometric confetti - properly scattered around */}
-            <div className="absolute top-[10%] left-[5%] md:left-[15%] w-8 h-8 rounded-full bg-yellow-300 opacity-70 animate-bounce" style={{ animationDuration: '3s' }}></div>
-            <div className="absolute bottom-[25%] left-[2%] md:left-[10%] w-6 h-6 rounded-lg bg-blue-300 opacity-70 transform rotate-45 animate-pulse" style={{ animationDuration: '4s' }}></div>
-            <div className="absolute top-[20%] right-[5%] md:right-[15%] w-10 h-10 rounded-full bg-red-300 opacity-60 animate-bounce" style={{ animationDelay: '0.5s', animationDuration: '3.5s' }}></div>
-            <div className="absolute bottom-[15%] right-[2%] md:right-[10%] w-7 h-7 rounded-full bg-green-300 opacity-70 animate-pulse" style={{ animationDelay: '1s', animationDuration: '2.5s' }}></div>
-            <div className="absolute top-[50%] left-[8%] md:left-[20%] w-4 h-4 rounded bg-purple-300 opacity-60 transform rotate-12 animate-bounce" style={{ animationDelay: '1.5s', animationDuration: '4s' }}></div>
-            <div className="absolute top-[60%] right-[8%] md:right-[20%] w-5 h-5 rounded-full bg-orange-300 opacity-60 animate-pulse" style={{ animationDelay: '0.2s', animationDuration: '3s' }}></div>
+            <div className="hidden md:block absolute top-[10%] left-[5%] md:left-[15%] w-8 h-8 rounded-full bg-yellow-300 opacity-70 animate-bounce" style={{ animationDuration: '3s' }}></div>
+            <div className="hidden md:block absolute bottom-[25%] left-[2%] md:left-[10%] w-6 h-6 rounded-lg bg-blue-300 opacity-70 transform rotate-45 animate-pulse" style={{ animationDuration: '4s' }}></div>
+            <div className="hidden md:block absolute top-[20%] right-[5%] md:right-[15%] w-10 h-10 rounded-full bg-red-300 opacity-60 animate-bounce" style={{ animationDelay: '0.5s', animationDuration: '3.5s' }}></div>
+            <div className="hidden md:block absolute bottom-[15%] right-[2%] md:right-[10%] w-7 h-7 rounded-full bg-green-300 opacity-70 animate-pulse" style={{ animationDelay: '1s', animationDuration: '2.5s' }}></div>
+            <div className="hidden md:block absolute top-[50%] left-[8%] md:left-[20%] w-4 h-4 rounded bg-purple-300 opacity-60 transform rotate-12 animate-bounce" style={{ animationDelay: '1.5s', animationDuration: '4s' }}></div>
+            <div className="hidden md:block absolute top-[60%] right-[8%] md:right-[20%] w-5 h-5 rounded-full bg-orange-300 opacity-60 animate-pulse" style={{ animationDelay: '0.2s', animationDuration: '3s' }}></div>
           </div>
 
           {/* 3D Smartphone Mockup (CSS) */}
@@ -105,7 +105,7 @@ export function LandingPage() {
               {/* Fake Header inside phone */}
               <div className="h-14 bg-white border-b flex items-center justify-center relative shadow-sm">
                 <span className="font-bold text-slate-800 text-lg">Вы: Игрок 1</span>
-                <div className="absolute right-4 w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-xs text-slate-500 font-bold">1</div>
+                <div className="absolute right-4 w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-xs text-slate-600 font-bold">1</div>
               </div>
               
               {/* Button Area */}
@@ -125,7 +125,7 @@ export function LandingPage() {
                 
                 <div className="text-center space-y-2">
                   <p className="text-xl font-bold text-slate-700">Ожидание вопроса...</p>
-                  <p className="text-sm text-slate-500">Приготовьтесь нажать первым!</p>
+                  <p className="text-sm text-slate-600">Приготовьтесь нажать первым!</p>
                 </div>
               </div>
 

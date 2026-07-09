@@ -8,11 +8,11 @@ import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { QrCode, Timer, Crown, LogOut } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { playSound } from '../lib/sounds';
-import { api } from '../services/api';
+import { api, BASE_URL } from '../services/api';
 
 export function HostRoom() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -21,18 +21,16 @@ export function HostRoom() {
   const [room, setRoom] = useState<RoomData | null>(location.state?.room || null);
   const [firstBuzzerName, setFirstBuzzerName] = useState<string>('');
   const [qrOpen, setQrOpen] = useState(false);
+  const [finishOpen, setFinishOpen] = useState(false);
   const [winnerInfo, setWinnerInfo] = useState<{winnerName: string | null, winnerScore: number} | null>(null);
   const soundSettingsRef = React.useRef({ enabled: true, theme: 'classic' });
 
   useEffect(() => {
-    const token = localStorage.getItem('hostToken');
-    if (token) {
-      api.getSettings(token)
-        .then(s => {
-          soundSettingsRef.current = { enabled: s.soundEnabled, theme: s.soundTheme || 'classic' };
-        })
-        .catch(console.error);
-    }
+    api.getSettings()
+      .then(s => {
+        soundSettingsRef.current = { enabled: s.soundEnabled, theme: s.soundTheme || 'classic' };
+      })
+      .catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -106,12 +104,32 @@ export function HostRoom() {
   };
 
   const handleFinishRoom = () => {
-    if (window.confirm("Вы уверены, что хотите завершить игру? Это действие нельзя отменить.")) {
-      socket.emit('ROOM_FINISH');
-    }
+    socket.emit('ROOM_FINISH');
+    setFinishOpen(false);
   };
 
   if (room.roundState === RoomState.FINISHED && winnerInfo) {
+    if (room.participants.length === 0) {
+      return (
+        <div className="dashboard-container flex items-center justify-center min-h-[100dvh]">
+          <Card className="max-w-lg w-full text-center py-12 border-0 shadow-2xl shadow-slate-500/10 bg-slate-50">
+            <CardContent className="space-y-6 flex flex-col items-center">
+              <div className="w-24 h-24 bg-slate-200 text-slate-500 rounded-full flex items-center justify-center shadow-inner">
+                <LogOut className="w-10 h-10 ml-1" />
+              </div>
+              <div className="space-y-2">
+                <h1 className="text-3xl font-black text-slate-800 tracking-tight">Игра завершена</h1>
+                <p className="text-lg text-slate-600">В комнате так и не появилось участников. Эта игра не будет сохранена в статистике.</p>
+              </div>
+              <Button size="lg" className="mt-8 w-full h-14 text-lg font-bold" onClick={() => navigate('/dashboard')}>
+                Вернуться в Дашборд
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
     return (
       <div className="dashboard-container flex items-center justify-center min-h-[100dvh]">
         <Card className="max-w-lg w-full text-center py-12 border-0 shadow-2xl shadow-yellow-500/20 bg-gradient-to-b from-yellow-50 to-white">
@@ -121,11 +139,11 @@ export function HostRoom() {
             </div>
             <div className="space-y-2">
               <h1 className="text-4xl font-black text-slate-800 tracking-tight">Игра завершена!</h1>
-              <p className="text-lg text-slate-500">Спасибо за участие</p>
+              <p className="text-lg text-slate-600">Спасибо за участие</p>
             </div>
             
             <div className="bg-slate-50 border border-slate-100 rounded-2xl p-6 w-full mt-6 shadow-sm">
-              <p className="text-sm font-semibold text-slate-400 uppercase tracking-widest mb-2">Победитель</p>
+              <p className="text-sm font-semibold text-slate-500 uppercase tracking-widest mb-2">Победитель</p>
               <h2 className="text-3xl font-bold text-primary break-words">
                 {winnerInfo.winnerName}
               </h2>
@@ -148,11 +166,20 @@ export function HostRoom() {
       
       {/* Mobile-optimized Header with Room Code and QR Button */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6 p-4 bg-white rounded-2xl shadow-sm border">
-        <div className="text-center sm:text-left">
-          <p className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-1">Управление игрой</p>
-          <h1 className="text-3xl font-black text-primary tracking-widest uppercase leading-none">
-            Комната активна
-          </h1>
+        <div className="flex items-center gap-4 flex-col sm:flex-row text-center sm:text-left">
+          {room.customLogoUrl && (
+            <img 
+              src={room.customLogoUrl.startsWith('http') ? room.customLogoUrl : `${BASE_URL.replace('/api', '')}${room.customLogoUrl}`} 
+              alt="Logo" 
+              className="max-h-12 object-contain" 
+            />
+          )}
+          <div>
+            <p className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-1">Управление игрой</p>
+            <h1 className="text-3xl font-black text-primary tracking-widest uppercase leading-none">
+              Комната активна
+            </h1>
+          </div>
         </div>
         
         <div className="flex gap-2 w-full sm:w-auto">
@@ -182,10 +209,33 @@ export function HostRoom() {
             </DialogContent>
           </Dialog>
 
-          <Button variant="destructive" size="lg" className="h-14 gap-2 flex-1 sm:flex-none" onClick={handleFinishRoom}>
-            <LogOut className="w-5 h-5" />
-            Завершить
-          </Button>
+          <Dialog open={finishOpen} onOpenChange={setFinishOpen}>
+            <DialogTrigger asChild>
+              <Button variant="destructive" size="lg" className="h-14 gap-2 flex-1 sm:flex-none">
+                <LogOut className="w-5 h-5" />
+                Завершить
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle className="text-red-600 flex items-center gap-2">
+                  <LogOut size={20} />
+                  Завершить игру?
+                </DialogTitle>
+                <DialogDescription>
+                  Вы уверены, что хотите завершить эту игру? Это действие нельзя отменить, статистика будет сохранена, а победитель определен немедленно.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="flex-col sm:flex-row gap-2 mt-4 sm:gap-0">
+                <Button type="button" variant="outline" onClick={() => setFinishOpen(false)} className="w-full sm:w-auto">
+                  Отмена
+                </Button>
+                <Button type="button" variant="destructive" onClick={handleFinishRoom} className="w-full sm:w-auto">
+                  Завершить
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -197,8 +247,22 @@ export function HostRoom() {
           
           {room.roundState === RoomState.WAITING && (
             <div className="text-center space-y-6 w-full px-6">
-              <h2 className="text-2xl font-semibold text-muted-foreground">Ожидание запуска раунда</h2>
-              <Button size="lg" className="w-full text-xl h-16 shadow-lg shadow-primary/20" onClick={handleStartRound}>
+              {room.participants.length === 0 ? (
+                <div className="space-y-4 py-4">
+                  <div className="w-16 h-16 mx-auto bg-slate-100 rounded-full flex items-center justify-center animate-pulse">
+                    <QrCode className="w-8 h-8 text-slate-500" />
+                  </div>
+                  <h2 className="text-xl font-medium text-slate-600 animate-pulse">Ожидание подключения игроков...</h2>
+                </div>
+              ) : (
+                <h2 className="text-2xl font-semibold text-muted-foreground">Ожидание запуска раунда</h2>
+              )}
+              <Button 
+                size="lg" 
+                className="w-full text-xl h-16 shadow-lg shadow-primary/20" 
+                onClick={handleStartRound}
+                disabled={room.participants.length === 0}
+              >
                 СТАРТ РАУНДА
               </Button>
             </div>

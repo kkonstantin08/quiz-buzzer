@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../services/api';
+import { api, BASE_URL } from '../services/api';
 import { socket } from '../realtime/socket';
 import type { RoomData } from 'shared';
 import { Button } from '@/components/ui/button';
@@ -9,14 +9,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { DashboardLayout } from '../components/DashboardLayout';
-import { Volume2, Image as ImageIcon, Crown, ExternalLink, Loader2, Check } from 'lucide-react';
+import { Volume2, Image as ImageIcon, Crown, ExternalLink, Loader2, Check, AlertTriangle, Upload } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 
 export function HostSettings() {
   const navigate = useNavigate();
-  const [token] = useState(localStorage.getItem('hostToken') || '');
   const [hasSubscription, setHasSubscription] = useState(true);
   const [email, setEmail] = useState('');
+  const [name, setName] = useState<string | undefined>(undefined);
+  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
+  const [subscriptionEndDate, setSubscriptionEndDate] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -26,6 +29,41 @@ export function HostSettings() {
   const [soundTheme, setSoundTheme] = useState('classic');
   const [customLogoUrl, setCustomLogoUrl] = useState('');
 
+  // Danger Zone
+  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
+  const [resetConfirmationText, setResetConfirmationText] = useState('');
+  const [isResetting, setIsResetting] = useState(false);
+
+  // File Upload
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Файл слишком большой', { description: 'Максимальный размер 5 МБ' });
+      return;
+    }
+
+    try {
+      setIsUploadingLogo(true);
+      const res = await api.uploadLogo(file);
+      
+      const cleanBaseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
+      const fullUrl = `${cleanBaseUrl}${res.url}`;
+      
+      setCustomLogoUrl(fullUrl);
+      toast.success('Логотип загружен');
+    } catch (err: any) {
+      toast.error('Ошибка загрузки', { description: err.message });
+    } finally {
+      setIsUploadingLogo(false);
+      if (logoInputRef.current) logoInputRef.current.value = '';
+    }
+  };
+
   const playPreview = (theme: string) => {
     import('../lib/sounds').then(({ playSound }) => {
       playSound('preview', theme, soundEnabled);
@@ -33,12 +71,8 @@ export function HostSettings() {
   };
 
   useEffect(() => {
-    if (!token) {
-      navigate('/login', { replace: true });
-      return;
-    }
-    loadData(token).then(() => setIsLoaded(true));
-  }, [token, navigate]);
+    loadData().then(() => setIsLoaded(true));
+  }, []);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -48,21 +82,25 @@ export function HostSettings() {
     return () => clearTimeout(timer);
   }, [soundEnabled, soundTheme, customLogoUrl, isLoaded]);
 
-  const loadData = async (t: string) => {
+  const loadData = async () => {
     try {
       setLoading(true);
-      const user = await api.getMe(t);
+      const user = await api.getMe();
       setHasSubscription(user.hasActiveSubscription);
       setEmail(user.email || 'host@example.com');
+      setName(user.name);
+      setAvatarUrl(user.avatarUrl);
+      if (user.subscription) {
+        setSubscriptionEndDate(user.subscription.currentPeriodEnd);
+      }
 
-      const settings = await api.getSettings(t);
+      const settings = await api.getSettings();
       if (settings) {
         setSoundEnabled(settings.soundEnabled);
         setSoundTheme(settings.soundTheme || 'classic');
         setCustomLogoUrl(settings.customLogoUrl || '');
       }
     } catch (err) {
-      localStorage.removeItem('hostToken');
       navigate('/login', { replace: true });
     } finally {
       setLoading(false);
@@ -72,7 +110,7 @@ export function HostSettings() {
   const handleSaveSettings = async (silent = false) => {
     try {
       setSaving(true);
-      await api.updateSettings(token, {
+      await api.updateSettings({
         soundEnabled,
         soundTheme,
         customLogoUrl: customLogoUrl.trim() === '' ? null : customLogoUrl.trim(),
@@ -93,7 +131,7 @@ export function HostSettings() {
     if (!socket.connected) {
       socket.connect();
     }
-    socket.emit('ROOM_CREATE', token, (res: { success: boolean, room?: RoomData, error?: string }) => {
+    socket.emit('ROOM_CREATE', '', (res: { success: boolean, room?: RoomData, error?: string }) => {
       if (res.success && res.room) {
         navigate(`/host/room/${res.room.roomId}`, { state: { room: res.room } });
       } else {
@@ -104,9 +142,27 @@ export function HostSettings() {
     });
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('hostToken');
+  const handleLogout = async () => {
+    await api.logout();
     navigate('/', { replace: true });
+  };
+
+  const handleResetStatistics = async () => {
+    if (resetConfirmationText !== 'ОЧИСТИТЬ') return;
+    
+    try {
+      setIsResetting(true);
+      await api.clearHistory();
+      toast.success('Статистика успешно сброшена');
+      setIsResetDialogOpen(false);
+      setResetConfirmationText('');
+    } catch (err) {
+      toast.error('Ошибка', {
+        description: 'Не удалось сбросить статистику. Пожалуйста, попробуйте позже.'
+      });
+    } finally {
+      setIsResetting(false);
+    }
   };
 
   if (loading) {
@@ -116,29 +172,25 @@ export function HostSettings() {
   return (
     <DashboardLayout
       email={email}
+      name={name}
+      avatarUrl={avatarUrl}
+      customLogoUrl={customLogoUrl}
       hasSubscription={hasSubscription}
+      subscriptionEndDate={subscriptionEndDate}
       onLogout={handleLogout}
       onCreateRoom={handleCreateRoom}
-      onActivated={() => loadData(token)}
+      onActivated={() => loadData()}
+      onProfileUpdated={(newName, newEmail, newAvatarUrl) => {
+        if (newName !== undefined) setName(newName);
+        if (newEmail !== undefined) setEmail(newEmail);
+        if (newAvatarUrl !== undefined) setAvatarUrl(newAvatarUrl);
+      }}
     >
       <div className="p-4 sm:p-6 md:p-10 max-w-4xl mx-auto w-full space-y-8 pb-20">
         <div className="flex items-center justify-between">
           <div className="space-y-1">
             <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">Настройки</h1>
-            <p className="text-sm sm:text-base text-slate-500">Управление параметрами игр и подпиской</p>
-          </div>
-          <div className="text-sm font-medium text-slate-400 flex items-center gap-2 bg-white px-3 py-1.5 rounded-full shadow-sm border border-slate-100">
-            {saving ? (
-              <>
-                <Loader2 size={14} className="animate-spin text-slate-400" />
-                Сохранение...
-              </>
-            ) : (
-              <>
-                <Check size={14} className="text-green-500" />
-                Сохранено
-              </>
-            )}
+            <p className="text-sm sm:text-base text-slate-600">Управление параметрами игр и подпиской</p>
           </div>
         </div>
 
@@ -147,7 +199,7 @@ export function HostSettings() {
           <Card className="border-slate-200 shadow-sm overflow-hidden">
             <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
               <CardTitle className="text-lg flex items-center gap-2">
-                <Volume2 className="text-slate-400" size={20} />
+                <Volume2 className="text-slate-500" size={20} />
                 Звуки и эффекты
               </CardTitle>
               <CardDescription>Настройки, которые будут применяться ко всем новым комнатам</CardDescription>
@@ -156,7 +208,7 @@ export function HostSettings() {
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label className="text-base">Звуковые эффекты</Label>
-                  <p className="text-sm text-slate-500">Включать звуки правильных/неправильных ответов по умолчанию</p>
+                  <p className="text-sm text-slate-600">Включать звуки правильных/неправильных ответов по умолчанию</p>
                 </div>
                 <Switch 
                   checked={soundEnabled} 
@@ -166,7 +218,7 @@ export function HostSettings() {
 
               <div className={`space-y-3 pt-2 transition-all duration-300 ${!soundEnabled ? 'opacity-40 grayscale pointer-events-none' : ''}`}>
                 <Label className="text-base">Библиотека звуков</Label>
-                <p className="text-sm text-slate-500 mb-2">Выберите звуковую тему для ваших мероприятий</p>
+                <p className="text-sm text-slate-600 mb-2">Выберите звуковую тему для ваших мероприятий</p>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div 
@@ -178,9 +230,9 @@ export function HostSettings() {
                   >
                     <div className="flex items-center justify-between mb-1">
                       <div className="font-semibold text-slate-900">Классическая</div>
-                      {soundEnabled && <Volume2 size={16} className="text-slate-400" />}
+                      {soundEnabled && <Volume2 size={16} className="text-slate-500" />}
                     </div>
-                    <div className="text-xs text-slate-500">Стандартные пики и гонги</div>
+                    <div className="text-xs text-slate-600">Стандартные пики и гонги</div>
                   </div>
                   <div 
                     onClick={() => {
@@ -191,9 +243,9 @@ export function HostSettings() {
                   >
                     <div className="flex items-center justify-between mb-1">
                       <div className="font-semibold text-slate-900">ТВ-шоу</div>
-                      {soundEnabled && <Volume2 size={16} className="text-slate-400" />}
+                      {soundEnabled && <Volume2 size={16} className="text-slate-500" />}
                     </div>
-                    <div className="text-xs text-slate-500">Эффекты как в известных телеиграх</div>
+                    <div className="text-xs text-slate-600">Эффекты как в известных телеиграх</div>
                   </div>
                 </div>
               </div>
@@ -212,7 +264,7 @@ export function HostSettings() {
             </CardHeader>
             <CardContent className="p-6 space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="logoUrl">Ссылка на логотип (URL)</Label>
+                <Label htmlFor="logoUrl">Ссылка на логотип (URL) или загрузка с компьютера</Label>
                 <div className="flex gap-3">
                   <Input 
                     id="logoUrl" 
@@ -221,8 +273,24 @@ export function HostSettings() {
                     onChange={(e) => setCustomLogoUrl(e.target.value)}
                     className="flex-1"
                   />
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    className="hidden" 
+                    ref={logoInputRef}
+                    onChange={handleLogoUpload}
+                  />
+                  <Button 
+                    variant="outline" 
+                    onClick={() => logoInputRef.current?.click()}
+                    disabled={isUploadingLogo}
+                    className="shrink-0 flex items-center gap-2"
+                  >
+                    {isUploadingLogo ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                    Загрузить
+                  </Button>
                 </div>
-                <p className="text-xs text-slate-500">Рекомендуемый формат: PNG с прозрачным фоном, пропорции 1:1 или горизонтальные.</p>
+                <p className="text-xs text-slate-600">Рекомендуемый формат: PNG с прозрачным фоном, пропорции 1:1 или горизонтальные.</p>
               </div>
               
               {customLogoUrl && (
@@ -244,7 +312,7 @@ export function HostSettings() {
           <Card className="border-slate-200 shadow-sm overflow-hidden">
             <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
               <CardTitle className="text-lg flex items-center gap-2">
-                <Crown className="text-slate-400" size={20} />
+                <Crown className="text-slate-500" size={20} />
                 Подписка
               </CardTitle>
               <CardDescription>Управление вашим тарифным планом</CardDescription>
@@ -259,20 +327,109 @@ export function HostSettings() {
                       PRO
                     </span>
                   </div>
-                  <p className="text-sm text-slate-500">Доступны все функции для ведущих</p>
+                  <p className="text-sm text-slate-600">Доступны все функции для ведущих</p>
                 </div>
                 <Button variant="outline" className="gap-2 shrink-0 bg-white" onClick={() => window.open('mailto:support@quizpult.ru')}>
                   Управление тарифом
-                  <ExternalLink size={16} className="text-slate-400" />
+                  <ExternalLink size={16} className="text-slate-500" />
                 </Button>
               </div>
-              <p className="text-xs text-center text-slate-400 mt-4">
+              <p className="text-xs text-center text-slate-500 mt-4">
                 Для отмены или изменения подписки, пожалуйста, свяжитесь со службой поддержки.
               </p>
             </CardContent>
           </Card>
+          {/* Danger Zone */}
+          <Card className="border-red-200 shadow-sm overflow-hidden relative">
+            <CardHeader className="bg-red-50/50 border-b border-red-100 pb-4">
+              <CardTitle className="text-lg flex items-center gap-2 text-red-600">
+                <AlertTriangle size={20} />
+                Опасная зона
+              </CardTitle>
+              <CardDescription className="text-red-600/80">
+                Необратимые действия с вашим аккаунтом и данными
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="font-semibold text-slate-900">Сброс статистики</div>
+                  <p className="text-sm text-slate-600">Удаляет всю историю проведенных игр и очищает статистику дашборда.</p>
+                </div>
+                
+                <Button 
+                  variant="destructive" 
+                  onClick={() => setIsResetDialogOpen(true)}
+                  className="shrink-0"
+                >
+                  Сбросить статистику
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
         </div>
       </div>
+
+      {/* Reset Confirmation Dialog */}
+      <Dialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-600 flex items-center gap-2">
+              <AlertTriangle size={20} />
+              Вы уверены?
+            </DialogTitle>
+            <DialogDescription>
+              Это действие <strong>необратимо</strong>. Вся история ваших проведенных игр, включая участников и баллы, будет навсегда удалена из базы данных.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="confirmationText" className="text-slate-700">
+                Для подтверждения введите слово <strong>ОЧИСТИТЬ</strong>
+              </Label>
+              <Input
+                id="confirmationText"
+                placeholder="ОЧИСТИТЬ"
+                value={resetConfirmationText}
+                onChange={(e) => setResetConfirmationText(e.target.value)}
+                autoComplete="off"
+              />
+            </div>
+          </div>
+          
+          <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-0">
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={() => {
+                setIsResetDialogOpen(false);
+                setResetConfirmationText('');
+              }}
+              className="w-full sm:w-auto"
+            >
+              Отмена
+            </Button>
+            <Button 
+              type="button" 
+              variant="destructive"
+              onClick={handleResetStatistics}
+              disabled={resetConfirmationText !== 'ОЧИСТИТЬ' || isResetting}
+              className="w-full sm:w-auto"
+            >
+              {isResetting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Удаление...
+                </>
+              ) : (
+                'Я понимаю, удалить данные'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

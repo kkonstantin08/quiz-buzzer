@@ -28,13 +28,6 @@ export function HostAuth({ defaultIsLogin = true }: { defaultIsLogin?: boolean }
     setIsLogin(defaultIsLogin);
   }, [defaultIsLogin]);
 
-  useEffect(() => {
-    const token = localStorage.getItem('hostToken');
-    if (token) {
-      navigate('/dashboard', { replace: true });
-    }
-  }, [navigate]);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -61,11 +54,10 @@ export function HostAuth({ defaultIsLogin = true }: { defaultIsLogin?: boolean }
     }
 
     try {
-      const data = isLogin 
+      isLogin 
         ? await api.login(email, password)
         : await api.register(email, password);
-      
-      localStorage.setItem('hostToken', data.token);
+      // Cookie is set server-side; just navigate
       navigate('/dashboard', { replace: true });
     } catch (err: any) {
       setError(err.message);
@@ -75,17 +67,17 @@ export function HostAuth({ defaultIsLogin = true }: { defaultIsLogin?: boolean }
   };
 
   return (
-    <div className="relative flex flex-col items-center justify-center min-h-[100dvh] bg-slate-50 p-4 overflow-hidden">
+    <main className="relative flex flex-col items-center justify-center min-h-[100dvh] bg-slate-50 p-4 overflow-hidden">
       {/* Background decoration matching Landing Page */}
       <div className="absolute inset-0 pointer-events-none flex items-center justify-center overflow-hidden">
         <div className="absolute w-[400px] h-[400px] bg-blue-200/40 rounded-full mix-blend-multiply blur-[80px] translate-x-10 -translate-y-20"></div>
         <div className="absolute w-[300px] h-[300px] bg-red-200/40 rounded-full mix-blend-multiply blur-[80px] -translate-x-20 translate-y-20"></div>
         
         {/* Floating geometric confetti */}
-        <div className="absolute top-[15%] left-[10%] md:left-[20%] w-8 h-8 rounded-full bg-yellow-300 opacity-60 animate-bounce" style={{ animationDuration: '3s' }}></div>
-        <div className="absolute bottom-[20%] left-[5%] md:left-[25%] w-6 h-6 rounded-lg bg-blue-300 opacity-60 transform rotate-45 animate-pulse" style={{ animationDuration: '4s' }}></div>
-        <div className="absolute top-[25%] right-[10%] md:right-[20%] w-10 h-10 rounded-full bg-red-300 opacity-50 animate-bounce" style={{ animationDelay: '0.5s', animationDuration: '3.5s' }}></div>
-        <div className="absolute bottom-[15%] right-[5%] md:right-[25%] w-7 h-7 rounded-full bg-green-300 opacity-60 animate-pulse" style={{ animationDelay: '1s', animationDuration: '2.5s' }}></div>
+        <div className="hidden md:block absolute top-[15%] left-[10%] md:left-[20%] w-8 h-8 rounded-full bg-yellow-300 opacity-60 animate-bounce" style={{ animationDuration: '3s' }}></div>
+        <div className="hidden md:block absolute bottom-[20%] left-[5%] md:left-[25%] w-6 h-6 rounded-lg bg-blue-300 opacity-60 transform rotate-45 animate-pulse" style={{ animationDuration: '4s' }}></div>
+        <div className="hidden md:block absolute top-[25%] right-[10%] md:right-[20%] w-10 h-10 rounded-full bg-red-300 opacity-50 animate-bounce" style={{ animationDelay: '0.5s', animationDuration: '3.5s' }}></div>
+        <div className="hidden md:block absolute bottom-[15%] right-[5%] md:right-[25%] w-7 h-7 rounded-full bg-green-300 opacity-60 animate-pulse" style={{ animationDelay: '1s', animationDuration: '2.5s' }}></div>
       </div>
 
       <div className="mb-8 flex items-center justify-center cursor-pointer gap-3 relative z-10" onClick={() => navigate('/')}>
@@ -128,8 +120,9 @@ export function HostAuth({ defaultIsLogin = true }: { defaultIsLogin?: boolean }
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-0 h-full flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors"
+                className="absolute right-3 top-0 h-full flex items-center justify-center text-slate-500 hover:text-slate-600 transition-colors"
                 tabIndex={-1}
+                aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"}
               >
                 {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
@@ -148,8 +141,9 @@ export function HostAuth({ defaultIsLogin = true }: { defaultIsLogin?: boolean }
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-0 h-full flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors"
+                  className="absolute right-3 top-0 h-full flex items-center justify-center text-slate-500 hover:text-slate-600 transition-colors"
                   tabIndex={-1}
+                  aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"}
                 >
                   {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>
@@ -169,6 +163,6 @@ export function HostAuth({ defaultIsLogin = true }: { defaultIsLogin?: boolean }
           </Button>
         </CardFooter>
       </Card>
-    </div>
+    </main>
   );
 }

@@ -7,12 +7,12 @@ const historyRouter = Router();
 
 // Middleware to authenticate host
 const authenticate = (req: any, res: any, next: any) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    return res.status(401).json({ error: 'No token provided' });
+  let token = req.cookies?.hostToken;
+  if (!token) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token provided' });
+    token = authHeader.split(' ')[1];
   }
-
-  const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, config.jwtSecret) as { userId: string };
     req.userId = decoded.userId;
@@ -35,6 +35,17 @@ historyRouter.get('/', authenticate, async (req: any, res: any) => {
     });
 
     res.json({ history, count });
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+historyRouter.delete('/', authenticate, async (req: any, res: any) => {
+  try {
+    await prisma.gameHistory.deleteMany({
+      where: { hostUserId: req.userId }
+    });
+    res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Internal server error' });
   }

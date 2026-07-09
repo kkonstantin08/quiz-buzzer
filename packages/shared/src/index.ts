@@ -26,6 +26,7 @@ export interface RoomData {
   roundState: RoomState;
   firstBuzzerId: string | null;
   createdAt: number;
+  customLogoUrl?: string | null;
 }
 
 // Client -> Server Events
@@ -33,11 +34,12 @@ export interface ClientToServerEvents {
   ROOM_CREATE: (token: string, callback: (res: { success: boolean, room?: RoomData, error?: string }) => void) => void;
   ROOM_JOIN: (data: { roomCode: string, displayName: string }, callback: (res: { success: boolean, participant?: Participant, room?: RoomData, error?: string }) => void) => void;
   ROUND_START: (callback?: (res: { success: boolean, error?: string }) => void) => void;
-  BUZZ_SUBMIT: (callback?: (res: { success: boolean, error?: string }) => void) => void;
+  BUZZ_SUBMIT: (data: { timestamp: number }, callback?: (res: { success: boolean, error?: string }) => void) => void;
   FIRST_REVEAL: (callback?: (res: { success: boolean, error?: string }) => void) => void;
   ROUND_RESET: (data?: { winnerId?: string | null }, callback?: (res: { success: boolean, error?: string }) => void) => void;
   ROOM_FINISH: (callback?: (res: { success: boolean, error?: string }) => void) => void;
   ROOM_LEAVE: () => void;
+  SYNC_TIME: (clientTime: number, callback: (serverTime: number) => void) => void;
 }
 
 // Server -> Client Events

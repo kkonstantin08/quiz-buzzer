@@ -4,24 +4,67 @@ import { prisma } from '../prisma';
 import { config } from '../config';
 import { rooms, socketToRoom, createRoom, getRoomByCode } from '../rooms';
 import { RoomState, ClientToServerEvents, ServerToClientEvents, RoomData } from 'shared';
+import xss from 'xss';
 
 export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEvents>) {
+  // Grace period buffers for each room
+  const buzzBuffers = new Map<string, { timer: NodeJS.Timeout, buzzes: { socketId: string, timestamp: number }[] }>();
+
+  // Authenticate socket connections via httpOnly cookie or explicit auth token
+  io.use((socket, next) => {
+    // Try explicit token from handshake auth first (legacy)
+    let token: string | undefined = socket.handshake.auth?.token;
+
+    // Fall back to httpOnly cookie sent with the HTTP upgrade request
+    if (!token) {
+      const cookieStr = socket.handshake.headers.cookie || '';
+      const match = cookieStr.match(/(?:^|;\s*)hostToken=([^;]+)/);
+      if (match) token = decodeURIComponent(match[1]);
+    }
+
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, config.jwtSecret) as { userId: string };
+        socket.data.userId = decoded.userId;
+      } catch {
+        // Ignore invalid tokens — participants don't need auth
+      }
+    }
+    next();
+  });
+
   io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>) => {
     
+    // Time Sync
+    // @ts-ignore (because the event may not be typed perfectly in this server setup yet)
+    socket.on('SYNC_TIME', (clientTime: number, callback: (serverTime: number) => void) => {
+      if (callback) callback(Date.now());
+    });
+
     // Create Room (Host only)
     socket.on('ROOM_CREATE', async (token, callback) => {
       try {
-        const decoded = jwt.verify(token, config.jwtSecret) as { userId: string };
+        // Prefer userId already set by cookie middleware; fall back to explicit token
+        let userId = socket.data.userId;
+        if (!userId && token) {
+          const decoded = jwt.verify(token, config.jwtSecret) as { userId: string };
+          userId = decoded.userId;
+        }
+        if (!userId) {
+          return callback({ success: false, error: 'Authentication required' });
+        }
+
         const user = await prisma.hostUser.findUnique({
-          where: { id: decoded.userId },
-          include: { subscription: true },
+          where: { id: userId },
+          include: { subscription: true, settings: true },
         });
 
         if (!user || !user.subscription || user.subscription.status !== 'active' || user.subscription.currentPeriodEnd < new Date()) {
           return callback({ success: false, error: 'Для создания комнаты нужна активная подписка' });
         }
 
-        const room = createRoom(user.id, socket.id);
+        socket.data.userId = userId;
+        const room = createRoom(userId, socket.id, user.settings?.customLogoUrl);
         socket.join(room.roomId);
         socketToRoom.set(socket.id, room.roomId);
         callback({ success: true, room });
@@ -37,7 +80,7 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       }
 
       // Sanitize displayName to prevent injection
-      const safeDisplayName = displayName.replace(/[<>]/g, '').trim().substring(0, 20);
+      const safeDisplayName = xss(displayName).trim().substring(0, 20);
       if (safeDisplayName.length === 0) {
         return callback({ success: false, error: 'Invalid name' });
       }
@@ -79,8 +122,14 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       const room = rooms.get(roomId);
       if (!room) return callback && callback({ success: false, error: 'Room not found' });
 
-      if (room.hostSocketId !== socket.id) {
+      if (!socket.data.userId || room.hostUserId !== socket.data.userId) {
         return callback && callback({ success: false, error: 'Unauthorized: Only host can perform this action' });
+      }
+
+      const existingBuffer = buzzBuffers.get(roomId);
+      if (existingBuffer) {
+        clearTimeout(existingBuffer.timer);
+        buzzBuffers.delete(roomId);
       }
 
       room.roundState = RoomState.ACTIVE;
@@ -95,37 +144,62 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
     const buzzRateLimits = new Map<string, number>();
 
     // Submit Buzz (Participant)
-    socket.on('BUZZ_SUBMIT', (callback) => {
+    // @ts-ignore
+    socket.on('BUZZ_SUBMIT', (data: any, callback?: any) => {
+      const timestamp = data && typeof data.timestamp === 'number' ? data.timestamp : Date.now();
+      const actualCallback = typeof data === 'function' ? data : callback;
+
       const now = Date.now();
       const lastBuzz = buzzRateLimits.get(socket.id) || 0;
       if (now - lastBuzz < 500) { // 500ms limit
-        return callback && callback({ success: false, error: 'Too many requests' });
+        return actualCallback && actualCallback({ success: false, error: 'Too many requests' });
       }
       buzzRateLimits.set(socket.id, now);
 
       const roomId = socketToRoom.get(socket.id);
-      if (!roomId) return callback && callback({ success: false, error: 'Not in a room' });
+      if (!roomId) return actualCallback && actualCallback({ success: false, error: 'Not in a room' });
       
       const room = rooms.get(roomId);
-      if (!room) return callback && callback({ success: false, error: 'Room not found' });
+      if (!room) return actualCallback && actualCallback({ success: false, error: 'Room not found' });
 
       if (room.roundState !== RoomState.ACTIVE) {
-        return callback && callback({ success: false, error: 'Round is not active' });
+        return actualCallback && actualCallback({ success: false, error: 'Round is not active' });
       }
 
-      // First one wins
+      // If firstBuzzerId is already set, the round is definitely over.
       if (room.firstBuzzerId) {
-        return callback && callback({ success: false, error: 'Too late' });
+        return actualCallback && actualCallback({ success: false, error: 'Too late' });
       }
 
-      room.firstBuzzerId = socket.id;
-      room.roundState = RoomState.REVEALED;
+      let buffer = buzzBuffers.get(roomId);
+      if (!buffer) {
+        buffer = {
+          buzzes: [],
+          timer: setTimeout(() => {
+            const b = buzzBuffers.get(roomId);
+            if (b && b.buzzes.length > 0) {
+              b.buzzes.sort((a, b) => a.timestamp - b.timestamp);
+              const winner = b.buzzes[0];
 
-      io.to(roomId).emit('ROOM_STATE_UPDATED', room);
-      io.to(roomId).emit('ROUND_LOCKED'); // Locks everyone optimistically
-      io.to(roomId).emit('FIRST_REVEALED', room.firstBuzzerId);
+              const currentRoom = rooms.get(roomId);
+              if (currentRoom && currentRoom.roundState === RoomState.ACTIVE) {
+                currentRoom.firstBuzzerId = winner.socketId;
+                currentRoom.roundState = RoomState.REVEALED;
 
-      if (callback) callback({ success: true });
+                io.to(roomId).emit('ROOM_STATE_UPDATED', currentRoom);
+                io.to(roomId).emit('ROUND_LOCKED');
+                io.to(roomId).emit('FIRST_REVEALED', currentRoom.firstBuzzerId);
+              }
+            }
+            buzzBuffers.delete(roomId);
+          }, 250) // 250ms grace period
+        };
+        buzzBuffers.set(roomId, buffer);
+      }
+
+      buffer.buzzes.push({ socketId: socket.id, timestamp });
+
+      if (actualCallback) actualCallback({ success: true });
     });
 
     // Reveal First (Host)
@@ -136,7 +210,7 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       const room = rooms.get(roomId);
       if (!room) return callback && callback({ success: false, error: 'Room not found' });
 
-      if (room.hostSocketId !== socket.id) {
+      if (!socket.data.userId || room.hostUserId !== socket.data.userId) {
         return callback && callback({ success: false, error: 'Unauthorized: Only host can perform this action' });
       }
 
@@ -162,13 +236,23 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       const room = rooms.get(roomId);
       if (!room) return callback && callback({ success: false, error: 'Room not found' });
 
-      if (room.hostSocketId !== socket.id) {
+      if (!socket.data.userId || room.hostUserId !== socket.data.userId) {
         return callback && callback({ success: false, error: 'Unauthorized: Only host can perform this action' });
       }
 
       if (data?.winnerId) {
+        // Security: only the actual first buzzer can be declared winner
+        if (data.winnerId !== room.firstBuzzerId) {
+          return callback && callback({ success: false, error: 'Invalid winner: does not match first buzzer' });
+        }
         const winner = room.participants.find(p => p.id === data.winnerId);
         if (winner) winner.score += 1;
+      }
+
+      const existingBuffer = buzzBuffers.get(roomId);
+      if (existingBuffer) {
+        clearTimeout(existingBuffer.timer);
+        buzzBuffers.delete(roomId);
       }
 
       room.roundState = RoomState.WAITING;
@@ -188,7 +272,7 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       const room = rooms.get(roomId);
       if (!room) return callback && callback({ success: false, error: 'Room not found' });
 
-      if (room.hostSocketId !== socket.id) {
+      if (!socket.data.userId || room.hostUserId !== socket.data.userId) {
         return callback && callback({ success: false, error: 'Unauthorized: Only host can perform this action' });
       }
 
@@ -211,18 +295,20 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       }
 
       // Save to history
-      try {
-        await prisma.gameHistory.create({
-          data: {
-            hostUserId: room.hostUserId,
-            roomCode: room.roomCode,
-            winnerName: winnerName || 'Ничья / Нет победителя',
-            winnerScore,
-            participants: room.participants.length,
-          }
-        });
-      } catch (err) {
-        console.error('Failed to save game history:', err);
+      if (room.participants.length > 0) {
+        try {
+          await prisma.gameHistory.create({
+            data: {
+              hostUserId: room.hostUserId,
+              roomCode: room.roomCode,
+              winnerName: winnerName || 'Ничья / Нет победителя',
+              winnerScore,
+              participants: room.participants.length,
+            }
+          });
+        } catch (err) {
+          console.error('Failed to save game history:', err);
+        }
       }
 
       io.to(roomId).emit('ROOM_STATE_UPDATED', room);
