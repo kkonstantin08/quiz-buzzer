@@ -27,6 +27,7 @@ export interface RoomData {
   firstBuzzerId: string | null;
   createdAt: number;
   customLogoUrl?: string | null;
+  unlockAt?: number | null;
 }
 
 // Client -> Server Events

@@ -21,6 +21,24 @@ export function ParticipantRoom() {
   const [isBuzzedLocal, setIsBuzzedLocal] = useState(false);
   const [winnerInfo, setWinnerInfo] = useState<{winnerName: string | null, winnerScore: number} | null>(null);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [unlockReady, setUnlockReady] = useState(false);
+
+  useEffect(() => {
+    if (room?.roundState === RoomState.ACTIVE && room.unlockAt) {
+      const delay = room.unlockAt - timeSync.getServerTime();
+      if (delay > 0) {
+        setUnlockReady(false);
+        const timer = setTimeout(() => {
+          setUnlockReady(true);
+        }, delay);
+        return () => clearTimeout(timer);
+      } else {
+        setUnlockReady(true);
+      }
+    } else {
+      setUnlockReady(false);
+    }
+  }, [room?.roundState, room?.unlockAt]);
 
   useEffect(() => {
     if (roomCode) {
@@ -111,7 +129,8 @@ export function ParticipantRoom() {
   }, [room]);
 
   const handleBuzz = (e?: React.PointerEvent) => {
-    if (room?.roundState !== RoomState.ACTIVE || isBuzzedLocal) return;
+    const isEffectivelyActive = room?.roundState === RoomState.ACTIVE && (!room.unlockAt || unlockReady);
+    if (!isEffectivelyActive || isBuzzedLocal) return;
     
     // Trigger vibration for immediate haptic feedback
     if (navigator.vibrate) {
@@ -183,8 +202,9 @@ export function ParticipantRoom() {
     );
   }
 
-  const isWaiting = room.roundState === RoomState.WAITING;
-  const isActive = room.roundState === RoomState.ACTIVE;
+  const isEffectivelyActive = room.roundState === RoomState.ACTIVE && (!room.unlockAt || unlockReady);
+  const isWaiting = room.roundState === RoomState.WAITING || (room.roundState === RoomState.ACTIVE && !isEffectivelyActive);
+  const isActive = isEffectivelyActive;
   const isLocked = room.roundState === RoomState.BUZZED_HIDDEN || room.roundState === RoomState.REVEALED;
 
   let btnColor = "bg-slate-400";

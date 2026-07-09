@@ -2,6 +2,7 @@ import React, { Suspense } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Toaster } from '@/components/ui/sonner';
 import { Loader2 } from 'lucide-react';
+import { CookieBanner } from './components/CookieBanner';
 
 const LandingPage = React.lazy(() => import('./pages/LandingPage').then(m => ({ default: m.LandingPage })));
 const HostAuth = React.lazy(() => import('./pages/HostAuth').then(m => ({ default: m.HostAuth })));
@@ -20,6 +21,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Toaster position="top-center" />
+      <CookieBanner />
       <Suspense fallback={<PageLoader />}>
         <Routes>
           <Route path="/" element={<LandingPage />} />

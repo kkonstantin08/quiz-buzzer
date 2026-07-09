@@ -12,17 +12,17 @@ const LogoIcon = () => (
 export function LandingPage() {
   return (
     <div className="min-h-[100dvh] lg:h-[100dvh] overflow-x-hidden lg:overflow-hidden bg-slate-50 flex flex-col">
-      <header className="px-6 py-4 flex items-center justify-between bg-white shadow-sm border-b relative z-20 shrink-0">
-        <div className="flex items-center gap-3">
+      <header className="px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between bg-white shadow-sm border-b relative z-20 shrink-0 gap-2">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <LogoIcon />
-          <h1 className="text-2xl font-black text-slate-800 tracking-tight">КвизПульт</h1>
+          <h1 className="text-lg sm:text-2xl font-black text-slate-800 tracking-tight">КвизПульт</h1>
         </div>
-        <nav className="flex items-center gap-4">
-          <Link to="/login" className="text-sm font-medium text-slate-600 hover:text-slate-900">
+        <nav className="flex items-center gap-3 sm:gap-4 shrink-0">
+          <Link to="/login" className="text-xs sm:text-sm font-medium text-slate-600 hover:text-slate-900">
             Войти
           </Link>
           <Link to="/register">
-            <Button size="sm">Регистрация</Button>
+            <Button size="sm" className="h-8 px-3 text-xs sm:h-9 sm:px-4 sm:text-sm">Регистрация</Button>
           </Link>
         </nav>
       </header>

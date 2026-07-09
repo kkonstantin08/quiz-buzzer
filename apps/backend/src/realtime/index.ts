@@ -134,6 +134,7 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
 
       room.roundState = RoomState.ACTIVE;
       room.firstBuzzerId = null;
+      room.unlockAt = Date.now() + 500; // Scheduled unlock buffer
       
       io.to(roomId).emit('ROOM_STATE_UPDATED', room);
       io.to(roomId).emit('ROUND_STARTED');
@@ -164,6 +165,10 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
 
       if (room.roundState !== RoomState.ACTIVE) {
         return actualCallback && actualCallback({ success: false, error: 'Round is not active' });
+      }
+
+      if (room.unlockAt && timestamp < room.unlockAt) {
+        return actualCallback && actualCallback({ success: false, error: 'Too early (false start)' });
       }
 
       // If firstBuzzerId is already set, the round is definitely over.
@@ -257,6 +262,7 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
 
       room.roundState = RoomState.WAITING;
       room.firstBuzzerId = null;
+      room.unlockAt = null;
 
       io.to(roomId).emit('ROOM_STATE_UPDATED', room);
       io.to(roomId).emit('ROUND_RESET_DONE');
