@@ -130,7 +130,7 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
 
       room.roundState = RoomState.ACTIVE;
       room.firstBuzzerId = null;
-      room.unlockAt = Date.now() + 500; // Scheduled unlock buffer
+      room.unlockAt = Date.now() + 150; // Scheduled unlock buffer
       
       io.to(roomId).emit('ROOM_STATE_UPDATED', room);
       io.to(roomId).emit('ROUND_STARTED');
