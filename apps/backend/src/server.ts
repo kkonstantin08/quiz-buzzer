@@ -16,6 +16,7 @@ import { setupSocketIO } from './realtime';
 import { ClientToServerEvents, ServerToClientEvents } from 'shared';
 
 const app = express();
+app.set('trust proxy', true);
 const server = http.createServer(app);
 
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
