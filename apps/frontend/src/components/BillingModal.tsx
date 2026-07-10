@@ -12,10 +12,7 @@ export function BillingModal({ onActivated }: { onActivated: () => void }) {
     setLoading(true);
     setError('');
     try {
-      const BASE_URL = import.meta.env.DEV 
-        ? `http://${window.location.hostname}:3001/api`
-        : '/api';
-      const response = await fetch(`${BASE_URL}/billing/activate-free`, {
+      const response = await fetch('/api/billing/activate-free', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include', // httpOnly cookie sent automatically

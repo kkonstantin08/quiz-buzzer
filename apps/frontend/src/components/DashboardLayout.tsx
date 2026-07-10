@@ -104,7 +104,7 @@ export function DashboardLayout({
   const displayName = name || email;
   const initial = displayName ? displayName.charAt(0).toUpperCase() : 'U';
   // Use absolute URL for avatar if it's relative
-  const BASE_URL = import.meta.env.DEV ? `http://${window.location.hostname}:3001` : '/api';
+  const BASE_URL = import.meta.env.VITE_API_URL || '/api';
   const cleanBaseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
   const SERVER_URL = cleanBaseUrl.endsWith('/api') ? cleanBaseUrl.slice(0, -4) : cleanBaseUrl;
   const avatarSrc = avatarUrl ? (avatarUrl.startsWith('http') ? avatarUrl : `${SERVER_URL}${avatarUrl}`) : null;
