@@ -105,6 +105,7 @@ export function HostRoom() {
   };
 
   const handleClearScoreboard = () => {
+    if (!roomId) return;
     socket.emit('HOST_CLEAR_SCORES', { roomId });
   };
 
