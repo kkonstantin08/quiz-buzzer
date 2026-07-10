@@ -127,7 +127,7 @@ export function DashboardLayout({
         <div className="p-4 shrink-0">
           <Button onClick={onCreateRoom} className="w-full justify-start gap-2 h-11 bg-slate-900 hover:bg-slate-800 text-white shadow-md">
             <Plus size={18} />
-            Новая игра
+            Создать игру
           </Button>
         </div>
 
@@ -301,9 +301,18 @@ export function DashboardLayout({
               </>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <Crown size={16} className="text-amber-500" />
-            <Button variant="ghost" size="icon" onClick={() => navigate(isDashboard ? '/settings' : '/dashboard')} className="text-slate-600">
+          <div className="flex items-center gap-1">
+            {hasSubscription && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="text-amber-500 hover:text-amber-600 hover:bg-amber-50"
+                onClick={() => toast.success('Тариф PRO активен', { description: 'Все премиум-функции разблокированы!' })}
+              >
+                <Crown size={20} />
+              </Button>
+            )}
+            <Button variant="ghost" size="icon" onClick={() => navigate(isDashboard ? '/settings' : '/dashboard')} className="text-slate-600 hover:bg-slate-100">
               {isDashboard ? <Settings size={20} /> : <LayoutDashboard size={20} />}
             </Button>
             <Button variant="ghost" size="icon" onClick={() => setShowLogoutDialog(true)} className="text-slate-600 hover:text-red-600">
@@ -315,18 +324,18 @@ export function DashboardLayout({
         {children}
 
         <Dialog open={showLogoutDialog} onOpenChange={setShowLogoutDialog}>
-          <DialogContent className="sm:max-w-[425px]">
+          <DialogContent className="w-[95vw] max-w-[425px] p-6 rounded-2xl">
             <DialogHeader>
-              <DialogTitle>Выход из аккаунта</DialogTitle>
-              <DialogDescription>
+              <DialogTitle className="text-xl sm:text-2xl font-bold">Выход из аккаунта</DialogTitle>
+              <DialogDescription className="text-sm sm:text-base mt-1.5">
                 Вы уверены, что хотите выйти?
               </DialogDescription>
             </DialogHeader>
-            <div className="flex justify-end gap-3 mt-4">
-              <Button variant="outline" onClick={() => setShowLogoutDialog(false)}>
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 mt-6">
+              <Button variant="outline" className="w-full sm:w-auto h-12 sm:h-10 text-base sm:text-sm" onClick={() => setShowLogoutDialog(false)}>
                 Отмена
               </Button>
-              <Button variant="destructive" onClick={() => {
+              <Button variant="destructive" className="w-full sm:w-auto h-12 sm:h-10 text-base sm:text-sm" onClick={() => {
                 setShowLogoutDialog(false);
                 onLogout();
               }}>

@@ -8,7 +8,7 @@ roomsRouter.get('/info/:code', (req, res) => {
   const room = getRoomByCode(roomCode);
   
   if (!room) {
-    return res.status(404).json({ error: 'Room not found' });
+    return res.status(404).json({ error: 'Комната не найдена' });
   }
 
   return res.json({

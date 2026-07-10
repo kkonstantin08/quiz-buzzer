@@ -9,7 +9,7 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { QrCode, Timer, Crown, LogOut } from 'lucide-react';
+import { QrCode, Timer, Crown, LogOut, Check } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { playSound } from '../lib/sounds';
 import { api, BASE_URL } from '../services/api';
@@ -22,6 +22,7 @@ export function HostRoom() {
   const [firstBuzzerName, setFirstBuzzerName] = useState<string>('');
   const [qrOpen, setQrOpen] = useState(false);
   const [finishOpen, setFinishOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [winnerInfo, setWinnerInfo] = useState<{winnerName: string | null, winnerScore: number} | null>(null);
   const soundSettingsRef = React.useRef({ enabled: true, theme: 'classic' });
 
@@ -103,6 +104,31 @@ export function HostRoom() {
     handleReset(null);
   };
 
+  const handleClearScoreboard = () => {
+    socket.emit('HOST_CLEAR_SCORES', { roomId });
+  };
+
+  const handleCopy = () => {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(joinUrl);
+    } else {
+      const textArea = document.createElement("textarea");
+      textArea.value = joinUrl;
+      textArea.style.position = "absolute";
+      textArea.style.opacity = "0";
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+      } catch (err) {
+        console.error('Fallback copy failed', err);
+      }
+      document.body.removeChild(textArea);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   const handleFinishRoom = () => {
     socket.emit('ROOM_FINISH');
     setFinishOpen(false);
@@ -174,8 +200,7 @@ export function HostRoom() {
               className="max-h-12 object-contain" 
             />
           )}
-          <div>
-            <p className="text-sm font-bold text-slate-600 tracking-wide mb-1">Управление игрой</p>
+          <div className="flex items-center h-full">
             <h1 className="text-3xl font-bold text-primary tracking-wide leading-none">
               Комната активна
             </h1>
@@ -202,8 +227,19 @@ export function HostRoom() {
               </div>
               <div className="flex gap-2 w-full mt-2">
                 <Input value={joinUrl} readOnly className="bg-muted" />
-                <Button onClick={() => navigator.clipboard.writeText(joinUrl)} variant="secondary">
-                  Копировать
+                <Button 
+                  onClick={handleCopy} 
+                  variant={copied ? "default" : "secondary"}
+                  className={copied ? "bg-green-600 hover:bg-green-700 text-white transition-colors" : ""}
+                >
+                  {copied ? (
+                    <>
+                      <Check className="w-4 h-4 mr-2" />
+                      Скопировано!
+                    </>
+                  ) : (
+                    "Копировать"
+                  )}
                 </Button>
               </div>
             </DialogContent>
@@ -299,7 +335,7 @@ export function HostRoom() {
         {/* Participants Table */}
         <Card className="shadow-lg order-2">
           <CardHeader>
-            <CardTitle>Участники ({room.participants.length}/8)</CardTitle>
+            <CardTitle>Участники ({room.participants.length})</CardTitle>
           </CardHeader>
           <CardContent>
             {room.participants.length === 0 ? (

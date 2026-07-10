@@ -51,7 +51,7 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
           userId = decoded.userId;
         }
         if (!userId) {
-          return callback({ success: false, error: 'Authentication required' });
+          return callback({ success: false, error: 'Требуется авторизация' });
         }
 
         const user = await prisma.hostUser.findUnique({
@@ -69,29 +69,25 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
         socketToRoom.set(socket.id, room.roomId);
         callback({ success: true, room });
       } catch (error) {
-        callback({ success: false, error: 'Authentication failed' });
+        callback({ success: false, error: 'Ошибка авторизации' });
       }
     });
 
     // Join Room (Participant)
     socket.on('ROOM_JOIN', ({ roomCode, displayName }, callback) => {
       if (!displayName || displayName.trim().length === 0) {
-        return callback({ success: false, error: 'Name is required' });
+        return callback({ success: false, error: 'Введите имя' });
       }
 
       // Sanitize displayName to prevent injection
       const safeDisplayName = xss(displayName).trim().substring(0, 20);
       if (safeDisplayName.length === 0) {
-        return callback({ success: false, error: 'Invalid name' });
+        return callback({ success: false, error: 'Недопустимое имя' });
       }
 
       const room = getRoomByCode(roomCode);
       if (!room) {
-        return callback({ success: false, error: 'Room not found' });
-      }
-
-      if (room.participants.length >= 8) {
-        return callback({ success: false, error: 'Комната заполнена' });
+        return callback({ success: false, error: 'Комната не найдена' });
       }
 
       const participant = {
@@ -117,13 +113,13 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
     // Start Round (Host)
     socket.on('ROUND_START', (callback) => {
       const roomId = socketToRoom.get(socket.id);
-      if (!roomId) return callback && callback({ success: false, error: 'Not in a room' });
+      if (!roomId) return callback && callback({ success: false, error: 'Вы не в комнате' });
       
       const room = rooms.get(roomId);
-      if (!room) return callback && callback({ success: false, error: 'Room not found' });
+      if (!room) return callback && callback({ success: false, error: 'Комната не найдена' });
 
       if (!socket.data.userId || room.hostUserId !== socket.data.userId) {
-        return callback && callback({ success: false, error: 'Unauthorized: Only host can perform this action' });
+        return callback && callback({ success: false, error: 'Только ведущий может выполнить это действие' });
       }
 
       const existingBuffer = buzzBuffers.get(roomId);
@@ -153,27 +149,27 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       const now = Date.now();
       const lastBuzz = buzzRateLimits.get(socket.id) || 0;
       if (now - lastBuzz < 500) { // 500ms limit
-        return actualCallback && actualCallback({ success: false, error: 'Too many requests' });
+        return actualCallback && actualCallback({ success: false, error: 'Слишком много запросов' });
       }
       buzzRateLimits.set(socket.id, now);
 
       const roomId = socketToRoom.get(socket.id);
-      if (!roomId) return actualCallback && actualCallback({ success: false, error: 'Not in a room' });
+      if (!roomId) return actualCallback && actualCallback({ success: false, error: 'Вы не в комнате' });
       
       const room = rooms.get(roomId);
-      if (!room) return actualCallback && actualCallback({ success: false, error: 'Room not found' });
+      if (!room) return actualCallback && actualCallback({ success: false, error: 'Комната не найдена' });
 
       if (room.roundState !== RoomState.ACTIVE) {
-        return actualCallback && actualCallback({ success: false, error: 'Round is not active' });
+        return actualCallback && actualCallback({ success: false, error: 'Раунд еще не начался' });
       }
 
       if (room.unlockAt && timestamp < room.unlockAt) {
-        return actualCallback && actualCallback({ success: false, error: 'Too early (false start)' });
+        return actualCallback && actualCallback({ success: false, error: 'Фальстарт! Вы нажали слишком рано' });
       }
 
       // If firstBuzzerId is already set, the round is definitely over.
       if (room.firstBuzzerId) {
-        return actualCallback && actualCallback({ success: false, error: 'Too late' });
+        return actualCallback && actualCallback({ success: false, error: 'Слишком поздно' });
       }
 
       let buffer = buzzBuffers.get(roomId);
@@ -210,17 +206,17 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
     // Reveal First (Host)
     socket.on('FIRST_REVEAL', (callback) => {
       const roomId = socketToRoom.get(socket.id);
-      if (!roomId) return callback && callback({ success: false, error: 'Not in a room' });
+      if (!roomId) return callback && callback({ success: false, error: 'Вы не в комнате' });
       
       const room = rooms.get(roomId);
-      if (!room) return callback && callback({ success: false, error: 'Room not found' });
+      if (!room) return callback && callback({ success: false, error: 'Комната не найдена' });
 
       if (!socket.data.userId || room.hostUserId !== socket.data.userId) {
-        return callback && callback({ success: false, error: 'Unauthorized: Only host can perform this action' });
+        return callback && callback({ success: false, error: 'Только ведущий может выполнить это действие' });
       }
 
       if (room.roundState !== RoomState.BUZZED_HIDDEN) {
-        return callback && callback({ success: false, error: 'Cannot reveal now' });
+        return callback && callback({ success: false, error: 'Нельзя открыть ответ сейчас' });
       }
 
       room.roundState = RoomState.REVEALED;
@@ -236,19 +232,19 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       const callback = typeof dataOrCallback === 'function' ? dataOrCallback : maybeCallback;
 
       const roomId = socketToRoom.get(socket.id);
-      if (!roomId) return callback && callback({ success: false, error: 'Not in a room' });
+      if (!roomId) return callback && callback({ success: false, error: 'Вы не в комнате' });
       
       const room = rooms.get(roomId);
-      if (!room) return callback && callback({ success: false, error: 'Room not found' });
+      if (!room) return callback && callback({ success: false, error: 'Комната не найдена' });
 
       if (!socket.data.userId || room.hostUserId !== socket.data.userId) {
-        return callback && callback({ success: false, error: 'Unauthorized: Only host can perform this action' });
+        return callback && callback({ success: false, error: 'Только ведущий может выполнить это действие' });
       }
 
       if (data?.winnerId) {
         // Security: only the actual first buzzer can be declared winner
         if (data.winnerId !== room.firstBuzzerId) {
-          return callback && callback({ success: false, error: 'Invalid winner: does not match first buzzer' });
+          return callback && callback({ success: false, error: 'Неверный победитель' });
         }
         const winner = room.participants.find(p => p.id === data.winnerId);
         if (winner) winner.score += 1;
@@ -273,17 +269,17 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
     // Finish Room (Host)
     socket.on('ROOM_FINISH', async (callback) => {
       const roomId = socketToRoom.get(socket.id);
-      if (!roomId) return callback && callback({ success: false, error: 'Not in a room' });
+      if (!roomId) return callback && callback({ success: false, error: 'Вы не в комнате' });
       
       const room = rooms.get(roomId);
-      if (!room) return callback && callback({ success: false, error: 'Room not found' });
+      if (!room) return callback && callback({ success: false, error: 'Комната не найдена' });
 
       if (!socket.data.userId || room.hostUserId !== socket.data.userId) {
-        return callback && callback({ success: false, error: 'Unauthorized: Only host can perform this action' });
+        return callback && callback({ success: false, error: 'Только ведущий может выполнить это действие' });
       }
 
       if (room.roundState === RoomState.FINISHED) {
-        return callback && callback({ success: false, error: 'Room already finished' });
+        return callback && callback({ success: false, error: 'Игра уже завершена' });
       }
 
       room.roundState = RoomState.FINISHED;

@@ -10,7 +10,9 @@ const defaultCors = [
   'http://localhost:5173',
   'http://localhost:4173',
   /^http:\/\/10\.\d+\.\d+\.\d+:\d+$/,
-  /^http:\/\/192\.168\.\d+\.\d+:\d+$/
+  /^http:\/\/192\.168\.\d+\.\d+:\d+$/,
+  /^http:\/\/198\.18\.\d+\.\d+:\d+$/,
+  /^http:\/\/172\.\d+\.\d+\.\d+:\d+$/
 ];
 
 export const config = {

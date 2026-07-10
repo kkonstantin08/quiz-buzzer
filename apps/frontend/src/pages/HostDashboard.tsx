@@ -117,18 +117,11 @@ export function HostDashboard() {
               className="h-14 sm:h-16 px-6 sm:px-8 text-base sm:text-lg bg-white text-red-600 hover:bg-slate-50 hover:text-red-700 shadow-xl shadow-black/20 shrink-0 w-full lg:w-auto rounded-2xl transition-all hover:scale-105 active:scale-95 font-bold"
             >
               <Play className="mr-2 h-5 w-5 sm:h-6 sm:w-6 fill-current" />
-              Создать комнату
+              Создать игру
             </Button>
           </CardContent>
         </Card>
 
-        {/* Mobile Quick Action */}
-        <div className="md:hidden">
-          <Button onClick={handleCreateRoom} className="w-full h-12 bg-slate-900 text-white shadow-md">
-            <Plus size={18} className="mr-2" />
-            Быстрый старт
-          </Button>
-        </div>
 
         {/* Stats / Recent placeholder */}
         <div className="grid sm:grid-cols-2 gap-4 md:gap-6">
