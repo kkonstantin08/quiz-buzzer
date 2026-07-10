@@ -101,20 +101,20 @@ export function HostDashboard() {
         </div>
 
         {/* Hero Action Card */}
-        <Card className="border-0 shadow-xl shadow-red-500/10 bg-gradient-to-br from-red-500 to-red-700 text-white overflow-hidden relative">
+        <Card className="border-0 shadow-xl shadow-violet-500/20 bg-gradient-to-br from-violet-600 to-fuchsia-600 text-white overflow-hidden relative">
           <div className="absolute right-0 top-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
           <div className="absolute left-0 bottom-0 w-48 h-48 bg-black/10 rounded-full blur-2xl translate-y-1/3 -translate-x-1/4"></div>
           
           <CardContent className="p-6 sm:p-8 md:p-12 relative z-10 flex flex-col lg:flex-row items-center gap-6 lg:gap-8 justify-between">
             <div className="space-y-3 text-center lg:text-left">
               <h2 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight drop-shadow-sm">Готовы начать игру?</h2>
-              <p className="text-red-100 max-w-md text-sm sm:text-base md:text-lg">
+              <p className="text-violet-100 max-w-md text-sm sm:text-base md:text-lg">
                 Создайте новую комнату в один клик. Игроки смогут присоединиться по QR-коду со своих смартфонов.
               </p>
             </div>
             <Button 
               onClick={handleCreateRoom} 
-              className="h-14 sm:h-16 px-6 sm:px-8 text-base sm:text-lg bg-white text-red-600 hover:bg-slate-50 hover:text-red-700 shadow-xl shadow-black/20 shrink-0 w-full lg:w-auto rounded-2xl transition-all hover:scale-105 active:scale-95 font-bold"
+              className="h-14 sm:h-16 px-6 sm:px-8 text-base sm:text-lg bg-white text-violet-600 hover:bg-slate-50 hover:text-violet-700 shadow-xl shadow-black/20 shrink-0 w-full lg:w-auto rounded-2xl transition-all hover:scale-105 active:scale-95 font-bold"
             >
               <Play className="mr-2 h-5 w-5 sm:h-6 sm:w-6 fill-current" />
               Создать игру
