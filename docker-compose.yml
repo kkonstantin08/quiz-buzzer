@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: apps/backend/Dockerfile
     environment:
-      - DATABASE_URL=file:./dev.db
+      - DATABASE_URL=file:/app/prisma/dev.db
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET environment variable is required}
       - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:5173}
       - PORT=3001
