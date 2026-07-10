@@ -1,6 +1,6 @@
 // Use VITE_SERVER_URL for base host, fallback to VITE_API_URL for backwards compatibility
 const isDev = import.meta.env.DEV;
-export const BASE_URL = isDev ? `http://${window.location.hostname}:3001` : (import.meta.env.VITE_SERVER_URL || import.meta.env.VITE_API_URL || 'http://localhost:3001');
+export const BASE_URL = isDev ? `http://${window.location.hostname}:3001` : '/api';
 // Strip trailing slash if any
 const cleanBaseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
 // If the URL already ends with /api, use it as is, otherwise append /api
