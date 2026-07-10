@@ -21,8 +21,10 @@ export function BillingModal({ onActivated }: { onActivated: () => void }) {
         credentials: 'include', // httpOnly cookie sent automatically
       });
       
-      if (!res.ok) throw new Error(data.error || 'Failed to activate');
-      
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to activate');
+      }      
       onActivated();
     } catch (err: any) {
       setError(err.message || 'Ошибка активации');
