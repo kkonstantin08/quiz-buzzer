@@ -41,6 +41,7 @@ export interface ClientToServerEvents {
   ROOM_FINISH: (callback?: (res: { success: boolean, error?: string }) => void) => void;
   ROOM_LEAVE: () => void;
   SYNC_TIME: (clientTime: number, callback: (serverTime: number) => void) => void;
+  HOST_CLEAR_SCORES: (data: { roomId: string }, callback?: (res: { success: boolean, error?: string }) => void) => void;
 }
 
 // Server -> Client Events
