@@ -159,7 +159,7 @@ export function ParticipantRoom() {
         <h2 className="text-3xl font-black text-slate-800 tracking-tight mb-2">Игра окончена</h2>
         <p className="text-slate-600 mb-6">Ведущий завершил эту игру.</p>
         <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 w-full max-w-sm">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Победитель</p>
+          <p className="text-xs font-semibold text-slate-600 tracking-wide mb-1">Победитель</p>
           <p className="text-2xl font-bold text-primary break-words">{winnerInfo.winnerName}</p>
         </div>
       </div>
@@ -266,7 +266,7 @@ export function ParticipantRoom() {
         </AnimatePresence>
 
         <motion.button
-          className={`relative z-10 w-full h-full rounded-full text-white text-4xl font-black tracking-widest uppercase shadow-[0_20px_50px_rgba(8,_112,_184,_0.7)] ${btnColor}`}
+          className={`relative z-10 w-full h-full rounded-full text-white text-4xl font-bold tracking-widest shadow-[0_20px_50px_rgba(8,_112,_184,_0.7)] ${btnColor}`}
           style={{ 
             boxShadow: (isActive || (isLocked && amIFirst)) ? `0 20px 40px -10px ${amIFirst ? 'rgba(34,197,94,0.7)' : 'rgba(239,68,68,0.7)'}, inset 0 -10px 20px rgba(0,0,0,0.2), inset 0 10px 20px rgba(255,255,255,0.3)` 
                                : `0 20px 40px -10px rgba(0,0,0,0.3), inset 0 -10px 20px rgba(0,0,0,0.2), inset 0 10px 20px rgba(255,255,255,0.2)`

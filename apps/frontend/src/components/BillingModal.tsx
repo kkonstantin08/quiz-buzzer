@@ -65,7 +65,7 @@ export function BillingModal({ onActivated }: { onActivated: () => void }) {
         <div className="overflow-y-auto sm:overflow-visible flex-1 custom-scrollbar">
           <CardContent className="p-6 pt-0">
             {error && (
-              <div className="text-red-500 text-sm text-center bg-red-50 p-3 rounded-lg font-medium border border-red-100 animate-in slide-in-from-top-2 mb-4">
+              <div className="text-red-500 text-sm text-left bg-red-50 p-3 rounded-lg font-medium border border-red-100 animate-in slide-in-from-top-2 mb-4">
                 {error}
               </div>
             )}
@@ -112,8 +112,8 @@ export function BillingModal({ onActivated }: { onActivated: () => void }) {
                   <div className="absolute top-0 right-0 w-32 h-32 bg-fuchsia-500 rounded-full blur-3xl opacity-20 -mr-10 -mt-10 pointer-events-none animate-pulse"></div>
                   <div className="absolute bottom-0 left-0 w-32 h-32 bg-violet-500 rounded-full blur-3xl opacity-20 -ml-10 -mb-10 pointer-events-none animate-pulse" style={{ animationDelay: '1s' }}></div>
                   
-                  <div className="relative z-10 text-center">
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 text-violet-200 text-xs font-bold uppercase tracking-widest mb-3">
+                  <div className="relative z-10 text-left">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 text-violet-200 text-xs font-semibold tracking-wider mb-3">
                       <Sparkles size={14} />
                       Полный доступ
                     </div>
@@ -138,7 +138,7 @@ export function BillingModal({ onActivated }: { onActivated: () => void }) {
                   
                   <div className="relative w-full text-center py-1">
                     <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200"></div></div>
-                    <span className="relative bg-white px-4 text-xs text-slate-500 uppercase font-bold tracking-wider">или попробовать</span>
+                    <span className="relative bg-white px-4 text-xs text-slate-600 font-semibold tracking-wide">или попробовать</span>
                   </div>
                   
                   <Button 

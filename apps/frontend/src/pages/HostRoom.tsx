@@ -143,7 +143,7 @@ export function HostRoom() {
             </div>
             
             <div className="bg-slate-50 border border-slate-100 rounded-2xl p-6 w-full mt-6 shadow-sm">
-              <p className="text-sm font-semibold text-slate-500 uppercase tracking-widest mb-2">Победитель</p>
+              <p className="text-sm font-semibold text-slate-600 tracking-wide mb-2">Победитель</p>
               <h2 className="text-3xl font-bold text-primary break-words">
                 {winnerInfo.winnerName}
               </h2>
@@ -175,8 +175,8 @@ export function HostRoom() {
             />
           )}
           <div>
-            <p className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-1">Управление игрой</p>
-            <h1 className="text-3xl font-black text-primary tracking-widest uppercase leading-none">
+            <p className="text-sm font-bold text-slate-600 tracking-wide mb-1">Управление игрой</p>
+            <h1 className="text-3xl font-bold text-primary tracking-wide leading-none">
               Комната активна
             </h1>
           </div>
@@ -185,7 +185,7 @@ export function HostRoom() {
         <div className="flex gap-2 w-full sm:w-auto">
           <Dialog open={qrOpen} onOpenChange={setQrOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline" size="lg" className="h-14 gap-2 flex-1 sm:flex-none">
+              <Button variant="outline" size="lg" className="h-14 gap-2 flex-1 sm:flex-none px-3 sm:px-8">
                 <QrCode className="w-5 h-5" />
                 QR-код
               </Button>
@@ -193,7 +193,7 @@ export function HostRoom() {
             <DialogContent className="sm:max-w-md flex flex-col items-center">
               <DialogHeader>
                 <DialogTitle className="text-center text-2xl font-bold">Пригласить игроков</DialogTitle>
-                <DialogDescription className="text-center">
+                <DialogDescription className="text-left text-slate-600">
                   Дайте участникам отсканировать этот QR-код для входа
                 </DialogDescription>
               </DialogHeader>
@@ -211,7 +211,7 @@ export function HostRoom() {
 
           <Dialog open={finishOpen} onOpenChange={setFinishOpen}>
             <DialogTrigger asChild>
-              <Button variant="destructive" size="lg" className="h-14 gap-2 flex-1 sm:flex-none">
+              <Button variant="destructive" size="lg" className="h-14 gap-2 flex-1 sm:flex-none px-3 sm:px-8">
                 <LogOut className="w-5 h-5" />
                 Завершить
               </Button>
@@ -255,7 +255,7 @@ export function HostRoom() {
                   <h2 className="text-xl font-medium text-slate-600 animate-pulse">Ожидание подключения игроков...</h2>
                 </div>
               ) : (
-                <h2 className="text-2xl font-semibold text-muted-foreground">Ожидание запуска раунда</h2>
+                <h2 className="text-2xl font-semibold text-slate-600">Ожидание запуска раунда</h2>
               )}
               <Button 
                 size="lg" 
@@ -274,14 +274,14 @@ export function HostRoom() {
                 <Timer className="w-12 h-12" />
               </div>
               <h2 className="text-3xl font-bold text-green-600">Раунд активен</h2>
-              <p className="text-muted-foreground">Ждем нажатия кнопок...</p>
+              <p className="text-slate-600">Ждем нажатия кнопок...</p>
             </div>
           )}
 
 
           {room.roundState === RoomState.REVEALED && (
             <div className="text-center space-y-6 animate-in zoom-in duration-300 w-full px-6">
-              <h2 className="text-2xl text-muted-foreground">Первым нажал:</h2>
+              <h2 className="text-2xl text-slate-600 font-semibold">Первым нажал:</h2>
               <div className="text-4xl font-black text-primary py-2 break-words">{firstBuzzerName}</div>
               <div className="flex flex-col sm:flex-row gap-4 mt-4">
                 <Button size="lg" className="w-full bg-green-600 hover:bg-green-700 text-white h-16 text-lg shadow-lg shadow-green-600/20" onClick={handleCorrect}>
@@ -303,7 +303,7 @@ export function HostRoom() {
           </CardHeader>
           <CardContent>
             {room.participants.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">Пока никого нет</div>
+              <div className="text-center py-8 text-slate-600">Пока никого нет</div>
             ) : (
               <div className="overflow-x-auto">
                 <Table>
@@ -317,7 +317,7 @@ export function HostRoom() {
                   <TableBody>
                     {room.participants.map((p, i) => (
                       <TableRow key={p.id}>
-                        <TableCell className="font-medium text-muted-foreground">{i + 1}</TableCell>
+                        <TableCell className="font-medium text-slate-600">{i + 1}</TableCell>
                         <TableCell className="font-semibold">{p.displayName}</TableCell>
                         <TableCell className="text-right">
                           <Badge variant={p.score > 0 ? "default" : "secondary"} className="text-sm px-3 py-1">

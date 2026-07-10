@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Target } from 'lucide-react';
+import { Target, Rocket, QrCode, Crown } from 'lucide-react';
 
 const LogoIcon = () => (
   <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-400 to-red-600 flex items-center justify-center shadow-lg shadow-red-500/30">
@@ -11,11 +11,11 @@ const LogoIcon = () => (
 
 export function LandingPage() {
   return (
-    <div className="min-h-[100dvh] lg:h-[100dvh] overflow-x-hidden lg:overflow-hidden bg-slate-50 flex flex-col">
-      <header className="px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between bg-white shadow-sm border-b relative z-20 shrink-0 gap-2">
+    <div className="min-h-[100dvh] lg:h-[100dvh] lg:overflow-hidden overflow-x-hidden bg-slate-50 flex flex-col">
+      <header className="fixed top-0 w-full px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between bg-white/90 backdrop-blur-md shadow-sm border-b z-50 shrink-0 gap-2">
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <LogoIcon />
-          <h1 className="text-lg sm:text-2xl font-black text-slate-800 tracking-tight">КвизПульт</h1>
+          <h1 className="text-lg sm:text-2xl font-extrabold text-slate-800 tracking-tight">КвизПульт</h1>
         </div>
         <nav className="flex items-center gap-3 sm:gap-4 shrink-0">
           <Link to="/login" className="text-xs sm:text-sm font-medium text-slate-600 hover:text-slate-900">
@@ -27,43 +27,57 @@ export function LandingPage() {
         </nav>
       </header>
 
-      <main className="flex-1 max-w-7xl mx-auto px-6 py-12 lg:py-0 grid lg:grid-cols-2 gap-16 lg:gap-8 items-center relative lg:h-full">
+      <main className="flex-1 w-full max-w-7xl mx-auto px-6 pt-24 pb-12 lg:pt-24 lg:pb-8 grid lg:grid-cols-2 gap-8 lg:gap-4 items-center relative">
         {/* Left Column: Text */}
-        <div className="space-y-6 relative z-10 text-center lg:text-left mt-[-2rem]">
+        <div className="space-y-4 lg:space-y-6 relative z-10 text-center lg:text-left">
           <div className="max-w-2xl mx-auto lg:mx-0 space-y-4">
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-slate-900 tracking-tight leading-[1.1]">
+            <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight leading-[1.1]">
               Выведите свои квизы на новый уровень
             </h1>
-            <p className="text-lg sm:text-xl text-slate-600 leading-relaxed max-w-xl mx-auto lg:mx-0">
-              Новый стандарт для квизов. Гости сканируют QR-код, и их телефоны превращаются в высокоточные игровые пульты. Максимальная вовлеченность, мгновенная реакция и никаких проводов на столах!
+            <p className="text-lg text-slate-600 leading-relaxed max-w-xl mx-auto lg:mx-0">
+              Новый стандарт для квизов. Гости сканируют QR-код, и их телефоны превращаются в высокоточные игровые пульты.
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
             <Link to="/register" className="w-full sm:w-auto">
-              <Button size="lg" className="w-full text-lg h-14 px-8 shadow-xl shadow-primary/20 hover:shadow-primary/30 transition-shadow">
+              <Button size="lg" className="w-full text-base h-12 px-8 shadow-xl shadow-primary/20 hover:shadow-primary/30 transition-shadow">
                 Организовать игру
               </Button>
             </Link>
           </div>
           
-          <div className="pt-8 flex flex-col sm:flex-row gap-6 justify-center lg:justify-start items-center lg:items-start text-sm text-slate-600 font-medium">
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-full bg-green-100 text-green-600 flex items-center justify-center shrink-0">✓</div>
-              <span>Мгновенная реакция</span>
+          <div className="pt-4 lg:pt-8 grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-2xl mx-auto lg:mx-0">
+            {/* Card 1 */}
+            <div className="bg-white rounded-[1.5rem] p-5 xl:p-6 shadow-lg shadow-slate-200/50 border border-slate-100 flex flex-col items-center sm:items-start text-center sm:text-left transition-transform hover:-translate-y-1 duration-300">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-100 to-orange-200 text-orange-600 flex items-center justify-center shadow-inner mb-4">
+                <Rocket className="w-6 h-6" />
+              </div>
+              <h3 className="font-bold text-base text-slate-900 mb-1">Мгновенная реакция</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">Сигнал доходит за миллисекунды без задержек.</p>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-full bg-green-100 text-green-600 flex items-center justify-center shrink-0">✓</div>
-              <span>Без скачиваний</span>
+            
+            {/* Card 2 */}
+            <div className="bg-white rounded-[1.5rem] p-5 xl:p-6 shadow-lg shadow-slate-200/50 border border-slate-100 flex flex-col items-center sm:items-start text-center sm:text-left transition-transform hover:-translate-y-1 duration-300">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-100 to-blue-200 text-blue-600 flex items-center justify-center shadow-inner mb-4">
+                <QrCode className="w-6 h-6" />
+              </div>
+              <h3 className="font-bold text-base text-slate-900 mb-1">Без скачиваний</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">Игрокам нужен только браузер и камера.</p>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-full bg-green-100 text-green-600 flex items-center justify-center shrink-0">✓</div>
-              <span>Авто-победитель</span>
+
+            {/* Card 3 */}
+            <div className="bg-white rounded-[1.5rem] p-5 xl:p-6 shadow-lg shadow-slate-200/50 border border-slate-100 flex flex-col items-center sm:items-start text-center sm:text-left transition-transform hover:-translate-y-1 duration-300">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-rose-100 to-rose-200 text-rose-600 flex items-center justify-center shadow-inner mb-4">
+                <Crown className="w-6 h-6" />
+              </div>
+              <h3 className="font-bold text-base text-slate-900 mb-1">Авто-победитель</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">Система сама определяет, кто нажал первым.</p>
             </div>
           </div>
         </div>
 
         {/* Right Column: Visual Mockup */}
-        <div className="relative flex justify-center lg:justify-center lg:-mr-12 items-center h-full max-h-full">
+        <div className="relative hidden lg:flex justify-center lg:justify-center lg:-mr-12 items-center h-full max-h-full">
           {/* Subtle background decoration (no neon) */}
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center -translate-y-10">
             <div className="absolute w-[400px] h-[400px] bg-blue-200/40 rounded-full mix-blend-multiply blur-[80px] translate-x-10 -translate-y-10"></div>
@@ -79,7 +93,7 @@ export function LandingPage() {
           </div>
 
           {/* 3D Smartphone Mockup (CSS) */}
-          <div className="relative w-[280px] sm:w-[320px] h-[580px] sm:h-[640px] bg-slate-900 rounded-[3rem] shadow-[2px_2px_0_#334155,4px_4px_0_#334155,6px_6px_0_#1e293b,8px_8px_0_#1e293b,10px_10px_0_#0f172a,12px_12px_0_#0f172a,14px_14px_0_#0f172a,-20px_40px_60px_rgba(0,0,0,0.4)] border-[6px] border-slate-800 p-2 z-10 animate-float-angled transform-gpu mb-10">
+          <div className="relative w-[280px] sm:w-[320px] h-[580px] sm:h-[600px] bg-slate-900 rounded-[3rem] shadow-[2px_2px_0_#334155,4px_4px_0_#334155,6px_6px_0_#1e293b,8px_8px_0_#1e293b,10px_10px_0_#0f172a,12px_12px_0_#0f172a,14px_14px_0_#0f172a,-20px_40px_60px_rgba(0,0,0,0.4)] border-[6px] border-slate-800 p-2 z-10 animate-float-angled transform-gpu mb-4 scale-95 origin-center">
             {/* Notch */}
             <div className="absolute top-0 inset-x-0 h-7 flex justify-center z-30">
               <div className="w-32 h-6 bg-slate-800 rounded-b-2xl shadow-inner"></div>
@@ -116,7 +130,7 @@ export function LandingPage() {
                   
                   {/* The Button */}
                   <div className="relative w-44 h-44 rounded-full bg-red-500 shadow-[0_15px_30px_rgba(239,68,68,0.4),_inset_0_-8px_20px_rgba(0,0,0,0.2),_inset_0_4px_10px_rgba(255,255,255,0.4)] flex items-center justify-center border-4 border-red-600 transition-transform active:scale-95 cursor-pointer">
-                    <span className="text-white font-black tracking-widest text-3xl relative z-20 drop-shadow-md">ЖМИ</span>
+                    <span className="text-white font-extrabold tracking-widest text-3xl relative z-20 drop-shadow-md">ЖМИ</span>
                     
                     {/* Inner highlight for 3D effect */}
                     <div className="absolute top-2 w-3/4 h-1/3 bg-gradient-to-b from-white/30 to-transparent rounded-full opacity-50"></div>

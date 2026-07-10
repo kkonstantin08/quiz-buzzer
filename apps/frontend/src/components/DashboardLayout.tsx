@@ -53,6 +53,7 @@ export function DashboardLayout({
   const [editEmail, setEditEmail] = React.useState(email || '');
   const [isSaving, setIsSaving] = React.useState(false);
   const [isUploading, setIsUploading] = React.useState(false);
+  const [showLogoutDialog, setShowLogoutDialog] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Sync state when props change
@@ -170,12 +171,12 @@ export function DashboardLayout({
                     {hasSubscription ? (
                       <>
                         <Crown size={12} className="text-amber-500" />
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded-sm">
+                        <span className="text-[10px] font-bold tracking-wide text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded-sm">
                           PRO Plan
                         </span>
                       </>
                     ) : (
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 bg-slate-200 px-1.5 py-0.5 rounded-sm">
+                      <span className="text-[10px] font-bold tracking-wide text-slate-600 bg-slate-200 px-1.5 py-0.5 rounded-sm">
                         Бесплатно
                       </span>
                     )}
@@ -279,7 +280,7 @@ export function DashboardLayout({
               </div>
             </DialogContent>
           </Dialog>
-          <Button variant="ghost" className="w-full justify-start gap-3 text-slate-600 hover:text-red-600 hover:bg-red-50" onClick={onLogout}>
+          <Button variant="ghost" className="w-full justify-start gap-3 text-slate-600 hover:text-red-600 hover:bg-red-50" onClick={() => setShowLogoutDialog(true)}>
             <LogOut size={18} />
             Выйти
           </Button>
@@ -305,13 +306,35 @@ export function DashboardLayout({
             <Button variant="ghost" size="icon" onClick={() => navigate(isDashboard ? '/settings' : '/dashboard')} className="text-slate-600">
               {isDashboard ? <Settings size={20} /> : <LayoutDashboard size={20} />}
             </Button>
-            <Button variant="ghost" size="icon" onClick={onLogout} className="text-slate-600 hover:text-red-600">
+            <Button variant="ghost" size="icon" onClick={() => setShowLogoutDialog(true)} className="text-slate-600 hover:text-red-600">
               <LogOut size={20} />
             </Button>
           </div>
         </header>
 
         {children}
+
+        <Dialog open={showLogoutDialog} onOpenChange={setShowLogoutDialog}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Выход из аккаунта</DialogTitle>
+              <DialogDescription>
+                Вы уверены, что хотите выйти?
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-3 mt-4">
+              <Button variant="outline" onClick={() => setShowLogoutDialog(false)}>
+                Отмена
+              </Button>
+              <Button variant="destructive" onClick={() => {
+                setShowLogoutDialog(false);
+                onLogout();
+              }}>
+                Выйти
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   );
