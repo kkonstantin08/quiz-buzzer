@@ -16,6 +16,7 @@ services:
     # ports are intentionally NOT exposed — access only through nginx
     volumes:
       - backend_data:/app/prisma
+      - backend_uploads:/app/uploads
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/api/health"]
       interval: 10s
@@ -52,3 +53,4 @@ services:
 
 volumes:
   backend_data:
+  backend_uploads:

@@ -1,41 +1,11 @@
 import { Router } from 'express';
-import jwt from 'jsonwebtoken';
-import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
 import { prisma } from '../prisma';
-import { config } from '../config';
+import { requireAuth, AuthRequest } from '../auth/middleware';
+import { uploadMiddleware, validateFileSignature, deleteUploadedFile } from '../utils/upload';
+import multer from 'multer';
+import fs from 'fs';
 
 export const settingsRouter = Router();
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, '../../uploads');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const prefix = file.fieldname === 'background' ? 'bg-' : 'logo-';
-    cb(null, prefix + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
-const upload = multer({ 
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only images are allowed'));
-    }
-  }
-});
-
-import { requireAuth, AuthRequest } from '../auth/middleware';
 
 settingsRouter.use(requireAuth);
 
@@ -67,8 +37,8 @@ settingsRouter.patch('/', async (req: AuthRequest, res: any) => {
     const dataToUpdate: any = {};
     if (typeof soundEnabled === 'boolean') dataToUpdate.soundEnabled = soundEnabled;
     if (typeof soundTheme === 'string') dataToUpdate.soundTheme = soundTheme;
-    if (typeof customLogoUrl !== 'undefined') dataToUpdate.customLogoUrl = customLogoUrl; // allow null
-    if (typeof customBgUrl !== 'undefined') dataToUpdate.customBgUrl = customBgUrl; // allow null
+    if (typeof customLogoUrl !== 'undefined') dataToUpdate.customLogoUrl = customLogoUrl;
+    if (typeof customBgUrl !== 'undefined') dataToUpdate.customBgUrl = customBgUrl;
     if (typeof bgTheme === 'string') dataToUpdate.bgTheme = bgTheme;
 
     let settings = await prisma.hostSettings.findUnique({
@@ -83,6 +53,14 @@ settingsRouter.patch('/', async (req: AuthRequest, res: any) => {
         },
       });
     } else {
+      // Check if we need to delete old files
+      if (typeof customLogoUrl !== 'undefined' && customLogoUrl !== settings.customLogoUrl) {
+        deleteUploadedFile(settings.customLogoUrl);
+      }
+      if (typeof customBgUrl !== 'undefined' && customBgUrl !== settings.customBgUrl) {
+        deleteUploadedFile(settings.customBgUrl);
+      }
+
       settings = await prisma.hostSettings.update({
         where: { hostUserId: req.userId! },
         data: dataToUpdate,
@@ -97,7 +75,7 @@ settingsRouter.patch('/', async (req: AuthRequest, res: any) => {
 });
 
 settingsRouter.post('/upload-logo', (req: AuthRequest, res: any, next: any) => {
-  upload.single('logo')(req, res, (err: any) => {
+  uploadMiddleware.single('logo')(req, res, (err: any) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({ error: 'Файл слишком большой. Максимальный размер 5 МБ.' });
@@ -114,14 +92,10 @@ settingsRouter.post('/upload-logo', (req: AuthRequest, res: any, next: any) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    // Verify file signature (magic bytes) — MIME from headers can be spoofed
-    // file-type v22 is ESM-only: use dynamic import
-    const { fileTypeFromFile } = await import('file-type');
-    const fileType = await fileTypeFromFile(req.file.path);
-    const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-    if (!fileType || !allowedMimes.includes(fileType.mime)) {
+    const isValid = await validateFileSignature(req.file.path);
+    if (!isValid) {
       fs.unlinkSync(req.file.path);
-      return res.status(400).json({ error: 'Invalid file signature. Only JPEG, PNG, WebP and GIF are allowed.' });
+      return res.status(400).json({ error: 'Invalid file signature. Only JPEG, PNG, WebP are allowed.' });
     }
 
     const fileUrl = `/uploads/${req.file.filename}`;
@@ -136,7 +110,7 @@ settingsRouter.post('/upload-logo', (req: AuthRequest, res: any, next: any) => {
 });
 
 settingsRouter.post('/upload-bg', (req: AuthRequest, res: any, next: any) => {
-  upload.single('background')(req, res, (err: any) => {
+  uploadMiddleware.single('background')(req, res, (err: any) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({ error: 'Файл слишком большой. Максимальный размер 5 МБ.' });
@@ -153,13 +127,10 @@ settingsRouter.post('/upload-bg', (req: AuthRequest, res: any, next: any) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    // Verify file signature (magic bytes)
-    const { fileTypeFromFile } = await import('file-type');
-    const fileType = await fileTypeFromFile(req.file.path);
-    const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-    if (!fileType || !allowedMimes.includes(fileType.mime)) {
+    const isValid = await validateFileSignature(req.file.path);
+    if (!isValid) {
       fs.unlinkSync(req.file.path);
-      return res.status(400).json({ error: 'Invalid file signature. Only JPEG, PNG, WebP and GIF are allowed.' });
+      return res.status(400).json({ error: 'Invalid file signature. Only JPEG, PNG, WebP are allowed.' });
     }
 
     const fileUrl = `/uploads/${req.file.filename}`;

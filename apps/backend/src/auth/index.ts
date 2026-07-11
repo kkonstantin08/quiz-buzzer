@@ -2,41 +2,11 @@ import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
-import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
+import { uploadMiddleware, validateFileSignature, deleteUploadedFile } from '../utils/upload';
 import { prisma } from '../prisma';
 import { config } from '../config';
 import { requireAuth, AuthRequest } from './middleware';
 import { appEvents } from '../events';
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = path.join(__dirname, '../../uploads/avatars');
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`);
-  }
-});
-
-const upload = multer({ 
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-  fileFilter: (req, file, cb) => {
-    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
-    if (allowedMimeTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(null, false);
-    }
-  }
-});
-
 export const authRouter = Router();
 
 const loginLimiter = rateLimit({
@@ -202,23 +172,33 @@ authRouter.put('/me', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-authRouter.post('/avatar', requireAuth, upload.single('avatar'), async (req: AuthRequest, res) => {
+authRouter.post('/avatar', requireAuth, (req: AuthRequest, res: any, next: any) => {
+  uploadMiddleware.single('avatar')(req, res, (err: any) => {
+    if (err) {
+      return res.status(400).json({ error: 'Upload failed or invalid file' });
+    }
+    next();
+  });
+}, async (req: AuthRequest, res: any) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded or invalid file type' });
     }
 
     const filePath = req.file.path;
-    // file-type v22 is ESM-only: use dynamic import
-    const { fileTypeFromFile } = await import('file-type');
-    const fileType = await fileTypeFromFile(filePath);
+    const isValid = await validateFileSignature(filePath);
     
-    if (!fileType || !['image/jpeg', 'image/png', 'image/webp'].includes(fileType.mime)) {
-      fs.unlinkSync(filePath);
+    if (!isValid) {
+      import('fs').then(fs => fs.unlinkSync(filePath));
       return res.status(400).json({ error: 'Invalid file signature. File rejected.' });
     }
 
-    const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+    const avatarUrl = `/uploads/${req.file.filename}`;
+
+    const user = await prisma.hostUser.findUnique({ where: { id: req.userId! } });
+    if (user?.avatarUrl) {
+      deleteUploadedFile(user.avatarUrl);
+    }
 
     const updatedUser = await prisma.hostUser.update({
       where: { id: req.userId! },
