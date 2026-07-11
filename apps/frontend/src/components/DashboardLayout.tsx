@@ -140,7 +140,7 @@ export function DashboardLayout({
             onClick={() => navigate('/dashboard')}
           >
             <LayoutDashboard size={18} />
-            Дашборд
+            Главная
           </Button>
           <Button variant="ghost" className="w-full justify-start gap-3 text-slate-600 hover:text-slate-900 hover:bg-slate-50" disabled>
             <History size={18} />

@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { socket } from '../realtime/socket';
-import { RoomState, type RoomData, type Participant } from 'shared';
+import { RoomState, type RoomData } from 'shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -19,6 +19,8 @@ export function HostRoom() {
   const navigate = useNavigate();
   const location = useLocation();
   const [room, setRoom] = useState<RoomData | null>(location.state?.room || null);
+  const [reconnectState, setReconnectState] = useState<'restoring' | 'connected' | 'revoked' | 'unavailable'>('restoring');
+  const [reconnectError, setReconnectError] = useState<string | null>(null);
   const [firstBuzzerName, setFirstBuzzerName] = useState<string>('');
   const [qrOpen, setQrOpen] = useState(false);
   const [finishOpen, setFinishOpen] = useState(false);
@@ -35,10 +37,54 @@ export function HostRoom() {
   }, []);
 
   useEffect(() => {
-    if (!socket.connected) {
-      socket.connect();
+    if (!roomId) {
+      setReconnectState('unavailable');
+      setReconnectError('Идентификатор комнаты отсутствует.');
+      return;
     }
 
+    const performRejoin = () => {
+      setReconnectState('restoring');
+      
+      if (!socket.connected) {
+        socket.connect();
+      }
+
+      socket.emit('HOST_REJOIN_ROOM', { roomId }, (res) => {
+        if (res.success && res.room) {
+          setRoom(res.room);
+          setReconnectState('connected');
+        } else {
+          setReconnectState('unavailable');
+          setReconnectError(res.error || 'Комната недоступна');
+        }
+      });
+    };
+
+    if (!room) {
+      performRejoin();
+    } else {
+      setReconnectState('connected');
+    }
+
+    const onConnect = () => {
+      performRejoin();
+    };
+
+    const onControlRevoked = () => {
+      setReconnectState('revoked');
+    };
+
+    socket.on('connect', onConnect);
+    socket.on('HOST_CONTROL_REVOKED', onControlRevoked);
+
+    return () => {
+      socket.off('connect', onConnect);
+      socket.off('HOST_CONTROL_REVOKED', onControlRevoked);
+    };
+  }, [roomId]);
+
+  useEffect(() => {
     const onStateUpdate = (updatedRoom: RoomData) => {
       setRoom(updatedRoom);
       if (updatedRoom.roundState === RoomState.REVEALED && updatedRoom.firstBuzzerId) {
@@ -81,8 +127,59 @@ export function HostRoom() {
     };
   }, [room]);
 
-  if (!room) {
-    return <div className="flex items-center justify-center min-h-[100dvh]">Загрузка комнаты...</div>;
+  if (reconnectState === 'restoring') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[100dvh] bg-slate-50 text-center p-6">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div>
+        <h1 className="text-2xl font-bold text-slate-800">Восстанавливаем комнату…</h1>
+      </div>
+    );
+  }
+
+  if (reconnectState === 'revoked') {
+    return (
+      <div className="flex items-center justify-center min-h-[100dvh] bg-slate-50 p-6">
+        <Card className="max-w-lg w-full text-center py-8 border-0 shadow-xl bg-white">
+          <CardContent className="space-y-6 flex flex-col items-center pt-6">
+            <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center animate-pulse">
+              <Crown className="w-10 h-10" />
+            </div>
+            <div className="space-y-2">
+              <h1 className="text-3xl font-black text-slate-800 tracking-tight animate-bounce">Управление отозвано</h1>
+              <p className="text-slate-600 text-lg leading-relaxed">
+                Управление комнатой перенесено в другую вкладку или на другое устройство.
+              </p>
+            </div>
+            <Button size="lg" className="w-full h-14 font-bold" onClick={() => navigate('/dashboard')}>
+              Вернуться на главную
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (reconnectState === 'unavailable' || !room) {
+    return (
+      <div className="flex items-center justify-center min-h-[100dvh] bg-slate-50 p-6">
+        <Card className="max-w-lg w-full text-center py-8 border-0 shadow-xl bg-white">
+          <CardContent className="space-y-6 flex flex-col items-center pt-6">
+            <div className="w-20 h-20 bg-slate-100 text-slate-500 rounded-full flex items-center justify-center">
+              <Crown className="w-10 h-10" />
+            </div>
+            <div className="space-y-2">
+              <h1 className="text-3xl font-black text-slate-800 tracking-tight">Комната недоступна</h1>
+              <p className="text-slate-600 text-lg leading-relaxed">
+                {reconnectError || 'Не удалось загрузить или восстановить сессию комнаты.'}
+              </p>
+            </div>
+            <Button size="lg" className="w-full h-14 font-bold" onClick={() => navigate('/dashboard')}>
+              На главную
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   const publicUrl = window.location.origin;
@@ -149,7 +246,7 @@ export function HostRoom() {
                 <p className="text-lg text-slate-600">В комнате так и не появилось участников. Эта игра не будет сохранена в статистике.</p>
               </div>
               <Button size="lg" className="mt-8 w-full h-14 text-lg font-bold" onClick={() => navigate('/dashboard')}>
-                Вернуться в Дашборд
+                На главную
               </Button>
             </CardContent>
           </Card>
@@ -180,7 +277,7 @@ export function HostRoom() {
             </div>
 
             <Button size="lg" className="mt-8 w-full h-14 text-lg font-bold" onClick={() => navigate('/dashboard')}>
-              Вернуться в Дашборд
+              На главную
             </Button>
           </CardContent>
         </Card>

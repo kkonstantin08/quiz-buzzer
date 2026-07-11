@@ -18,6 +18,7 @@ export function createRoom(hostUserId: string, hostSocketId: string, customLogoU
     firstBuzzerId: null,
     createdAt: Date.now(),
     customLogoUrl: customLogoUrl || null,
+    isHostConnected: true,
   };
   
   rooms.set(roomId, newRoom);

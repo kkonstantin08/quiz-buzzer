@@ -290,7 +290,10 @@ export function HostSettings() {
                     Загрузить
                   </Button>
                 </div>
-                <p className="text-xs text-slate-600">Рекомендуемый формат: PNG с прозрачным фоном, пропорции 1:1 или горизонтальные.</p>
+                <p className="text-xs text-slate-500 leading-normal">
+                  Максимальный размер: <strong>5 МБ</strong>. Поддерживаемые форматы: <strong>PNG, JPG, WEBP, GIF</strong>.<br />
+                  Рекомендуется изображение с прозрачным фоном, пропорции 1:1 или горизонтальные.
+                </p>
               </div>
               
               {customLogoUrl && (
@@ -354,7 +357,7 @@ export function HostSettings() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="space-y-1">
                   <div className="font-semibold text-slate-900">Сброс статистики</div>
-                  <p className="text-sm text-slate-600">Удаляет всю историю проведенных игр и очищает статистику дашборда.</p>
+                  <p className="text-sm text-slate-600">Удаляет всю историю проведенных игр и очищает статистику главной страницы.</p>
                 </div>
                 
                 <Button 

@@ -108,7 +108,19 @@ settingsRouter.patch('/', async (req: any, res: any) => {
   }
 });
 
-settingsRouter.post('/upload-logo', upload.single('logo'), async (req: any, res: any) => {
+settingsRouter.post('/upload-logo', (req: any, res: any, next: any) => {
+  upload.single('logo')(req, res, (err: any) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: 'Файл слишком большой. Максимальный размер 5 МБ.' });
+      }
+      return res.status(400).json({ error: `Ошибка загрузки: ${err.message}` });
+    } else if (err) {
+      return res.status(400).json({ error: err.message });
+    }
+    next();
+  });
+}, async (req: any, res: any) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
