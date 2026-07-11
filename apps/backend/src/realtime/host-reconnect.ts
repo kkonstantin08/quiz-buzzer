@@ -1,7 +1,8 @@
 import { Socket, Server } from 'socket.io';
 import { RoomData, RoomState } from 'shared';
-import { rooms, socketToRoom } from '../rooms';
+import { rooms, socketToRoom, deleteRoom } from '../rooms';
 import { CustomSocketData } from './index';
+import { postFinishTimers, maxLifetimeTimers, cancelRoomLifecycleTimers } from './room-lifecycle';
 
 // Maps roomId to the NodeJS Timeout
 export const hostDisconnectTimers = new Map<string, NodeJS.Timeout>();
@@ -53,7 +54,11 @@ export const reconnectTimeoutLoader = {
   setTimeout: (cb: () => void, ms: number) => setTimeout(cb, ms)
 };
 
-export function startHostReconnectTimeout(roomId: string, io: Server) {
+export function startHostReconnectTimeout(
+  roomId: string,
+  io: Server,
+  buzzBuffers?: Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>
+) {
   // Cancel any existing timer to avoid duplicate schedules
   cancelHostReconnectTimeout(roomId);
 
@@ -68,7 +73,7 @@ export function startHostReconnectTimeout(roomId: string, io: Server) {
   const timeoutMs = 10 * 60 * 1000; // 10 minutes
 
   const timer = reconnectTimeoutLoader.setTimeout(() => {
-    closeRoomAfterHostTimeout(roomId, io);
+    closeRoomAfterHostTimeout(roomId, io, buzzBuffers);
   }, timeoutMs);
 
   hostDisconnectTimers.set(roomId, timer);
@@ -82,29 +87,18 @@ export function cancelHostReconnectTimeout(roomId: string) {
   }
 }
 
-export function closeRoomAfterHostTimeout(roomId: string, io: Server) {
-  const room = rooms.get(roomId);
-  if (!room) return;
-
-  // Set the room state to finished
-  room.roundState = RoomState.FINISHED;
-
-  // Notify participants
-  io.to(roomId).emit('ROOM_CLOSED', 'ведущий не вернулся');
-
-  // Clean up references and mappings
-  rooms.delete(roomId);
-  
-  // Clean up all socket mapping for sockets in this room
-  for (const [sId, rId] of socketToRoom.entries()) {
-    if (rId === roomId) {
-      socketToRoom.delete(sId);
-      const s = io.sockets.sockets.get(sId);
-      if (s) {
-        s.leave(roomId);
-      }
-    }
-  }
-
-  cancelHostReconnectTimeout(roomId);
+export function closeRoomAfterHostTimeout(
+  roomId: string,
+  io: Server,
+  buzzBuffers?: Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>
+) {
+  cancelRoomLifecycleTimers(roomId);
+  deleteRoom(
+    roomId,
+    'ведущий не вернулся',
+    io,
+    buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }> | undefined,
+    [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers]
+  );
 }
+
