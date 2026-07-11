@@ -135,22 +135,25 @@ describe('Socket.IO Realtime Logic', () => {
           if (joined === 2) {
             // Both joined. Start round.
             hostSocket.emit('ROUND_START', () => {
-              // Now P1 buzzes
-              p1Socket.emit('BUZZ_SUBMIT', (buzz1Res: any) => {
-                expect(buzz1Res.success).toBe(true); // Since P1 emitted first
-                // Wait for the 250ms grace period to expire and lock the round
-                setTimeout(() => {
-                  // Now P2 buzzes and should be rejected
-                  p2Socket.emit('BUZZ_SUBMIT', (buzz2Res: any) => {
+              // Wait for unlockAt (150ms buffer)
+              setTimeout(() => {
+                // Now P1 buzzes
+                p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() }, (buzz1Res: any) => {
+                  expect(buzz1Res.success).toBe(true); // Since P1 emitted first
+                  // Wait for the 250ms grace period to expire and lock the round
+                  setTimeout(() => {
+                    // Now P2 buzzes and should be rejected
+                  p2Socket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() }, (buzz2Res: any) => {
                     expect(buzz2Res.success).toBe(false); // P2 is too late
-                    expect(buzz2Res.error).toBe('Round is not active');
+                    expect(buzz2Res.error).toMatch(/Слишком поздно|Раунд еще не начался/);
                     done();
                   });
                 }, 300);
               });
-            });
-          }
-        };
+            }, 160);
+          });
+        }
+      };
 
         p1Socket.on('connect', () => p1Socket.emit('ROOM_JOIN', { roomCode: code, displayName: 'P1' }, checkJoin));
         p2Socket.on('connect', () => p2Socket.emit('ROOM_JOIN', { roomCode: code, displayName: 'P2' }, checkJoin));

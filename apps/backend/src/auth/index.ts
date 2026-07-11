@@ -78,11 +78,11 @@ authRouter.post('/login', loginLimiter, async (req, res) => {
     const token = jwt.sign({ userId: user.id }, config.jwtSecret, { expiresIn: '7d' });
     
     // Set JWT in httpOnly cookie (inaccessible to JavaScript)
-    const isProduction = process.env.NODE_ENV === 'production';
+    const isHttps = process.env.USE_HTTPS === 'true';
     res.cookie('hostToken', token, {
       httpOnly: true,
-      secure: isProduction,
-      sameSite: 'strict',
+      secure: isHttps,
+      sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
     });
     
@@ -280,11 +280,11 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
     const token = jwt.sign({ userId: user.id }, config.jwtSecret, { expiresIn: '7d' });
 
     // Set JWT in httpOnly cookie (inaccessible to JavaScript)
-    const isProduction = process.env.NODE_ENV === 'production';
+    const isHttps = process.env.USE_HTTPS === 'true';
     res.cookie('hostToken', token, {
       httpOnly: true,
-      secure: isProduction,
-      sameSite: 'strict',
+      secure: isHttps,
+      sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
     });
 

@@ -46,6 +46,13 @@ class TimeSyncService {
       
       const estimatedClientTimeAtServer = startClientTime + (rtt / 2);
       this.offset = serverTime - estimatedClientTimeAtServer;
+
+      // Send the acknowledgment back so the server can measure our RTT and offset securely
+      socket.emit('SYNC_ACK', { 
+        clientTime: startClientTime, 
+        serverTime, 
+        clientReceiveTime: endClientTime 
+      });
     });
   }
 

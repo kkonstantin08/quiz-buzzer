@@ -139,10 +139,10 @@ export function ParticipantRoom() {
     
     setIsBuzzedLocal(true);
     
-    const timestamp = timeSync.getServerTime();
+    const clientPressedAt = Date.now();
     
     // @ts-ignore
-    socket.emit('BUZZ_SUBMIT', { timestamp }, (res: any) => {
+    socket.emit('BUZZ_SUBMIT', { clientPressedAt }, (res: any) => {
       // The server callback will arrive after the 250ms buffer.
       // But we mostly rely on FIRST_REVEALED broadcast to show results.
       if (res && res.success) {

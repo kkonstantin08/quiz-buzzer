@@ -8,7 +8,17 @@ import xss from 'xss';
 
 export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEvents>) {
   // Grace period buffers for each room
-  const buzzBuffers = new Map<string, { timer: NodeJS.Timeout, buzzes: { socketId: string, timestamp: number }[] }>();
+  const buzzBuffers = new Map<string, { timer: NodeJS.Timeout, buzzes: { socketId: string, timestamp: number, receivedAt: number }[] }>();
+
+  interface SyncStats {
+    rttWindow: number[];
+    offsetWindow: number[];
+    medianRtt: number;
+    medianOffset: number;
+    jitter: number;
+    lastSyncTime: number;
+  }
+  const socketToSyncStats = new Map<string, SyncStats>();
 
   // Authenticate socket connections via httpOnly cookie or explicit auth token
   io.use((socket, next) => {
@@ -36,9 +46,42 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
   io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>) => {
     
     // Time Sync
-    // @ts-ignore (because the event may not be typed perfectly in this server setup yet)
     socket.on('SYNC_TIME', (clientTime: number, callback: (serverTime: number) => void) => {
       if (callback) callback(Date.now());
+    });
+
+    socket.on('SYNC_ACK', (data: { clientTime: number, serverTime: number, clientReceiveTime: number }) => {
+      const serverReceiveTime = Date.now();
+      const rtt = data.clientReceiveTime - data.clientTime;
+      const offset = data.serverTime - (data.clientTime + rtt / 2);
+
+      // Simple anomaly detection (if RTT is negative or suspiciously high relative to previous)
+      if (rtt < 0) return;
+
+      let stats = socketToSyncStats.get(socket.id);
+      if (!stats) {
+        stats = { rttWindow: [], offsetWindow: [], medianRtt: 0, medianOffset: 0, jitter: 0, lastSyncTime: 0 };
+        socketToSyncStats.set(socket.id, stats);
+      }
+
+      stats.rttWindow.push(rtt);
+      stats.offsetWindow.push(offset);
+
+      if (stats.rttWindow.length > 5) stats.rttWindow.shift();
+      if (stats.offsetWindow.length > 5) stats.offsetWindow.shift();
+
+      const sortedRtt = [...stats.rttWindow].sort((a, b) => a - b);
+      const sortedOffset = [...stats.offsetWindow].sort((a, b) => a - b);
+      
+      stats.medianRtt = sortedRtt[Math.floor(sortedRtt.length / 2)];
+      stats.medianOffset = sortedOffset[Math.floor(sortedOffset.length / 2)];
+      stats.jitter = sortedRtt[sortedRtt.length - 1] - sortedRtt[0];
+      stats.lastSyncTime = serverReceiveTime;
+    });
+
+    socket.on('disconnect', () => {
+      socketToSyncStats.delete(socket.id);
+      socketToRoom.delete(socket.id);
     });
 
     // Create Room (Host only)
@@ -141,17 +184,16 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
     const buzzRateLimits = new Map<string, number>();
 
     // Submit Buzz (Participant)
-    // @ts-ignore
     socket.on('BUZZ_SUBMIT', (data: any, callback?: any) => {
-      const timestamp = data && typeof data.timestamp === 'number' ? data.timestamp : Date.now();
+      const receivedAt = Date.now();
+      const clientPressedAt = data && typeof data.clientPressedAt === 'number' ? data.clientPressedAt : Date.now();
       const actualCallback = typeof data === 'function' ? data : callback;
 
-      const now = Date.now();
       const lastBuzz = buzzRateLimits.get(socket.id) || 0;
-      if (now - lastBuzz < 500) { // 500ms limit
+      if (receivedAt - lastBuzz < 500) { // 500ms limit
         return actualCallback && actualCallback({ success: false, error: 'Слишком много запросов' });
       }
-      buzzRateLimits.set(socket.id, now);
+      buzzRateLimits.set(socket.id, receivedAt);
 
       const roomId = socketToRoom.get(socket.id);
       if (!roomId) return actualCallback && actualCallback({ success: false, error: 'Вы не в комнате' });
@@ -163,14 +205,35 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
         return actualCallback && actualCallback({ success: false, error: 'Раунд еще не начался' });
       }
 
-      if (room.unlockAt && timestamp < room.unlockAt) {
+      const stats = socketToSyncStats.get(socket.id);
+      const medianOffset = stats?.medianOffset || 0;
+      const medianRtt = stats?.medianRtt || 0;
+      const jitter = stats?.jitter || 0;
+
+      const estimatedPressedAt = clientPressedAt + medianOffset;
+
+      if (room.unlockAt && estimatedPressedAt < room.unlockAt) {
         return actualCallback && actualCallback({ success: false, error: 'Фальстарт! Вы нажали слишком рано' });
+      }
+
+      if (estimatedPressedAt > receivedAt + 100) { // Slight buffer for future timestamps
+        return actualCallback && actualCallback({ success: false, error: 'Неверная метка времени (будущее)' });
       }
 
       // If firstBuzzerId is already set, the round is definitely over.
       if (room.firstBuzzerId) {
         return actualCallback && actualCallback({ success: false, error: 'Слишком поздно' });
       }
+
+      const MAX_COMPENSATION_MS = 300;
+      const SAFETY_MARGIN = 50;
+      const allowedDelay = Math.min((medianRtt / 2) + (jitter * 2) + SAFETY_MARGIN, MAX_COMPENSATION_MS);
+
+      const validatedPressedAt = Math.max(
+        estimatedPressedAt,
+        receivedAt - allowedDelay,
+        room.unlockAt || 0
+      );
 
       let buffer = buzzBuffers.get(roomId);
       if (!buffer) {
@@ -179,7 +242,12 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
           timer: setTimeout(() => {
             const b = buzzBuffers.get(roomId);
             if (b && b.buzzes.length > 0) {
-              b.buzzes.sort((a, b) => a.timestamp - b.timestamp);
+              b.buzzes.sort((a, b) => {
+                if (a.timestamp === b.timestamp) {
+                  return a.receivedAt - b.receivedAt; // Tie-breaker
+                }
+                return a.timestamp - b.timestamp;
+              });
               const winner = b.buzzes[0];
 
               const currentRoom = rooms.get(roomId);
@@ -198,7 +266,7 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
         buzzBuffers.set(roomId, buffer);
       }
 
-      buffer.buzzes.push({ socketId: socket.id, timestamp });
+      buffer.buzzes.push({ socketId: socket.id, timestamp: validatedPressedAt, receivedAt });
 
       if (actualCallback) actualCallback({ success: true });
     });

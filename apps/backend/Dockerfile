@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 RUN apk add --no-cache openssl
 
 WORKDIR /app
@@ -27,7 +27,7 @@ RUN npx prisma generate
 RUN npm run build
 
 # Production image
-FROM node:20-alpine
+FROM node:22-alpine
 RUN apk add --no-cache openssl
 
 WORKDIR /app
