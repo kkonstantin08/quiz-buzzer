@@ -50,6 +50,10 @@ WORKDIR /app/apps/backend
 RUN npm install prisma
 RUN npx prisma generate
 
+# Copy and prepare entrypoint script
+COPY apps/backend/entrypoint.sh ./
+RUN chmod +x entrypoint.sh
+
 EXPOSE 3001
 
-CMD ["npm", "run", "start"]
+ENTRYPOINT ["./entrypoint.sh"]

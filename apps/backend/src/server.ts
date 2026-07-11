@@ -15,6 +15,8 @@ import { roomsRouter } from './rooms/api';
 import { setupSocketIO } from './realtime';
 import { ClientToServerEvents, ServerToClientEvents } from 'shared';
 
+import { prisma } from './prisma';
+
 const app = express();
 app.set('trust proxy', 1);
 const server = http.createServer(app);
@@ -54,8 +56,13 @@ app.use('/api/rooms', roomsRouter);
 // Serve static uploads
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' });
+app.get('/api/health', async (req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ status: 'ok', database: 'connected' });
+  } catch (error) {
+    res.status(500).json({ status: 'error', error: 'Database connection failed' });
+  }
 });
 
 setupSocketIO(io);
