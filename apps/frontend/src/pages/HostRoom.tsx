@@ -149,7 +149,7 @@ export function HostRoom() {
                 <p className="text-lg text-slate-600">В комнате так и не появилось участников. Эта игра не будет сохранена в статистике.</p>
               </div>
               <Button size="lg" className="mt-8 w-full h-14 text-lg font-bold" onClick={() => navigate('/dashboard')}>
-                Вернуться в Дашборд
+                На главную
               </Button>
             </CardContent>
           </Card>
@@ -180,7 +180,7 @@ export function HostRoom() {
             </div>
 
             <Button size="lg" className="mt-8 w-full h-14 text-lg font-bold" onClick={() => navigate('/dashboard')}>
-              Вернуться в Дашборд
+              На главную
             </Button>
           </CardContent>
         </Card>

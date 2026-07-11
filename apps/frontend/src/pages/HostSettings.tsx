@@ -354,7 +354,7 @@ export function HostSettings() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="space-y-1">
                   <div className="font-semibold text-slate-900">Сброс статистики</div>
-                  <p className="text-sm text-slate-600">Удаляет всю историю проведенных игр и очищает статистику дашборда.</p>
+                  <p className="text-sm text-slate-600">Удаляет всю историю проведенных игр и очищает статистику главной страницы.</p>
                 </div>
                 
                 <Button 
