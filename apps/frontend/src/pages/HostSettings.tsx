@@ -178,6 +178,7 @@ export function HostSettings() {
   };
 
   const handleLogout = async () => {
+    socket.disconnect();
     await api.logout();
     navigate('/', { replace: true });
   };

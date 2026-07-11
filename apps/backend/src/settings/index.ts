@@ -35,35 +35,20 @@ const upload = multer({
   }
 });
 
-// Middleware to verify token from httpOnly cookie or Authorization header
-const requireAuth = (req: any, res: any, next: any) => {
-  let token = req.cookies?.hostToken;
-  if (!token) {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No token provided' });
-    token = authHeader.split(' ')[1];
-  }
-  try {
-    const decoded = jwt.verify(token, config.jwtSecret) as { userId: string };
-    req.userId = decoded.userId;
-    next();
-  } catch (error) {
-    return res.status(401).json({ error: 'Invalid token' });
-  }
-};
+import { requireAuth, AuthRequest } from '../auth/middleware';
 
 settingsRouter.use(requireAuth);
 
-settingsRouter.get('/', async (req: any, res: any) => {
+settingsRouter.get('/', async (req: AuthRequest, res: any) => {
   try {
     let settings = await prisma.hostSettings.findUnique({
-      where: { hostUserId: req.userId },
+      where: { hostUserId: req.userId! },
     });
 
     if (!settings) {
       settings = await prisma.hostSettings.create({
         data: {
-          hostUserId: req.userId,
+          hostUserId: req.userId!,
         },
       });
     }
@@ -75,7 +60,7 @@ settingsRouter.get('/', async (req: any, res: any) => {
   }
 });
 
-settingsRouter.patch('/', async (req: any, res: any) => {
+settingsRouter.patch('/', async (req: AuthRequest, res: any) => {
   try {
     const { soundEnabled, soundTheme, customLogoUrl, customBgUrl, bgTheme } = req.body;
 
@@ -87,19 +72,19 @@ settingsRouter.patch('/', async (req: any, res: any) => {
     if (typeof bgTheme === 'string') dataToUpdate.bgTheme = bgTheme;
 
     let settings = await prisma.hostSettings.findUnique({
-      where: { hostUserId: req.userId },
+      where: { hostUserId: req.userId! },
     });
 
     if (!settings) {
       settings = await prisma.hostSettings.create({
         data: {
-          hostUserId: req.userId,
+          hostUserId: req.userId!,
           ...dataToUpdate,
         },
       });
     } else {
       settings = await prisma.hostSettings.update({
-        where: { hostUserId: req.userId },
+        where: { hostUserId: req.userId! },
         data: dataToUpdate,
       });
     }
@@ -111,7 +96,7 @@ settingsRouter.patch('/', async (req: any, res: any) => {
   }
 });
 
-settingsRouter.post('/upload-logo', (req: any, res: any, next: any) => {
+settingsRouter.post('/upload-logo', (req: AuthRequest, res: any, next: any) => {
   upload.single('logo')(req, res, (err: any) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
@@ -123,7 +108,7 @@ settingsRouter.post('/upload-logo', (req: any, res: any, next: any) => {
     }
     next();
   });
-}, async (req: any, res: any) => {
+}, async (req: AuthRequest, res: any) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
@@ -150,7 +135,7 @@ settingsRouter.post('/upload-logo', (req: any, res: any, next: any) => {
   }
 });
 
-settingsRouter.post('/upload-bg', (req: any, res: any, next: any) => {
+settingsRouter.post('/upload-bg', (req: AuthRequest, res: any, next: any) => {
   upload.single('background')(req, res, (err: any) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
@@ -162,7 +147,7 @@ settingsRouter.post('/upload-bg', (req: any, res: any, next: any) => {
     }
     next();
   });
-}, async (req: any, res: any) => {
+}, async (req: AuthRequest, res: any) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });

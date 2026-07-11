@@ -14,6 +14,7 @@ const translateError = (errorMsg: string) => {
   if (errorMsg === 'Invalid credentials') return 'Неверный email или пароль';
   if (errorMsg === 'Email already in use') return 'Этот email уже зарегистрирован';
   if (errorMsg === 'Failed to fetch') return 'Сервер недоступен. Пожалуйста, проверьте подключение к интернету или попробуйте позже.';
+  if (errorMsg === 'Failed to activate') return 'Ошибка активации. Пожалуйста, попробуйте позже.';
   return errorMsg;
 };
 
@@ -197,6 +198,21 @@ export const api = {
     });
     if (!res.ok) {
       throw new Error('Failed to clear history');
+    }
+    return res.json();
+  },
+
+  async activateFreeTrial() {
+    const res = await customFetch(`${API_URL}/billing/activate-free`, {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      let errorMsg = 'Failed to activate';
+      try {
+        const error = await res.json();
+        errorMsg = error.error || errorMsg;
+      } catch (e) {}
+      throw new Error(translateError(errorMsg));
     }
     return res.json();
   }
