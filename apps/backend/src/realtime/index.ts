@@ -6,7 +6,54 @@ import { rooms, socketToRoom, createRoom, getRoomByCode } from '../rooms';
 import { RoomState, ClientToServerEvents, ServerToClientEvents, RoomData } from 'shared';
 import xss from 'xss';
 
-export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEvents>) {
+export type SocketRole = 'host' | 'participant';
+
+export interface CustomSocketData {
+  role?: SocketRole;
+  userId?: string;
+  participantId?: string;
+}
+
+function rejectSocketAction(action: string, reason: string, socketId: string, roomId?: string) {
+  console.warn(JSON.stringify({
+    event: 'socket_action_rejected',
+    action,
+    reason,
+    socketId,
+    roomId
+  }));
+  let errorMsg = 'Действие отклонено';
+  if (reason === 'host_cannot_join') errorMsg = 'Ведущий не может стать участником';
+  else if (reason === 'participant_cannot_create') errorMsg = 'Участник не может создать комнату';
+  else if (reason === 'already_joined') errorMsg = 'Вы уже в комнате';
+  else if (reason === 'not_a_host') errorMsg = 'Только ведущий может выполнить это действие';
+  else if (reason === 'not_a_participant' || reason === 'participant_not_found') errorMsg = 'Только участник может нажать кнопку';
+  
+  return { success: false, error: errorMsg };
+}
+
+function requireHostSocket(socket: Socket<any, any, any, CustomSocketData>, room: RoomData, action: string) {
+  if (socket.data.role !== 'host') {
+    return rejectSocketAction(action, 'not_a_host', socket.id, room.roomId);
+  }
+  if (socket.data.userId !== room.hostUserId) {
+    return rejectSocketAction(action, 'host_id_mismatch', socket.id, room.roomId);
+  }
+  return null;
+}
+
+function requireParticipantSocket(socket: Socket<any, any, any, CustomSocketData>, room: RoomData, action: string) {
+  if (socket.data.role !== 'participant') {
+    return rejectSocketAction(action, 'not_a_participant', socket.id, room.roomId);
+  }
+  const participant = room.participants.find(p => p.id === socket.data.participantId && p.socketId === socket.id && p.isConnected);
+  if (!participant) {
+    return rejectSocketAction(action, 'participant_not_found', socket.id, room.roomId);
+  }
+  return null;
+}
+
+export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEvents, import('socket.io').DefaultEventsMap, CustomSocketData>) {
   // Grace period buffers for each room
   const buzzBuffers = new Map<string, { timer: NodeJS.Timeout, buzzes: { socketId: string, timestamp: number, receivedAt: number }[] }>();
 
@@ -43,7 +90,7 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
     next();
   });
 
-  io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents>) => {
+  io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, import('socket.io').DefaultEventsMap, CustomSocketData>) => {
     
     // Time Sync
     socket.on('SYNC_TIME', (clientTime: number, callback: (serverTime: number) => void) => {
@@ -97,6 +144,10 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
           return callback({ success: false, error: 'Требуется авторизация' });
         }
 
+        if (socket.data.role === 'participant') {
+          return callback(rejectSocketAction('ROOM_CREATE', 'participant_cannot_create', socket.id));
+        }
+
         const user = await prisma.hostUser.findUnique({
           where: { id: userId },
           include: { subscription: true, settings: true },
@@ -107,6 +158,7 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
         }
 
         socket.data.userId = userId;
+        socket.data.role = 'host';
         const room = createRoom(userId, socket.id, user.settings?.customLogoUrl);
         socket.join(room.roomId);
         socketToRoom.set(socket.id, room.roomId);
@@ -118,6 +170,13 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
 
     // Join Room (Participant)
     socket.on('ROOM_JOIN', ({ roomCode, displayName }, callback) => {
+      if (socket.data.role === 'host') {
+        return callback(rejectSocketAction('ROOM_JOIN', 'host_cannot_join', socket.id));
+      }
+      if (socket.data.role === 'participant') {
+        return callback(rejectSocketAction('ROOM_JOIN', 'already_joined', socket.id));
+      }
+
       if (!displayName || displayName.trim().length === 0) {
         return callback({ success: false, error: 'Введите имя' });
       }
@@ -145,6 +204,8 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       room.participants.push(participant);
       socket.join(room.roomId);
       socketToRoom.set(socket.id, room.roomId);
+      socket.data.role = 'participant';
+      socket.data.participantId = participant.id;
 
       // Notify host and others
       io.to(room.roomId).emit('PARTICIPANT_JOINED', participant);
@@ -161,9 +222,8 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       const room = rooms.get(roomId);
       if (!room) return callback && callback({ success: false, error: 'Комната не найдена' });
 
-      if (!socket.data.userId || room.hostUserId !== socket.data.userId) {
-        return callback && callback({ success: false, error: 'Только ведущий может выполнить это действие' });
-      }
+      const rejection = requireHostSocket(socket, room, 'ROUND_START');
+      if (rejection) return callback && callback(rejection);
 
       const existingBuffer = buzzBuffers.get(roomId);
       if (existingBuffer) {
@@ -196,10 +256,20 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       buzzRateLimits.set(socket.id, receivedAt);
 
       const roomId = socketToRoom.get(socket.id);
-      if (!roomId) return actualCallback && actualCallback({ success: false, error: 'Вы не в комнате' });
+      if (!roomId) {
+        // If not even in socketToRoom, role check will fail anyway, but we can't fetch room
+        // Let's manually reject
+        if (socket.data.role !== 'participant') {
+          return actualCallback && actualCallback(rejectSocketAction('BUZZ_SUBMIT', 'not_a_participant', socket.id));
+        }
+        return actualCallback && actualCallback({ success: false, error: 'Вы не в комнате' });
+      }
       
       const room = rooms.get(roomId);
       if (!room) return actualCallback && actualCallback({ success: false, error: 'Комната не найдена' });
+
+      const rejection = requireParticipantSocket(socket, room, 'BUZZ_SUBMIT');
+      if (rejection) return actualCallback && actualCallback(rejection);
 
       if (room.roundState !== RoomState.ACTIVE) {
         return actualCallback && actualCallback({ success: false, error: 'Раунд еще не начался' });
@@ -279,9 +349,8 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       const room = rooms.get(roomId);
       if (!room) return callback && callback({ success: false, error: 'Комната не найдена' });
 
-      if (!socket.data.userId || room.hostUserId !== socket.data.userId) {
-        return callback && callback({ success: false, error: 'Только ведущий может выполнить это действие' });
-      }
+      const rejection = requireHostSocket(socket, room, 'FIRST_REVEAL');
+      if (rejection) return callback && callback(rejection);
 
       if (room.roundState !== RoomState.BUZZED_HIDDEN) {
         return callback && callback({ success: false, error: 'Нельзя открыть ответ сейчас' });
@@ -305,9 +374,8 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       const room = rooms.get(roomId);
       if (!room) return callback && callback({ success: false, error: 'Комната не найдена' });
 
-      if (!socket.data.userId || room.hostUserId !== socket.data.userId) {
-        return callback && callback({ success: false, error: 'Только ведущий может выполнить это действие' });
-      }
+      const rejection = requireHostSocket(socket, room, 'ROUND_RESET');
+      if (rejection) return callback && callback(rejection);
 
       if (data?.winnerId) {
         // Security: only the actual first buzzer can be declared winner
@@ -342,9 +410,8 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       const room = rooms.get(roomId);
       if (!room) return callback && callback({ success: false, error: 'Комната не найдена' });
 
-      if (!socket.data.userId || room.hostUserId !== socket.data.userId) {
-        return callback && callback({ success: false, error: 'Только ведущий может выполнить это действие' });
-      }
+      const rejection = requireHostSocket(socket, room, 'ROOM_FINISH');
+      if (rejection) return callback && callback(rejection);
 
       if (room.roundState === RoomState.FINISHED) {
         return callback && callback({ success: false, error: 'Игра уже завершена' });
@@ -397,7 +464,7 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
   });
 }
 
-function handleDisconnect(socket: Socket<ClientToServerEvents, ServerToClientEvents>, io: Server) {
+function handleDisconnect(socket: Socket<ClientToServerEvents, ServerToClientEvents, import('socket.io').DefaultEventsMap, CustomSocketData>, io: Server) {
   const roomId = socketToRoom.get(socket.id);
   if (!roomId) return;
 
