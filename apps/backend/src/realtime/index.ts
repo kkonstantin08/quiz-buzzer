@@ -5,6 +5,7 @@ import { config } from '../config';
 import { rooms, socketToRoom, createRoom, getRoomByCode } from '../rooms';
 import { RoomState, ClientToServerEvents, ServerToClientEvents, RoomData } from 'shared';
 import xss from 'xss';
+import { reattachHostToRoom, startHostReconnectTimeout } from './host-reconnect';
 
 export type SocketRole = 'host' | 'participant';
 
@@ -128,7 +129,6 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
 
     socket.on('disconnect', () => {
       socketToSyncStats.delete(socket.id);
-      socketToRoom.delete(socket.id);
     });
 
     // Create Room (Host only)
@@ -166,6 +166,34 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       } catch (error) {
         callback({ success: false, error: 'Ошибка авторизации' });
       }
+    });
+
+    // Rejoin Room (Host only)
+    socket.on('HOST_REJOIN_ROOM', ({ roomId }, callback) => {
+      if (!roomId || typeof roomId !== 'string') {
+        return callback({ success: false, error: 'Комната недоступна' });
+      }
+      
+      const userId = socket.data.userId;
+      if (!userId) {
+        return callback({ success: false, error: 'Комната недоступна' });
+      }
+
+      const room = rooms.get(roomId);
+      if (!room) {
+        return callback({ success: false, error: 'Комната недоступна' });
+      }
+
+      if (room.hostUserId !== userId) {
+        return callback({ success: false, error: 'Комната недоступна' });
+      }
+
+      if (room.roundState === RoomState.FINISHED) {
+        return callback({ success: false, error: 'Комната недоступна' });
+      }
+
+      reattachHostToRoom(socket, room, io);
+      callback({ success: true, room });
     });
 
     // Join Room (Participant)
@@ -475,9 +503,9 @@ function handleDisconnect(socket: Socket<ClientToServerEvents, ServerToClientEve
       room.participants = room.participants.filter(p => p.id !== socket.id);
       io.to(roomId).emit('PARTICIPANT_LEFT', socket.id);
       io.to(roomId).emit('ROOM_STATE_UPDATED', room);
-    } else {
-      // It was the host. For MVP, we can delete the room or leave it.
-      // Let's just leave it for now (in case of quick reload).
+    } else if (room.hostSocketId === socket.id) {
+      startHostReconnectTimeout(roomId, io);
+      io.to(roomId).emit('ROOM_STATE_UPDATED', room);
     }
   }
   

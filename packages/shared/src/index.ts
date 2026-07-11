@@ -28,6 +28,7 @@ export interface RoomData {
   createdAt: number;
   customLogoUrl?: string | null;
   unlockAt?: number | null;
+  isHostConnected?: boolean;
 }
 
 // Client -> Server Events
@@ -43,6 +44,7 @@ export interface ClientToServerEvents {
   SYNC_TIME: (clientTime: number, callback: (serverTime: number) => void) => void;
   SYNC_ACK: (data: { clientTime: number, serverTime: number, clientReceiveTime: number }) => void;
   HOST_CLEAR_SCORES: (data: { roomId: string }, callback?: (res: { success: boolean, error?: string }) => void) => void;
+  HOST_REJOIN_ROOM: (data: { roomId: string }, callback: (res: { success: boolean, room?: RoomData, error?: string }) => void) => void;
 }
 
 // Server -> Client Events
@@ -57,4 +59,8 @@ export interface ServerToClientEvents {
   ROUND_RESET_DONE: () => void;
   ROOM_FINISHED: (data: { winnerName: string | null, winnerScore: number }) => void;
   ERROR_EVENT: (error: string) => void;
+  HOST_CONTROL_REVOKED: () => void;
+  HOST_DISCONNECTED: () => void;
+  HOST_RECONNECTED: () => void;
+  ROOM_CLOSED: (reason: string) => void;
 }

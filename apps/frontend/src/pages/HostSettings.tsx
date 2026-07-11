@@ -290,7 +290,10 @@ export function HostSettings() {
                     Загрузить
                   </Button>
                 </div>
-                <p className="text-xs text-slate-600">Рекомендуемый формат: PNG с прозрачным фоном, пропорции 1:1 или горизонтальные.</p>
+                <p className="text-xs text-slate-500 leading-normal">
+                  Максимальный размер: <strong>5 МБ</strong>. Поддерживаемые форматы: <strong>PNG, JPG, WEBP, GIF</strong>.<br />
+                  Рекомендуется изображение с прозрачным фоном, пропорции 1:1 или горизонтальные.
+                </p>
               </div>
               
               {customLogoUrl && (

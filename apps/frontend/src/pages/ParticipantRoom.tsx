@@ -22,6 +22,8 @@ export function ParticipantRoom() {
   const [winnerInfo, setWinnerInfo] = useState<{winnerName: string | null, winnerScore: number} | null>(null);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [unlockReady, setUnlockReady] = useState(false);
+  const [isHostDisconnected, setIsHostDisconnected] = useState(false);
+  const [roomClosedReason, setRoomClosedReason] = useState<string | null>(null);
 
   useEffect(() => {
     if (room?.roundState === RoomState.ACTIVE && room.unlockAt) {
@@ -120,11 +122,27 @@ export function ParticipantRoom() {
       }
     });
 
+    socket.on('HOST_DISCONNECTED', () => {
+      setIsHostDisconnected(true);
+    });
+
+    socket.on('HOST_RECONNECTED', () => {
+      setIsHostDisconnected(false);
+    });
+
+    socket.on('ROOM_CLOSED', (reason) => {
+      setRoomClosedReason(reason);
+      setRoom(null);
+    });
+
     return () => {
       socket.off('ROOM_STATE_UPDATED', onStateUpdate);
       socket.off('ROUND_LOCKED');
       socket.off('ROOM_FINISHED');
       socket.off('FIRST_REVEALED');
+      socket.off('HOST_DISCONNECTED');
+      socket.off('HOST_RECONNECTED');
+      socket.off('ROOM_CLOSED');
     };
   }, [room]);
 
@@ -151,6 +169,21 @@ export function ParticipantRoom() {
       }
     });
   };
+
+  if (roomClosedReason) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[100dvh] bg-slate-50 p-6 text-center">
+        <Crown className="w-16 h-16 text-slate-400 mb-4" />
+        <h2 className="text-3xl font-black text-slate-800 tracking-tight mb-2">Комната закрыта</h2>
+        <p className="text-slate-600 mb-6 font-medium">
+          {roomClosedReason === 'ведущий не вернулся' 
+            ? 'Комната закрыта: ведущий не вернулся.' 
+            : `Комната закрыта: ${roomClosedReason}`}
+        </p>
+        <Button onClick={() => navigate('/')} size="lg" className="h-14 px-8 font-bold">На главную</Button>
+      </div>
+    );
+  }
 
   if (room?.roundState === RoomState.FINISHED && winnerInfo) {
     return (
@@ -236,9 +269,14 @@ export function ParticipantRoom() {
 
   return (
     <div className="flex flex-col items-center min-h-[100dvh] bg-slate-50 p-4 overflow-hidden touch-none relative">
+      {isHostDisconnected && (
+        <div className="w-full bg-amber-500 text-white text-center py-2.5 px-4 font-semibold text-sm animate-pulse z-30 absolute top-0 left-0 right-0">
+          Ведущий временно отключён. Ожидаем восстановления соединения.
+        </div>
+      )}
       
       {/* Header Logo */}
-      <div className="absolute top-6 left-0 right-0 flex justify-center w-full px-4 z-20">
+      <div className="absolute top-12 left-0 right-0 flex justify-center w-full px-4 z-20">
         {logoUrl || room?.customLogoUrl ? (
           <img 
             src={logoUrl || (room?.customLogoUrl ? (room.customLogoUrl.startsWith('http') ? room.customLogoUrl : `${BASE_URL.replace('/api', '')}${room.customLogoUrl}`) : '')} 
