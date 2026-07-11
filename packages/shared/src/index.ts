@@ -31,6 +31,7 @@ export interface RoomData {
   bgTheme?: string;
   unlockAt?: number | null;
   isHostConnected?: boolean;
+  historySaved?: boolean;
 }
 
 // Client -> Server Events

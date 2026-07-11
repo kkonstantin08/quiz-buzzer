@@ -6,6 +6,8 @@ import { rooms, socketToRoom, createRoom, getRoomByCode } from '../rooms';
 import { RoomState, ClientToServerEvents, ServerToClientEvents, RoomData } from 'shared';
 import xss from 'xss';
 import { reattachHostToRoom, startHostReconnectTimeout } from './host-reconnect';
+import { saveGameHistory, schedulePostFinishCleanup, scheduleMaxLifetimeCleanup, postFinishTimers, maxLifetimeTimers } from './room-lifecycle';
+import { hostDisconnectTimers } from './host-reconnect';
 
 export type SocketRole = 'host' | 'participant';
 
@@ -168,6 +170,15 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
         );
         socket.join(room.roomId);
         socketToRoom.set(socket.id, room.roomId);
+
+        // Schedule 24-hour max lifetime cleanup
+        scheduleMaxLifetimeCleanup(
+          room.roomId,
+          io,
+          buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>,
+          [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers]
+        );
+
         callback({ success: true, room });
       } catch (error) {
         callback({ success: false, error: 'Ошибка авторизации' });
@@ -224,6 +235,11 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       const room = getRoomByCode(roomCode);
       if (!room) {
         return callback({ success: false, error: 'Комната не найдена' });
+      }
+
+      // Block joining a finished or expired room
+      if (room.roundState === RoomState.FINISHED) {
+        return callback({ success: false, error: 'Игра уже завершена' });
       }
 
       const participant = {
@@ -465,55 +481,49 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
         }
       }
 
-      // Save to history
-      if (room.participants.length > 0) {
-        try {
-          await prisma.gameHistory.create({
-            data: {
-              hostUserId: room.hostUserId,
-              roomCode: room.roomCode,
-              winnerName: winnerName || 'Ничья / Нет победителя',
-              winnerScore,
-              participants: room.participants.length,
-            }
-          });
-        } catch (err) {
-          console.error('Failed to save game history:', err);
-        }
-      }
+      // Save to history (idempotent)
+      await saveGameHistory(room, prisma);
 
       io.to(roomId).emit('ROOM_STATE_UPDATED', room);
       io.to(roomId).emit('ROOM_FINISHED', { winnerName, winnerScore });
-      
+
+      // Schedule 5-minute post-finish cleanup
+      schedulePostFinishCleanup(
+        roomId,
+        io,
+        buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>,
+        [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers]
+      );
+
       if (callback) callback({ success: true });
     });
 
     socket.on('ROOM_LEAVE', () => {
-      handleDisconnect(socket, io);
+      handleDisconnect(socket);
     });
 
     socket.on('disconnect', () => {
-      handleDisconnect(socket, io);
+      handleDisconnect(socket);
     });
   });
-}
 
-function handleDisconnect(socket: Socket<ClientToServerEvents, ServerToClientEvents, import('socket.io').DefaultEventsMap, CustomSocketData>, io: Server) {
-  const roomId = socketToRoom.get(socket.id);
-  if (!roomId) return;
+  function handleDisconnect(socket: Socket<ClientToServerEvents, ServerToClientEvents, import('socket.io').DefaultEventsMap, CustomSocketData>) {
+    const roomId = socketToRoom.get(socket.id);
+    if (!roomId) return;
 
-  const room = rooms.get(roomId);
-  if (room) {
-    const isParticipant = room.participants.some(p => p.id === socket.id);
-    if (isParticipant) {
-      room.participants = room.participants.filter(p => p.id !== socket.id);
-      io.to(roomId).emit('PARTICIPANT_LEFT', socket.id);
-      io.to(roomId).emit('ROOM_STATE_UPDATED', room);
-    } else if (room.hostSocketId === socket.id) {
-      startHostReconnectTimeout(roomId, io);
-      io.to(roomId).emit('ROOM_STATE_UPDATED', room);
+    const room = rooms.get(roomId);
+    if (room) {
+      const isParticipant = room.participants.some(p => p.id === socket.id);
+      if (isParticipant) {
+        room.participants = room.participants.filter(p => p.id !== socket.id);
+        io.to(roomId).emit('PARTICIPANT_LEFT', socket.id);
+        io.to(roomId).emit('ROOM_STATE_UPDATED', room);
+      } else if (room.hostSocketId === socket.id) {
+        startHostReconnectTimeout(roomId, io, buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>);
+        io.to(roomId).emit('ROOM_STATE_UPDATED', room);
+      }
     }
+
+    socketToRoom.delete(socket.id);
   }
-  
-  socketToRoom.delete(socket.id);
 }
