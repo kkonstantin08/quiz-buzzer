@@ -58,19 +58,51 @@ export function ParticipantRoom() {
   }, [roomCode]);
 
   useEffect(() => {
-    if (!socket.connected) {
+    const tryRejoin = () => {
+      const savedSession = localStorage.getItem(`quiz_participant_${roomCode}`);
+      if (savedSession) {
+        try {
+          const { participantId, reconnectToken } = JSON.parse(savedSession);
+          socket.emit('PARTICIPANT_REJOIN', { roomCode: roomCode || '', participantId, reconnectToken }, (res: any) => {
+            if (res.success && res.room && res.participant) {
+              setRoom(res.room);
+              setName(res.participant.displayName);
+            } else {
+              localStorage.removeItem(`quiz_participant_${roomCode}`);
+              setRoom(null);
+            }
+          });
+        } catch (e) {
+          localStorage.removeItem(`quiz_participant_${roomCode}`);
+        }
+      }
+    };
+
+    const onConnect = () => {
+      tryRejoin();
+    };
+
+    const onDisconnect = () => {
+      const savedSession = localStorage.getItem(`quiz_participant_${roomCode}`);
+      if (!savedSession) {
+        setRoom(null);
+      }
+    };
+
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+
+    if (socket.connected) {
+      tryRejoin();
+    } else {
       socket.connect();
     }
     
-    const onDisconnect = () => {
-      setRoom(null); // Reset room on disconnect to force rejoin
-    };
-    
-    socket.on('disconnect', onDisconnect);
     return () => {
+      socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
     };
-  }, []);
+  }, [roomCode]);
 
   const handleJoin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,10 +115,16 @@ export function ParticipantRoom() {
       socket.connect();
     }
 
-    socket.emit('ROOM_JOIN', { roomCode: roomCode || '', displayName: name }, (res: { success: boolean, room?: RoomData, error?: string }) => {
+    socket.emit('ROOM_JOIN', { roomCode: roomCode || '', displayName: name }, (res: any) => {
       setIsJoining(false);
       if (res.success && res.room) {
         setRoom(res.room);
+        if (res.participant?.id && res.reconnectToken) {
+          localStorage.setItem(`quiz_participant_${roomCode}`, JSON.stringify({
+            participantId: res.participant.id,
+            reconnectToken: res.reconnectToken
+          }));
+        }
       } else {
         setError(res.error || 'Ошибка подключения. Возможно, игра не существует.');
       }
@@ -131,8 +169,15 @@ export function ParticipantRoom() {
     });
 
     socket.on('ROOM_CLOSED', (reason) => {
+      localStorage.removeItem(`quiz_participant_${roomCode}`);
       setRoomClosedReason(reason);
       setRoom(null);
+    });
+
+    socket.on('PARTICIPANT_CONTROL_REVOKED', () => {
+      localStorage.removeItem(`quiz_participant_${roomCode}`);
+      setRoom(null);
+      setError('Вы вошли с другого устройства или вкладки');
     });
 
     return () => {
@@ -143,8 +188,9 @@ export function ParticipantRoom() {
       socket.off('HOST_DISCONNECTED');
       socket.off('HOST_RECONNECTED');
       socket.off('ROOM_CLOSED');
+      socket.off('PARTICIPANT_CONTROL_REVOKED');
     };
-  }, [room]);
+  }, [room, roomCode]);
 
   const handleBuzz = (e?: React.PointerEvent) => {
     const isEffectivelyActive = room?.roundState === RoomState.ACTIVE && (!room.unlockAt || unlockReady);

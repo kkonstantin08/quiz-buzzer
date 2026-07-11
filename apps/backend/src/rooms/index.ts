@@ -66,7 +66,8 @@ export function deleteRoom(
   reason: string,
   io?: import('socket.io').Server,
   buzzBuffers?: Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>,
-  extraTimers?: Map<string, NodeJS.Timeout>[]
+  extraTimers?: Map<string, NodeJS.Timeout>[],
+  participantDisconnectTimers?: Map<string, NodeJS.Timeout>
 ): boolean {
   const room = rooms.get(roomId);
   if (!room) return false; // Already deleted — idempotent
@@ -92,6 +93,18 @@ export function deleteRoom(
       if (t) {
         clearTimeout(t);
         timerMap.delete(roomId);
+      }
+    }
+  }
+
+  // Clear participant disconnect timers
+  if (participantDisconnectTimers) {
+    for (const p of room.participants) {
+      const timerKey = `${roomId}_${p.id}`;
+      const t = participantDisconnectTimers.get(timerKey);
+      if (t) {
+        clearTimeout(t);
+        participantDisconnectTimers.delete(timerKey);
       }
     }
   }

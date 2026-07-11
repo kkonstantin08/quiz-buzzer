@@ -127,7 +127,8 @@ describe('Validated Latency Compensation', () => {
     await sleep(300); 
 
     const roomAfter = Array.from(rooms.values())[0];
-    expect(roomAfter.firstBuzzerId).toBe(p1Socket.id);
+    const p1Participant = roomAfter.participants.find(p => p.socketId === p1Socket.id);
+    expect(roomAfter.firstBuzzerId).toBe(p1Participant?.id);
   });
 
   it('rejects timestamp earlier than unlockAt', async () => {

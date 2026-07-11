@@ -71,10 +71,11 @@ export function schedulePostFinishCleanup(
 
   const timer = lifecycleTimerLoader.setTimeout(() => {
     postFinishTimers.delete(roomId);
+    const { participantDisconnectTimers } = require('./index');
     deleteRoom(roomId, 'игра завершена', io, buzzBuffers, [
       ...extraTimers,
       maxLifetimeTimers,
-    ]);
+    ], participantDisconnectTimers);
   }, 5 * 60 * 1000); // 5 minutes
 
   postFinishTimers.set(roomId, timer);
@@ -107,10 +108,11 @@ export function scheduleMaxLifetimeCleanup(
     if (r && r.roundState !== RoomState.FINISHED) {
       r.roundState = RoomState.FINISHED;
     }
+    const { participantDisconnectTimers } = require('./index');
     deleteRoom(roomId, 'время комнаты истекло', io, buzzBuffers, [
       ...extraTimers,
       postFinishTimers,
-    ]);
+    ], participantDisconnectTimers);
   }, delay);
 
   maxLifetimeTimers.set(roomId, timer);

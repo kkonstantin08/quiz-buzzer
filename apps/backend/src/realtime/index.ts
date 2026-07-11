@@ -8,6 +8,9 @@ import xss from 'xss';
 import { reattachHostToRoom, startHostReconnectTimeout } from './host-reconnect';
 import { saveGameHistory, schedulePostFinishCleanup, scheduleMaxLifetimeCleanup, postFinishTimers, maxLifetimeTimers } from './room-lifecycle';
 import { hostDisconnectTimers } from './host-reconnect';
+import crypto from 'crypto';
+
+export const participantDisconnectTimers = new Map<string, NodeJS.Timeout>();
 
 export type SocketRole = 'host' | 'participant';
 
@@ -242,13 +245,18 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
         return callback({ success: false, error: 'Игра уже завершена' });
       }
 
+      const participantId = crypto.randomUUID();
+      const reconnectToken = crypto.randomBytes(32).toString('hex');
+      const reconnectTokenHash = crypto.createHash('sha256').update(reconnectToken).digest('hex');
+
       const participant = {
-        id: socket.id,
+        id: participantId,
         displayName: safeDisplayName,
         socketId: socket.id,
         joinedAt: Date.now(),
         isConnected: true,
         score: 0,
+        reconnectTokenHash,
       };
 
       room.participants.push(participant);
@@ -257,11 +265,71 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       socket.data.role = 'participant';
       socket.data.participantId = participant.id;
 
-      // Notify host and others
-      io.to(room.roomId).emit('PARTICIPANT_JOINED', participant);
-      io.to(room.roomId).emit('ROOM_STATE_UPDATED', room);
+      // Notify host and others (without hash)
+      const { reconnectTokenHash: _hash, ...safeParticipant } = participant;
+      io.to(room.roomId).emit('PARTICIPANT_JOINED', safeParticipant as any);
       
-      callback({ success: true, participant, room });
+      // Also emit room state without hashes
+      const safeRoom = { ...room, participants: room.participants.map(({ reconnectTokenHash, ...p }) => p) };
+      io.to(room.roomId).emit('ROOM_STATE_UPDATED', safeRoom as any);
+      
+      callback({ success: true, participant: safeParticipant as any, room: safeRoom as any, reconnectToken });
+    });
+
+    // Rejoin Room (Participant)
+    socket.on('PARTICIPANT_REJOIN', ({ roomCode, participantId, reconnectToken }, callback) => {
+      const room = getRoomByCode(roomCode);
+      if (!room) {
+        return callback({ success: false, error: 'Комната не найдена' });
+      }
+
+      if (room.roundState === RoomState.FINISHED) {
+        return callback({ success: false, error: 'Игра уже завершена' });
+      }
+
+      const participant = room.participants.find(p => p.id === participantId);
+      if (!participant || !participant.reconnectTokenHash) {
+        return callback({ success: false, error: 'Участник не найден или недействителен' });
+      }
+
+      const hash = crypto.createHash('sha256').update(reconnectToken).digest('hex');
+      if (participant.reconnectTokenHash !== hash) {
+        return callback({ success: false, error: 'Неверный токен восстановления' });
+      }
+
+      // If the participant was connected on another socket, revoke it
+      if (participant.isConnected && participant.socketId && participant.socketId !== socket.id) {
+        const oldSocket = io.sockets.sockets.get(participant.socketId);
+        if (oldSocket) {
+          oldSocket.emit('PARTICIPANT_CONTROL_REVOKED');
+          oldSocket.data.role = undefined;
+          oldSocket.data.participantId = undefined;
+          oldSocket.leave(room.roomId);
+          socketToRoom.delete(oldSocket.id);
+        }
+      }
+
+      // Clear any pending disconnect timer
+      const timerKey = `${room.roomId}_${participant.id}`;
+      const existingTimer = participantDisconnectTimers.get(timerKey);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+        participantDisconnectTimers.delete(timerKey);
+      }
+
+      // Rebind socket
+      participant.socketId = socket.id;
+      participant.isConnected = true;
+      socket.join(room.roomId);
+      socketToRoom.set(socket.id, room.roomId);
+      socket.data.role = 'participant';
+      socket.data.participantId = participant.id;
+
+      const safeRoom = { ...room, participants: room.participants.map(({ reconnectTokenHash, ...p }) => p) };
+      io.to(room.roomId).emit('ROOM_STATE_UPDATED', safeRoom as any);
+      
+      const { reconnectTokenHash: _hash, ...safeParticipant } = participant;
+      callback({ success: true, participant: safeParticipant as any, room: safeRoom as any });
     });
 
     // Start Round (Host)
@@ -372,12 +440,17 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
 
               const currentRoom = rooms.get(roomId);
               if (currentRoom && currentRoom.roundState === RoomState.ACTIVE) {
-                currentRoom.firstBuzzerId = winner.socketId;
-                currentRoom.roundState = RoomState.REVEALED;
+                // Find the participantId for this socket
+                const winnerParticipantId = io.sockets.sockets.get(winner.socketId)?.data.participantId;
+                if (winnerParticipantId) {
+                  currentRoom.firstBuzzerId = winnerParticipantId;
+                  currentRoom.roundState = RoomState.REVEALED;
 
-                io.to(roomId).emit('ROOM_STATE_UPDATED', currentRoom);
-                io.to(roomId).emit('ROUND_LOCKED');
-                io.to(roomId).emit('FIRST_REVEALED', currentRoom.firstBuzzerId);
+                  const safeRoom = { ...currentRoom, participants: currentRoom.participants.map(({ reconnectTokenHash, ...p }) => p) };
+                  io.to(roomId).emit('ROOM_STATE_UPDATED', safeRoom as any);
+                  io.to(roomId).emit('ROUND_LOCKED');
+                  io.to(roomId).emit('FIRST_REVEALED', currentRoom.firstBuzzerId);
+                }
               }
             }
             buzzBuffers.delete(roomId);
@@ -513,14 +586,30 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
 
     const room = rooms.get(roomId);
     if (room) {
-      const isParticipant = room.participants.some(p => p.id === socket.id);
-      if (isParticipant) {
-        room.participants = room.participants.filter(p => p.id !== socket.id);
-        io.to(roomId).emit('PARTICIPANT_LEFT', socket.id);
-        io.to(roomId).emit('ROOM_STATE_UPDATED', room);
+      const participant = room.participants.find(p => p.socketId === socket.id);
+      if (participant) {
+        participant.isConnected = false;
+        const safeRoom = { ...room, participants: room.participants.map(({ reconnectTokenHash, ...p }) => p) };
+        io.to(roomId).emit('ROOM_STATE_UPDATED', safeRoom as any);
+
+        // Schedule 5-minute disconnect timer
+        const timerKey = `${roomId}_${participant.id}`;
+        const timer = setTimeout(() => {
+          const currentRoom = rooms.get(roomId);
+          if (currentRoom) {
+            currentRoom.participants = currentRoom.participants.filter(p => p.id !== participant.id);
+            const safeCurrentRoom = { ...currentRoom, participants: currentRoom.participants.map(({ reconnectTokenHash, ...p }) => p) };
+            io.to(roomId).emit('PARTICIPANT_LEFT', participant.id);
+            io.to(roomId).emit('ROOM_STATE_UPDATED', safeCurrentRoom as any);
+          }
+          participantDisconnectTimers.delete(timerKey);
+        }, 5 * 60 * 1000);
+        participantDisconnectTimers.set(timerKey, timer);
+
       } else if (room.hostSocketId === socket.id) {
         startHostReconnectTimeout(roomId, io, buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>);
-        io.to(roomId).emit('ROOM_STATE_UPDATED', room);
+        const safeRoom = { ...room, participants: room.participants.map(({ reconnectTokenHash, ...p }) => p) };
+        io.to(roomId).emit('ROOM_STATE_UPDATED', safeRoom as any);
       }
     }
 

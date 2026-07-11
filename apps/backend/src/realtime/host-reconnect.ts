@@ -93,12 +93,14 @@ export function closeRoomAfterHostTimeout(
   buzzBuffers?: Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>
 ) {
   cancelRoomLifecycleTimers(roomId);
+  const { participantDisconnectTimers } = require('./index');
   deleteRoom(
     roomId,
     'ведущий не вернулся',
     io,
     buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }> | undefined,
-    [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers]
+    [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers],
+    participantDisconnectTimers
   );
 }
 
