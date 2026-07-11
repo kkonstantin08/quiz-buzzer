@@ -15,6 +15,7 @@ export interface Participant {
   joinedAt: number;
   isConnected: boolean;
   score: number;
+  reconnectTokenHash?: string;
 }
 
 export interface RoomData {
@@ -37,7 +38,8 @@ export interface RoomData {
 // Client -> Server Events
 export interface ClientToServerEvents {
   ROOM_CREATE: (token: string, callback: (res: { success: boolean, room?: RoomData, error?: string }) => void) => void;
-  ROOM_JOIN: (data: { roomCode: string, displayName: string }, callback: (res: { success: boolean, participant?: Participant, room?: RoomData, error?: string }) => void) => void;
+  ROOM_JOIN: (data: { roomCode: string, displayName: string }, callback: (res: { success: boolean, participant?: Participant, room?: RoomData, reconnectToken?: string, error?: string }) => void) => void;
+  PARTICIPANT_REJOIN: (data: { roomCode: string, participantId: string, reconnectToken: string }, callback: (res: { success: boolean, participant?: Participant, room?: RoomData, error?: string }) => void) => void;
   ROUND_START: (callback?: (res: { success: boolean, error?: string }) => void) => void;
   BUZZ_SUBMIT: (data: { clientPressedAt: number }, callback?: (res: { success: boolean, error?: string }) => void) => void;
   FIRST_REVEAL: (callback?: (res: { success: boolean, error?: string }) => void) => void;
@@ -63,6 +65,7 @@ export interface ServerToClientEvents {
   ROOM_FINISHED: (data: { winnerName: string | null, winnerScore: number }) => void;
   ERROR_EVENT: (error: string) => void;
   HOST_CONTROL_REVOKED: () => void;
+  PARTICIPANT_CONTROL_REVOKED: () => void;
   HOST_DISCONNECTED: () => void;
   HOST_RECONNECTED: () => void;
   ROOM_CLOSED: (reason: string) => void;

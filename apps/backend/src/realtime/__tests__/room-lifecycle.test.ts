@@ -234,7 +234,7 @@ describe('Room Lifecycle', () => {
     const COLLIDING_CODE = 'AABBCC';
     const UNIQUE_CODE = 'DDEEFF';
 
-    jest.spyOn(crypto, 'randomBytes').mockImplementation((size: number) => {
+    jest.spyOn(crypto, 'randomBytes').mockImplementation((size: any): any => {
       callCount++;
       const hex = callCount === 1 ? COLLIDING_CODE.toLowerCase() : UNIQUE_CODE.toLowerCase();
       return Buffer.from(hex, 'hex');
