@@ -3,6 +3,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { Rocket, Zap, Users, Crown, Sparkles, Loader2 } from 'lucide-react';
+import { api } from '../services/api';
 
 export function BillingModal({ onActivated }: { onActivated: () => void }) {
   const [loading, setLoading] = useState(false);
@@ -12,16 +13,7 @@ export function BillingModal({ onActivated }: { onActivated: () => void }) {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch('/api/billing/activate-free', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include', // httpOnly cookie sent automatically
-      });
-      
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to activate');
-      }      
+      await api.activateFreeTrial();
       onActivated();
     } catch (err: any) {
       setError(err.message || 'Ошибка активации');
