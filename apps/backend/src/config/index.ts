@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import path from 'path';
 dotenv.config();
 
 if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
@@ -21,4 +22,5 @@ export const config = {
   corsOrigin: process.env.NODE_ENV === 'production' 
     ? (process.env.CORS_ORIGIN || 'http://localhost:5173') 
     : defaultCors,
+  uploadDir: process.env.UPLOAD_DIR || path.join(__dirname, '../../uploads'),
 };

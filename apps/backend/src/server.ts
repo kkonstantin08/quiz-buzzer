@@ -53,8 +53,10 @@ app.use('/api/settings', settingsRouter);
 app.use('/api/history', historyRouter);
 app.use('/api/rooms', roomsRouter);
 
-// Serve static uploads
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+import { ensureUploadDirExists } from './utils/upload';
+
+// Serve static uploads using new config
+app.use('/uploads', express.static(config.uploadDir));
 
 app.get('/api/health', async (req, res) => {
   try {
@@ -68,6 +70,7 @@ app.get('/api/health', async (req, res) => {
 setupSocketIO(io);
 
 if (process.env.NODE_ENV !== 'test') {
+  ensureUploadDirExists();
   server.listen(Number(config.port), '0.0.0.0', () => {
     console.log(`Backend server listening on port ${config.port}`);
   });
