@@ -51,7 +51,7 @@ describe('HostRoom Frontend Reconnect & States', () => {
 
     renderComponent('room-123');
 
-    expect(screen.getByText(/Восстанавливаем комнату…/i)).toBeInTheDocument();
+    expect(screen.getByText(/Восстанавливаем игру…/i)).toBeInTheDocument();
   });
 
   it('3. Successful restoration renders host controls', async () => {
@@ -75,8 +75,8 @@ describe('HostRoom Frontend Reconnect & States', () => {
 
     renderComponent('room-123');
 
-    // Restoration completes and we see "Комната активна"
-    expect(await screen.findByText(/Комната активна/i)).toBeInTheDocument();
+    // Restoration completes and we see "Игра активна"
+    expect(await screen.findByText(/Игра активна/i)).toBeInTheDocument();
   });
 
   it('4. Rejoin failure shows unavailable screen', async () => {
@@ -89,7 +89,7 @@ describe('HostRoom Frontend Reconnect & States', () => {
 
     renderComponent('room-123');
 
-    expect((await screen.findAllByText(/Комната недоступна/i)).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/Игра недоступна/i)).length).toBeGreaterThan(0);
   });
 
   it('5. HOST_CONTROL_REVOKED shows control revoked screen', async () => {
@@ -121,7 +121,7 @@ describe('HostRoom Frontend Reconnect & States', () => {
     renderComponent('room-123');
 
     // Wait until connected
-    expect(await screen.findByText(/Комната активна/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Игра активна/i)).toBeInTheDocument();
 
     // Simulate event HOST_CONTROL_REVOKED from server
     act(() => {
@@ -129,7 +129,7 @@ describe('HostRoom Frontend Reconnect & States', () => {
     });
 
     expect(screen.getByText(/Управление отозвано/i)).toBeInTheDocument();
-    expect(screen.getByText(/Управление комнатой перенесено в другую вкладку/i)).toBeInTheDocument();
+    expect(screen.getByText(/Управление игрой перенесено в другую вкладку/i)).toBeInTheDocument();
   });
 
   it('6. Socket reconnect triggers rejoin again', async () => {
@@ -162,7 +162,7 @@ describe('HostRoom Frontend Reconnect & States', () => {
 
     renderComponent('room-123');
 
-    expect(await screen.findByText(/Комната активна/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Игра активна/i)).toBeInTheDocument();
     expect(rejoinCount).toBe(1);
 
     // Simulate socket reconnect

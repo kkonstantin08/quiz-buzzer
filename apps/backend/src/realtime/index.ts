@@ -159,7 +159,13 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
 
         socket.data.userId = userId;
         socket.data.role = 'host';
-        const room = createRoom(userId, socket.id, user.settings?.customLogoUrl);
+        const room = createRoom(
+          userId, 
+          socket.id, 
+          user.settings?.customLogoUrl,
+          user.settings?.customBgUrl,
+          user.settings?.bgTheme
+        );
         socket.join(room.roomId);
         socketToRoom.set(socket.id, room.roomId);
         callback({ success: true, room });

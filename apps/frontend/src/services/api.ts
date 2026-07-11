@@ -134,6 +134,25 @@ export const api = {
     return res.json();
   },
 
+  async uploadBg(file: File) {
+    const formData = new FormData();
+    formData.append('background', file);
+
+    const res = await customFetch(`${API_URL}/settings/upload-bg`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) {
+      let errorMsg = 'Failed to upload background';
+      try {
+        const error = await res.json();
+        errorMsg = error.error || errorMsg;
+      } catch (e) {}
+      throw new Error(translateError(errorMsg));
+    }
+    return res.json();
+  },
+
   async getSettings() {
     const res = await customFetch(`${API_URL}/settings`);
     if (!res.ok) {

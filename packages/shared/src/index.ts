@@ -27,6 +27,8 @@ export interface RoomData {
   firstBuzzerId: string | null;
   createdAt: number;
   customLogoUrl?: string | null;
+  customBgUrl?: string | null;
+  bgTheme?: string;
   unlockAt?: number | null;
   isHostConnected?: boolean;
 }

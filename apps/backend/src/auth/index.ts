@@ -43,6 +43,7 @@ const loginLimiter = rateLimit({
   message: { error: 'Слишком много попыток входа, пожалуйста, подождите 15 минут' },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { trustProxy: false },
 });
 
 const registerLimiter = rateLimit({
@@ -51,6 +52,7 @@ const registerLimiter = rateLimit({
   message: { error: 'Слишком много регистраций с этого IP, пожалуйста, подождите час' },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { trustProxy: false },
 });
 
 authRouter.post('/login', loginLimiter, async (req, res) => {

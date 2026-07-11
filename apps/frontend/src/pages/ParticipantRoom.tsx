@@ -88,7 +88,7 @@ export function ParticipantRoom() {
       if (res.success && res.room) {
         setRoom(res.room);
       } else {
-        setError(res.error || 'Ошибка подключения. Возможно, комната не существует.');
+        setError(res.error || 'Ошибка подключения. Возможно, игра не существует.');
       }
     });
   };
@@ -174,11 +174,11 @@ export function ParticipantRoom() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[100dvh] bg-slate-50 p-6 text-center">
         <Crown className="w-16 h-16 text-slate-400 mb-4" />
-        <h2 className="text-3xl font-black text-slate-800 tracking-tight mb-2">Комната закрыта</h2>
+        <h2 className="text-3xl font-black text-slate-800 tracking-tight mb-2">Игра закрыта</h2>
         <p className="text-slate-600 mb-6 font-medium">
           {roomClosedReason === 'ведущий не вернулся' 
-            ? 'Комната закрыта: ведущий не вернулся.' 
-            : `Комната закрыта: ${roomClosedReason}`}
+            ? 'Игра закрыта: ведущий не вернулся.' 
+            : `Игра закрыта: ${roomClosedReason}`}
         </p>
         <Button onClick={() => navigate('/')} size="lg" className="h-14 px-8 font-bold">На главную</Button>
       </div>
@@ -267,67 +267,87 @@ export function ParticipantRoom() {
     }
   }
 
+  // Background styles based on theme
+  let bgClass = "flex flex-col items-center min-h-[100dvh] bg-slate-50 p-4 overflow-hidden touch-none relative";
+  let bgStyle: React.CSSProperties = {};
+  let showOverlay = false;
+  const isDarkBg = room?.bgTheme === 'dark' || room?.bgTheme === 'violet-fuchsia' || !!room?.customBgUrl;
+
+  if (room?.customBgUrl) {
+    bgClass = "flex flex-col items-center min-h-[100dvh] bg-cover bg-center bg-no-repeat p-4 overflow-hidden touch-none relative";
+    bgStyle = { backgroundImage: `url(${room.customBgUrl.startsWith('http') ? room.customBgUrl : `${BASE_URL.replace('/api', '')}${room.customBgUrl}`})` };
+    showOverlay = true;
+  } else if (room?.bgTheme === 'dark') {
+    bgClass = "flex flex-col items-center min-h-[100dvh] bg-slate-950 p-4 overflow-hidden touch-none relative text-slate-100";
+  } else if (room?.bgTheme === 'violet-fuchsia') {
+    bgClass = "flex flex-col items-center min-h-[100dvh] bg-gradient-to-br from-violet-950 via-slate-900 to-fuchsia-950 p-4 overflow-hidden touch-none relative text-slate-100";
+  }
+
   return (
-    <div className="flex flex-col items-center min-h-[100dvh] bg-slate-50 p-4 overflow-hidden touch-none relative">
-      {isHostDisconnected && (
-        <div className="w-full bg-amber-500 text-white text-center py-2.5 px-4 font-semibold text-sm animate-pulse z-30 absolute top-0 left-0 right-0">
-          Ведущий временно отключён. Ожидаем восстановления соединения.
-        </div>
-      )}
+    <div className={bgClass} style={bgStyle}>
+      {showOverlay && <div className="absolute inset-0 bg-black/45 backdrop-blur-[1px] z-0" />}
       
-      {/* Header Logo */}
-      <div className="absolute top-12 left-0 right-0 flex justify-center w-full px-4 z-20">
-        {logoUrl || room?.customLogoUrl ? (
-          <img 
-            src={logoUrl || (room?.customLogoUrl ? (room.customLogoUrl.startsWith('http') ? room.customLogoUrl : `${BASE_URL.replace('/api', '')}${room.customLogoUrl}`) : '')} 
-            alt="Logo" 
-            className="max-h-12 object-contain" 
-          />
-        ) : (
-          <span className="font-black text-2xl text-slate-800/80">КвизПульт</span>
+      <div className="relative z-10 w-full flex flex-col items-center flex-1">
+        {isHostDisconnected && (
+          <div className="w-full bg-amber-500 text-white text-center py-2.5 px-4 font-semibold text-sm animate-pulse z-30 absolute top-0 left-0 right-0">
+            Ведущий временно отключён. Ожидаем восстановления соединения.
+          </div>
         )}
-      </div>
-
-      <div className="flex-1 flex flex-col items-center justify-center w-full">
-        <div className="relative w-[280px] h-[280px] sm:w-[320px] sm:h-[320px] flex items-center justify-center">
-        {/* Animated Glow behind the button */}
-        <AnimatePresence>
-          {glow && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1.2 }}
-              exit={{ opacity: 0, scale: 0.8 }}
-              transition={{ duration: 1, repeat: Infinity, repeatType: "reverse" }}
-              className={`absolute inset-0 rounded-full blur-3xl ${amIFirst && isLocked ? 'bg-green-500/40' : 'bg-red-500/30'}`}
+        
+        {/* Header Logo */}
+        <div className="absolute top-12 left-0 right-0 flex justify-center w-full px-4 z-20">
+          {logoUrl || room?.customLogoUrl ? (
+            <img 
+              src={logoUrl || (room?.customLogoUrl ? (room.customLogoUrl.startsWith('http') ? room.customLogoUrl : `${BASE_URL.replace('/api', '')}${room.customLogoUrl}`) : '')} 
+              alt="Logo" 
+              className="max-h-12 object-contain" 
             />
+          ) : (
+            <span className={`font-black text-2xl ${isDarkBg ? 'text-white/80' : 'text-slate-800/80'}`}>КвизПульт</span>
           )}
-        </AnimatePresence>
+        </div>
 
-        <motion.button
-          className={`relative z-10 w-full h-full rounded-full text-white text-4xl font-bold tracking-widest shadow-[0_20px_50px_rgba(8,_112,_184,_0.7)] ${btnColor}`}
-          style={{ 
-            boxShadow: (isActive || (isLocked && amIFirst)) ? `0 20px 40px -10px ${amIFirst ? 'rgba(34,197,94,0.7)' : 'rgba(239,68,68,0.7)'}, inset 0 -10px 20px rgba(0,0,0,0.2), inset 0 10px 20px rgba(255,255,255,0.3)` 
-                               : `0 20px 40px -10px rgba(0,0,0,0.3), inset 0 -10px 20px rgba(0,0,0,0.2), inset 0 10px 20px rgba(255,255,255,0.2)`
-          }}
-          animate={isBuzzedLocal && isActive ? { scale: 0.9 } : { scale: 1 }}
-          whileHover={(isActive && !isBuzzedLocal) || (isLocked && amIFirst) ? { scale: 1.05 } : {}}
-          whileTap={(isActive && !isBuzzedLocal) ? { scale: 0.9, y: 10 } : {}}
-          transition={{ type: "spring", stiffness: 400, damping: 17 }}
-          onPointerDown={handleBuzz}
-          disabled={!isActive || isBuzzedLocal}
+        <div className="flex-1 flex flex-col items-center justify-center w-full">
+          <div className="relative w-[280px] h-[280px] sm:w-[320px] sm:h-[320px] flex items-center justify-center">
+          {/* Animated Glow behind the button */}
+          <AnimatePresence>
+            {glow && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1.2 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                transition={{ duration: 1, repeat: Infinity, repeatType: "reverse" }}
+                className={`absolute inset-0 rounded-full blur-3xl ${amIFirst && isLocked ? 'bg-green-500/40' : 'bg-red-500/30'}`}
+              />
+            )}
+          </AnimatePresence>
+
+          <motion.button
+            className={`relative z-10 w-full h-full rounded-full text-white text-4xl font-bold tracking-widest shadow-[0_20px_50px_rgba(8,_112,_184,_0.7)] ${btnColor}`}
+            style={{ 
+              boxShadow: (isActive || (isLocked && amIFirst)) ? `0 20px 40px -10px ${amIFirst ? 'rgba(34,197,94,0.7)' : 'rgba(239,68,68,0.7)'}, inset 0 -10px 20px rgba(0,0,0,0.2), inset 0 10px 20px rgba(255,255,255,0.3)` 
+                                 : `0 20px 40px -10px rgba(0,0,0,0.3), inset 0 -10px 20px rgba(0,0,0,0.2), inset 0 10px 20px rgba(255,255,255,0.2)`
+            }}
+            animate={isBuzzedLocal && isActive ? { scale: 0.9 } : { scale: 1 }}
+            whileHover={(isActive && !isBuzzedLocal) || (isLocked && amIFirst) ? { scale: 1.05 } : {}}
+            whileTap={(isActive && !isBuzzedLocal) ? { scale: 0.9, y: 10 } : {}}
+            transition={{ type: "spring", stiffness: 400, damping: 17 }}
+            onPointerDown={handleBuzz}
+            disabled={!isActive || isBuzzedLocal}
+          >
+            {isActive && !isBuzzedLocal ? 'ЖМИ!' : ''}
+          </motion.button>
+        </div>
+
+        <motion.div 
+          key={statusText}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={`mt-12 text-2xl font-semibold text-center whitespace-pre-line ${isDarkBg ? 'text-slate-200' : 'text-slate-600'}`}
         >
-          {isActive && !isBuzzedLocal ? 'ЖМИ!' : ''}
-        </motion.button>
-      </div>
-
-      <motion.div 
-        key={statusText}
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mt-12 text-2xl font-semibold text-slate-600 text-center whitespace-pre-line"
-      >
-        {statusText}
-      </motion.div>
+          {statusText}
+        </motion.div>
+        </div>
       </div>
     </div>
   );

@@ -18,7 +18,8 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'logo-' + uniqueSuffix + path.extname(file.originalname));
+    const prefix = file.fieldname === 'background' ? 'bg-' : 'logo-';
+    cb(null, prefix + uniqueSuffix + path.extname(file.originalname));
   }
 });
 
@@ -76,12 +77,14 @@ settingsRouter.get('/', async (req: any, res: any) => {
 
 settingsRouter.patch('/', async (req: any, res: any) => {
   try {
-    const { soundEnabled, soundTheme, customLogoUrl } = req.body;
+    const { soundEnabled, soundTheme, customLogoUrl, customBgUrl, bgTheme } = req.body;
 
     const dataToUpdate: any = {};
     if (typeof soundEnabled === 'boolean') dataToUpdate.soundEnabled = soundEnabled;
     if (typeof soundTheme === 'string') dataToUpdate.soundTheme = soundTheme;
     if (typeof customLogoUrl !== 'undefined') dataToUpdate.customLogoUrl = customLogoUrl; // allow null
+    if (typeof customBgUrl !== 'undefined') dataToUpdate.customBgUrl = customBgUrl; // allow null
+    if (typeof bgTheme === 'string') dataToUpdate.bgTheme = bgTheme;
 
     let settings = await prisma.hostSettings.findUnique({
       where: { hostUserId: req.userId },
@@ -128,6 +131,44 @@ settingsRouter.post('/upload-logo', (req: any, res: any, next: any) => {
 
     // Verify file signature (magic bytes) — MIME from headers can be spoofed
     // file-type v22 is ESM-only: use dynamic import
+    const { fileTypeFromFile } = await import('file-type');
+    const fileType = await fileTypeFromFile(req.file.path);
+    const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!fileType || !allowedMimes.includes(fileType.mime)) {
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: 'Invalid file signature. Only JPEG, PNG, WebP and GIF are allowed.' });
+    }
+
+    const fileUrl = `/uploads/${req.file.filename}`;
+    return res.json({ url: fileUrl });
+  } catch (error: any) {
+    console.error('Upload error:', error);
+    if (req.file?.path && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+settingsRouter.post('/upload-bg', (req: any, res: any, next: any) => {
+  upload.single('background')(req, res, (err: any) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: 'Файл слишком большой. Максимальный размер 5 МБ.' });
+      }
+      return res.status(400).json({ error: `Ошибка загрузки: ${err.message}` });
+    } else if (err) {
+      return res.status(400).json({ error: err.message });
+    }
+    next();
+  });
+}, async (req: any, res: any) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Verify file signature (magic bytes)
     const { fileTypeFromFile } = await import('file-type');
     const fileType = await fileTypeFromFile(req.file.path);
     const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];

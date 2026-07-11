@@ -7,7 +7,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -43,6 +43,8 @@ model HostSettings {
   soundEnabled   Boolean  @default(true)
   soundTheme     String   @default("classic")
   customLogoUrl  String?
+  customBgUrl    String?
+  bgTheme        String   @default("light")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }

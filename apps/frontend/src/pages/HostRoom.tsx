@@ -39,7 +39,7 @@ export function HostRoom() {
   useEffect(() => {
     if (!roomId) {
       setReconnectState('unavailable');
-      setReconnectError('Идентификатор комнаты отсутствует.');
+      setReconnectError('Идентификатор игры отсутствует.');
       return;
     }
 
@@ -56,7 +56,7 @@ export function HostRoom() {
           setReconnectState('connected');
         } else {
           setReconnectState('unavailable');
-          setReconnectError(res.error || 'Комната недоступна');
+          setReconnectError(res.error || 'Игра недоступна');
         }
       });
     };
@@ -131,7 +131,7 @@ export function HostRoom() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[100dvh] bg-slate-50 text-center p-6">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div>
-        <h1 className="text-2xl font-bold text-slate-800">Восстанавливаем комнату…</h1>
+        <h1 className="text-2xl font-bold text-slate-800">Восстанавливаем игру…</h1>
       </div>
     );
   }
@@ -147,7 +147,7 @@ export function HostRoom() {
             <div className="space-y-2">
               <h1 className="text-3xl font-black text-slate-800 tracking-tight animate-bounce">Управление отозвано</h1>
               <p className="text-slate-600 text-lg leading-relaxed">
-                Управление комнатой перенесено в другую вкладку или на другое устройство.
+                Управление игрой перенесено в другую вкладку или на другое устройство.
               </p>
             </div>
             <Button size="lg" className="w-full h-14 font-bold" onClick={() => navigate('/dashboard')}>
@@ -168,9 +168,9 @@ export function HostRoom() {
               <Crown className="w-10 h-10" />
             </div>
             <div className="space-y-2">
-              <h1 className="text-3xl font-black text-slate-800 tracking-tight">Комната недоступна</h1>
+              <h1 className="text-3xl font-black text-slate-800 tracking-tight">Игра недоступна</h1>
               <p className="text-slate-600 text-lg leading-relaxed">
-                {reconnectError || 'Не удалось загрузить или восстановить сессию комнаты.'}
+                {reconnectError || 'Не удалось загрузить или восстановить сессию игры.'}
               </p>
             </div>
             <Button size="lg" className="w-full h-14 font-bold" onClick={() => navigate('/dashboard')}>
@@ -243,7 +243,7 @@ export function HostRoom() {
               </div>
               <div className="space-y-2">
                 <h1 className="text-3xl font-black text-slate-800 tracking-tight">Игра завершена</h1>
-                <p className="text-lg text-slate-600">В комнате так и не появилось участников. Эта игра не будет сохранена в статистике.</p>
+                <p className="text-lg text-slate-600">В игре так и не появилось участников. Эта игра не будет сохранена в статистике.</p>
               </div>
               <Button size="lg" className="mt-8 w-full h-14 text-lg font-bold" onClick={() => navigate('/dashboard')}>
                 На главную
@@ -285,8 +285,25 @@ export function HostRoom() {
     );
   }
 
+  // Background styles based on theme
+  let bgClass = "min-h-[100dvh] bg-slate-50";
+  let bgStyle: React.CSSProperties = {};
+  let showOverlay = false;
+
+  if (room.customBgUrl) {
+    bgClass = "min-h-[100dvh] bg-cover bg-center bg-no-repeat relative";
+    bgStyle = { backgroundImage: `url(${room.customBgUrl.startsWith('http') ? room.customBgUrl : `${BASE_URL.replace('/api', '')}${room.customBgUrl}`})` };
+    showOverlay = true;
+  } else if (room.bgTheme === 'dark') {
+    bgClass = "min-h-[100dvh] bg-slate-950 text-slate-100";
+  } else if (room.bgTheme === 'violet-fuchsia') {
+    bgClass = "min-h-[100dvh] bg-gradient-to-br from-violet-950 via-slate-900 to-fuchsia-950 text-slate-100";
+  }
+
   return (
-    <div className="dashboard-container">
+    <div className={bgClass} style={bgStyle}>
+      {showOverlay && <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] z-0" />}
+      <div className="relative z-10 dashboard-container">
       
       {/* Mobile-optimized Header with Room Code and QR Button */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6 p-4 bg-white rounded-2xl shadow-sm border">
@@ -300,7 +317,7 @@ export function HostRoom() {
           )}
           <div className="flex items-center h-full">
             <h1 className="text-3xl font-bold text-primary tracking-wide leading-none">
-              Комната активна
+              Игра активна
             </h1>
           </div>
         </div>
@@ -465,9 +482,9 @@ export function HostRoom() {
               </div>
             )}
           </CardContent>
-        </Card>
-
+          </Card>
       </div>
+    </div>
     </div>
   );
 }

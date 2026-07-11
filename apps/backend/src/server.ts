@@ -16,7 +16,7 @@ import { setupSocketIO } from './realtime';
 import { ClientToServerEvents, ServerToClientEvents } from 'shared';
 
 const app = express();
-app.set('trust proxy', true);
+app.set('trust proxy', 1);
 const server = http.createServer(app);
 
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(server, {
@@ -37,6 +37,7 @@ const apiLimiter = rateLimit({
   message: { error: 'Too many requests from this IP, please try again after 15 minutes' },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { trustProxy: false },
 });
 app.use('/api/', apiLimiter);
 
