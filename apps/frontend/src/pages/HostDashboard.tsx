@@ -69,6 +69,7 @@ export function HostDashboard() {
   };
 
   const handleLogout = async () => {
+    socket.disconnect();
     await api.logout();
     navigate('/', { replace: true });
   };

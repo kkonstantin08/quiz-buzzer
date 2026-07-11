@@ -23,6 +23,16 @@ model HostUser {
   subscription    Subscription?
   settings        HostSettings?
   gameHistory     GameHistory[]
+  sessions        Session[]
+}
+
+model Session {
+  id         String    @id @default(uuid())
+  userId     String
+  user       HostUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
 }
 
 model Subscription {

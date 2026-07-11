@@ -9,6 +9,8 @@ import { reattachHostToRoom, startHostReconnectTimeout } from './host-reconnect'
 import { saveGameHistory, schedulePostFinishCleanup, scheduleMaxLifetimeCleanup, postFinishTimers, maxLifetimeTimers } from './room-lifecycle';
 import { hostDisconnectTimers } from './host-reconnect';
 import crypto from 'crypto';
+import { appEvents } from '../events';
+import { deleteRoom } from '../rooms';
 
 export const participantDisconnectTimers = new Map<string, NodeJS.Timeout>();
 
@@ -18,6 +20,8 @@ export interface CustomSocketData {
   role?: SocketRole;
   userId?: string;
   participantId?: string;
+  sessionId?: string;
+  intentionalLogout?: boolean;
 }
 
 function rejectSocketAction(action: string, reason: string, socketId: string, roomId?: string) {
@@ -74,7 +78,7 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
   const socketToSyncStats = new Map<string, SyncStats>();
 
   // Authenticate socket connections via httpOnly cookie or explicit auth token
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     // Try explicit token from handshake auth first (legacy)
     let token: string | undefined = socket.handshake.auth?.token;
 
@@ -87,13 +91,42 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
 
     if (token) {
       try {
-        const decoded = jwt.verify(token, config.jwtSecret) as { userId: string };
+        const decoded = jwt.verify(token, config.jwtSecret) as { userId: string, sessionId?: string };
         socket.data.userId = decoded.userId;
+        
+        if (decoded.sessionId) {
+          const session = await prisma.session.findUnique({ where: { id: decoded.sessionId } });
+          if (session && session.userId === decoded.userId && session.expiresAt > new Date() && !session.revokedAt) {
+            socket.data.sessionId = decoded.sessionId;
+          } else {
+            return next(new Error('Session revoked'));
+          }
+        }
       } catch {
         // Ignore invalid tokens — participants don't need auth
       }
     }
     next();
+  });
+
+  appEvents.on('host_logout', (sessionId: string) => {
+    for (const [socketId, socket] of io.sockets.sockets.entries()) {
+      if (socket.data.sessionId === sessionId) {
+        socket.data.intentionalLogout = true;
+        const roomId = socketToRoom.get(socketId);
+        if (roomId) {
+          deleteRoom(
+            roomId, 
+            'Ведущий завершил сессию', 
+            io, 
+            buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>, 
+            [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers], 
+            participantDisconnectTimers
+          );
+        }
+        socket.disconnect(true);
+      }
+    }
   });
 
   io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, import('socket.io').DefaultEventsMap, CustomSocketData>) => {
@@ -607,9 +640,11 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
         participantDisconnectTimers.set(timerKey, timer);
 
       } else if (room.hostSocketId === socket.id) {
-        startHostReconnectTimeout(roomId, io, buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>);
-        const safeRoom = { ...room, participants: room.participants.map(({ reconnectTokenHash, ...p }) => p) };
-        io.to(roomId).emit('ROOM_STATE_UPDATED', safeRoom as any);
+        if (!socket.data.intentionalLogout) {
+          startHostReconnectTimeout(roomId, io, buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>);
+          const safeRoom = { ...room, participants: room.participants.map(({ reconnectTokenHash, ...p }) => p) };
+          io.to(roomId).emit('ROOM_STATE_UPDATED', safeRoom as any);
+        }
       }
     }
 

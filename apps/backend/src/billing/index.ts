@@ -5,24 +5,9 @@ import { config } from '../config';
 
 export const billingRouter = Router();
 
-// Middleware to authenticate user
-const requireAuth = (req: any, res: any, next: any) => {
-  let token = req.cookies?.hostToken;
-  if (!token) {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No token provided' });
-    token = authHeader.split(' ')[1];
-  }
-  try {
-    const decoded = jwt.verify(token, config.jwtSecret) as { userId: string };
-    req.userId = decoded.userId;
-    next();
-  } catch (err) {
-    return res.status(401).json({ error: 'Invalid token' });
-  }
-};
+import { requireAuth, AuthRequest } from '../auth/middleware';
 
-billingRouter.post('/checkout', requireAuth, async (req: any, res: any) => {
+billingRouter.post('/checkout', requireAuth, async (req: AuthRequest, res: any) => {
   try {
     // Stub for YooKassa or other payment gateway
     // In the future, this will call YooKassa API to get a payment URL
@@ -32,9 +17,9 @@ billingRouter.post('/checkout', requireAuth, async (req: any, res: any) => {
   }
 });
 
-billingRouter.post('/activate-free', requireAuth, async (req: any, res: any) => {
+billingRouter.post('/activate-free', requireAuth, async (req: AuthRequest, res: any) => {
   try {
-    const userId = req.userId;
+    const userId = req.userId!;
 
     // Check if user already used their free trial
     const user = await prisma.hostUser.findUnique({ where: { id: userId } });

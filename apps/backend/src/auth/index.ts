@@ -7,6 +7,8 @@ import path from 'path';
 import fs from 'fs';
 import { prisma } from '../prisma';
 import { config } from '../config';
+import { requireAuth, AuthRequest } from './middleware';
+import { appEvents } from '../events';
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -77,7 +79,17 @@ authRouter.post('/login', loginLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = jwt.sign({ userId: user.id }, config.jwtSecret, { expiresIn: '7d' });
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    const session = await prisma.session.create({
+      data: {
+        userId: user.id,
+        expiresAt,
+      }
+    });
+
+    const token = jwt.sign({ userId: user.id, sessionId: session.id }, config.jwtSecret, { expiresIn: '7d' });
     
     // Set JWT in httpOnly cookie (inaccessible to JavaScript)
     const isHttps = process.env.USE_HTTPS === 'true';
@@ -106,22 +118,10 @@ authRouter.post('/login', loginLimiter, async (req, res) => {
   }
 });
 
-authRouter.get('/me', async (req: any, res) => {
+authRouter.get('/me', requireAuth, async (req: AuthRequest, res) => {
   try {
-    // Accept token from httpOnly cookie first, then Authorization header as fallback
-    let token = req.cookies?.hostToken;
-    if (!token) {
-      const authHeader = req.headers.authorization;
-      if (!authHeader) {
-        return res.status(401).json({ error: 'No token provided' });
-      }
-      token = authHeader.split(' ')[1];
-    }
-    
-    const decoded = jwt.verify(token, config.jwtSecret) as { userId: string };
-    
     const user = await prisma.hostUser.findUnique({
-      where: { id: decoded.userId },
+      where: { id: req.userId! },
       include: { subscription: true, settings: true },
     });
     
@@ -145,41 +145,36 @@ authRouter.get('/me', async (req: any, res) => {
       } : null
     });
   } catch (error) {
-    return res.status(401).json({ error: 'Invalid token' });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-authRouter.post('/logout', (req, res) => {
+authRouter.post('/logout', requireAuth, async (req: AuthRequest, res) => {
+  if (req.sessionId) {
+    await prisma.session.update({
+      where: { id: req.sessionId },
+      data: { revokedAt: new Date() }
+    });
+    appEvents.emit('host_logout', req.sessionId);
+  }
   res.clearCookie('hostToken', { httpOnly: true, sameSite: 'strict' });
   return res.json({ success: true });
 });
 
-authRouter.put('/me', async (req: any, res) => {
+authRouter.put('/me', requireAuth, async (req: AuthRequest, res) => {
   try {
-    // Accept token from httpOnly cookie first, then Authorization header as fallback
-    let token = req.cookies?.hostToken;
-    if (!token) {
-      const authHeader = req.headers.authorization;
-      if (!authHeader) {
-        return res.status(401).json({ error: 'No token provided' });
-      }
-      token = authHeader.split(' ')[1];
-    }
-    
-    const decoded = jwt.verify(token, config.jwtSecret) as { userId: string };
-    
     const { name, email } = req.body;
     
     // Check if email is being changed and is already taken
     if (email) {
       const existingUser = await prisma.hostUser.findUnique({ where: { email } });
-      if (existingUser && existingUser.id !== decoded.userId) {
+      if (existingUser && existingUser.id !== req.userId!) {
         return res.status(400).json({ error: 'Email already in use' });
       }
     }
 
     const updatedUser = await prisma.hostUser.update({
-      where: { id: decoded.userId },
+      where: { id: req.userId! },
       data: { 
         name: name !== undefined ? name : undefined,
         email: email !== undefined ? email : undefined 
@@ -203,24 +198,12 @@ authRouter.put('/me', async (req: any, res) => {
       } : null
     });
   } catch (error) {
-    return res.status(401).json({ error: 'Invalid token or update failed' });
+    return res.status(500).json({ error: 'Update failed' });
   }
 });
 
-authRouter.post('/avatar', upload.single('avatar'), async (req: any, res) => {
+authRouter.post('/avatar', requireAuth, upload.single('avatar'), async (req: AuthRequest, res) => {
   try {
-    // Accept token from httpOnly cookie first, then Authorization header as fallback
-    let token = req.cookies?.hostToken;
-    if (!token) {
-      const authHeader = req.headers.authorization;
-      if (!authHeader) {
-        return res.status(401).json({ error: 'No token provided' });
-      }
-      token = authHeader.split(' ')[1];
-    }
-    
-    const decoded = jwt.verify(token, config.jwtSecret) as { userId: string };
-    
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded or invalid file type' });
     }
@@ -238,14 +221,14 @@ authRouter.post('/avatar', upload.single('avatar'), async (req: any, res) => {
     const avatarUrl = `/uploads/avatars/${req.file.filename}`;
 
     const updatedUser = await prisma.hostUser.update({
-      where: { id: decoded.userId },
+      where: { id: req.userId! },
       data: { avatarUrl },
     });
 
     return res.json({ avatarUrl: updatedUser.avatarUrl });
   } catch (error) {
     console.error('Avatar upload error:', error);
-    return res.status(401).json({ error: 'Upload failed' });
+    return res.status(500).json({ error: 'Upload failed' });
   }
 });
 
@@ -279,7 +262,17 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
       },
     });
 
-    const token = jwt.sign({ userId: user.id }, config.jwtSecret, { expiresIn: '7d' });
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    const session = await prisma.session.create({
+      data: {
+        userId: user.id,
+        expiresAt,
+      }
+    });
+
+    const token = jwt.sign({ userId: user.id, sessionId: session.id }, config.jwtSecret, { expiresIn: '7d' });
 
     // Set JWT in httpOnly cookie (inaccessible to JavaScript)
     const isHttps = process.env.USE_HTTPS === 'true';
