@@ -8,7 +8,7 @@
     "dev": "nodemon src/server.ts",
     "build": "tsc && tsc prisma/seed.ts --outDir dist/prisma --module node16 --moduleResolution node16 --target es2022 --esModuleInterop",
     "db:generate": "prisma generate",
-    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate deploy",
     "db:seed": "node dist/prisma/seed.js",
     "test": "jest"
   },

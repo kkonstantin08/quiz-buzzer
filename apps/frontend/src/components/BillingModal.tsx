@@ -76,7 +76,7 @@ export function BillingModal({ onActivated }: { onActivated: () => void }) {
                   </div>
                   <div>
                     <h4 className="font-bold text-slate-900 text-base mb-0.5">Безлимитные игры</h4>
-                    <p className="text-slate-600 text-sm leading-snug">Создавайте неограниченное количество комнат и раундов для любой аудитории.</p>
+                    <p className="text-slate-600 text-sm leading-snug">Создавайте неограниченное количество игр и раундов для любой аудитории.</p>
                   </div>
                 </div>
 

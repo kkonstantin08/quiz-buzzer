@@ -28,6 +28,8 @@ export function HostSettings() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [soundTheme, setSoundTheme] = useState('classic');
   const [customLogoUrl, setCustomLogoUrl] = useState('');
+  const [customBgUrl, setCustomBgUrl] = useState('');
+  const [bgTheme, setBgTheme] = useState('light');
 
   // Danger Zone
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
@@ -37,6 +39,8 @@ export function HostSettings() {
   // File Upload
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingBg, setIsUploadingBg] = useState(false);
+  const bgInputRef = useRef<HTMLInputElement>(null);
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -64,6 +68,33 @@ export function HostSettings() {
     }
   };
 
+  const handleBgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Файл слишком большой', { description: 'Максимальный размер 5 МБ' });
+      return;
+    }
+
+    try {
+      setIsUploadingBg(true);
+      const res = await api.uploadBg(file);
+      
+      const cleanBaseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
+      const fullUrl = `${cleanBaseUrl}${res.url}`;
+      
+      setCustomBgUrl(fullUrl);
+      setBgTheme('custom');
+      toast.success('Фоновое изображение загружено');
+    } catch (err: any) {
+      toast.error('Ошибка загрузки', { description: err.message });
+    } finally {
+      setIsUploadingBg(false);
+      if (bgInputRef.current) bgInputRef.current.value = '';
+    }
+  };
+
   const playPreview = (theme: string) => {
     import('../lib/sounds').then(({ playSound }) => {
       playSound('preview', theme, soundEnabled);
@@ -80,7 +111,7 @@ export function HostSettings() {
       handleSaveSettings(true);
     }, 800);
     return () => clearTimeout(timer);
-  }, [soundEnabled, soundTheme, customLogoUrl, isLoaded]);
+  }, [soundEnabled, soundTheme, customLogoUrl, customBgUrl, bgTheme, isLoaded]);
 
   const loadData = async () => {
     try {
@@ -99,6 +130,8 @@ export function HostSettings() {
         setSoundEnabled(settings.soundEnabled);
         setSoundTheme(settings.soundTheme || 'classic');
         setCustomLogoUrl(settings.customLogoUrl || '');
+        setCustomBgUrl(settings.customBgUrl || '');
+        setBgTheme(settings.bgTheme || 'light');
       }
     } catch (err) {
       navigate('/login', { replace: true });
@@ -114,6 +147,8 @@ export function HostSettings() {
         soundEnabled,
         soundTheme,
         customLogoUrl: customLogoUrl.trim() === '' ? null : customLogoUrl.trim(),
+        customBgUrl: customBgUrl.trim() === '' ? null : customBgUrl.trim(),
+        bgTheme,
       });
       if (!silent) toast.success('Настройки успешно сохранены!');
     } catch (error) {
@@ -135,7 +170,7 @@ export function HostSettings() {
       if (res.success && res.room) {
         navigate(`/host/room/${res.room.roomId}`, { state: { room: res.room } });
       } else {
-        toast.error('Не удалось создать комнату', {
+        toast.error('Не удалось создать игру', {
           description: res.error || 'Внутренняя ошибка сервера. Пожалуйста, попробуйте позже.'
         });
       }
@@ -202,7 +237,7 @@ export function HostSettings() {
                 <Volume2 className="text-slate-500" size={20} />
                 Звуки и эффекты
               </CardTitle>
-              <CardDescription>Настройки, которые будут применяться ко всем новым комнатам</CardDescription>
+              <CardDescription>Настройки, которые будут применяться ко всем новым играм</CardDescription>
             </CardHeader>
             <CardContent className="p-6 space-y-6">
               <div className="flex items-center justify-between">
@@ -297,17 +332,131 @@ export function HostSettings() {
               </div>
               
               {customLogoUrl && (
-                <div className="mt-4 p-4 border rounded-lg bg-slate-50 flex items-center justify-center">
+                <div className="mt-4 p-4 border rounded-lg bg-slate-50 flex items-center justify-center relative">
                   <img 
                     src={customLogoUrl} 
                     alt="Предпросмотр логотипа" 
                     className="max-h-16 object-contain"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM5NDBhMWUiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSIxMCIvPjxsaW5lIHgxPSIxMiIgeTE9IjgiIHgyPSIxMiIgeTI9IjEyIi8+PGxpbmUgeDE9IjEyIiB5MT0iMTYiIHgyPSIxMi4wMSIgeTI9IjE2Ii8+PC9zdmc+';
-                    }}
                   />
+                  <Button 
+                    variant="destructive" 
+                    size="sm" 
+                    onClick={() => setCustomLogoUrl('')}
+                    className="absolute top-2 right-2 h-7 px-2"
+                  >
+                    Удалить
+                  </Button>
                 </div>
               )}
+
+              {/* Задний фон (Стиль игры) */}
+              <div className="space-y-4 pt-4 border-t border-slate-100">
+                <div className="space-y-1">
+                  <Label>Задний фон (Стиль игры)</Label>
+                  <CardDescription>Выберите готовую тему или загрузите своё фоновое изображение для игровых экранов</CardDescription>
+                </div>
+                
+                {/* Theme Preset Selector */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <Button
+                    type="button"
+                    variant={bgTheme === 'light' && !customBgUrl ? 'default' : 'outline'}
+                    onClick={() => {
+                      setBgTheme('light');
+                      setCustomBgUrl('');
+                    }}
+                    className="h-12 font-medium"
+                  >
+                    Светлая (по умолчанию)
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={bgTheme === 'dark' && !customBgUrl ? 'default' : 'outline'}
+                    onClick={() => {
+                      setBgTheme('dark');
+                      setCustomBgUrl('');
+                    }}
+                    className="h-12 font-medium bg-slate-900 text-white hover:bg-slate-800 hover:text-white"
+                  >
+                    Темная
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={bgTheme === 'violet-fuchsia' && !customBgUrl ? 'default' : 'outline'}
+                    onClick={() => {
+                      setBgTheme('violet-fuchsia');
+                      setCustomBgUrl('');
+                    }}
+                    className="h-12 font-medium bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white hover:opacity-90"
+                  >
+                    Фиолетовый градиент
+                  </Button>
+                </div>
+
+                {/* Custom Background Upload */}
+                <div className="space-y-2 pt-2">
+                  <Label htmlFor="bgUrl">Собственное фоновое изображение (URL или загрузка)</Label>
+                  <div className="flex gap-3">
+                    <Input 
+                      id="bgUrl" 
+                      placeholder="https://example.com/my-bg.jpg" 
+                      value={customBgUrl}
+                      onChange={(e) => {
+                        setCustomBgUrl(e.target.value);
+                        setBgTheme('custom');
+                      }}
+                      className="flex-1"
+                    />
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      className="hidden" 
+                      ref={bgInputRef}
+                      onChange={handleBgUpload}
+                    />
+                    <Button 
+                      variant="outline" 
+                      onClick={() => bgInputRef.current?.click()}
+                      disabled={isUploadingBg}
+                      className="shrink-0 flex items-center gap-2"
+                    >
+                      {isUploadingBg ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                      Загрузить
+                    </Button>
+                  </div>
+                  <p className="text-xs text-slate-500 leading-normal">
+                    Максимальный размер: <strong>5 МБ</strong>. Поддерживаемые форматы: <strong>PNG, JPG, WEBP, GIF</strong>.<br />
+                    Рекомендуется использовать контрастные или приглушенные изображения.
+                  </p>
+                </div>
+
+                {customBgUrl && (
+                  <div className="mt-4 p-4 border rounded-lg bg-slate-50 flex flex-col items-center gap-2 relative">
+                    <span className="text-xs font-semibold text-slate-500 self-start">Предпросмотр фона:</span>
+                    <div 
+                      className="w-full h-32 rounded-md bg-cover bg-center border shadow-sm relative overflow-hidden"
+                      style={{ backgroundImage: `url(${customBgUrl})` }}
+                    >
+                      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center">
+                        <span className="text-white text-xs font-bold px-3 py-1.5 bg-black/40 rounded-full">
+                          Текст квиза будет читаемым
+                        </span>
+                      </div>
+                    </div>
+                    <Button 
+                      variant="destructive" 
+                      size="sm" 
+                      onClick={() => {
+                        setCustomBgUrl('');
+                        setBgTheme('light');
+                      }}
+                      className="absolute top-2 right-2 h-7 px-2"
+                    >
+                      Удалить
+                    </Button>
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
 

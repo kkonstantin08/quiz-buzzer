@@ -6,7 +6,7 @@
 
 Проект организован как monorepo (npm workspaces) и включает в себя:
 - **Frontend**: React, Vite, TypeScript, Tailwind CSS, Shadcn UI, Socket.IO Client.
-- **Backend**: Node.js, Express, Socket.IO (WebSockets), TypeScript, PostgreSQL (Prisma).
+- **Backend**: Node.js, Express, Socket.IO (WebSockets), TypeScript, SQLite (Prisma + миграции).
 - **Shared**: Общие TypeScript-типы и интерфейсы для синхронизации клиента и сервера.
 
 ## 🛠 Локальный запуск и тестирование
@@ -63,10 +63,63 @@
 
 ## 🌍 Развертывание (Docker / Production)
 
-Если вы хотите развернуть проект на сервере, используйте Docker. В корне проекта есть настроенный `docker-compose.yml`, который поднимает Nginx, PostgreSQL, Backend и Frontend вместе с Cloudflared-туннелем для доступа извне:
+Проект использует **SQLite** как базу данных. Файл базы данных хранится в именованном Docker volume (`backend_data`), смонтированном в `/app/prisma/`.
+
+### Первый запуск
+
+При запуске backend-контейнера `entrypoint.sh` **автоматически** применяет Prisma-миграции перед стартом сервера:
+
 ```bash
-docker-compose up --build -d
+# Первый деплой (создаст таблицы автоматически)
+docker compose up --build -d
 ```
+
+Если миграция завершится с ошибкой, контейнер не запустится (`set -e`).
+
+### Проверка healthcheck
+
+Healthcheck проверяет не только доступность порта, но и соединение с базой данных:
+```bash
+docker compose ps   # STATUS: healthy
+```
+
+Напрямую проверить:
+```bash
+curl http://localhost:3001/api/health
+# {"status":"ok","database":"connected"}
+```
+
+### Создание тестового пользователя (Seed)
+
+Seed **не запускается автоматически**. Выполняйте его только явно:
+```bash
+# После запуска контейнеров
+docker compose exec backend node dist/prisma/seed.js
+```
+
+Либо локально:
+```bash
+npm run db:seed -w apps/backend
+```
+
+### Применение новых миграций
+
+При обновлении схемы:
+```bash
+# 1. Создать новую миграцию (разработка)
+cd apps/backend && npx prisma migrate dev --name <название_изменения>
+
+# 2. Задеплоить (production) — выполняется автоматически при перезапуске контейнера
+docker compose up -d --no-deps --build backend
+```
+
+### Сброс volume и чистая установка
+
+```bash
+docker compose down -v   # удаляет volumes (ДАННЫЕ БУДУТ ПОТЕРЯНЫ)
+docker compose up --build -d
+```
+
 Для просмотра сгенерированной публичной ссылки (при использовании Quick Tunnels):
 ```bash
 docker-compose logs cloudflared | grep trycloudflare

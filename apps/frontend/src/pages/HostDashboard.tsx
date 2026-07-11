@@ -61,7 +61,7 @@ export function HostDashboard() {
       if (res.success && res.room) {
         navigate(`/host/room/${res.room.roomId}`, { state: { room: res.room } });
       } else {
-        toast.error('Не удалось создать комнату', {
+        toast.error('Не удалось создать игру', {
           description: res.error || 'Внутренняя ошибка сервера. Пожалуйста, попробуйте позже.'
         });
       }
@@ -109,7 +109,7 @@ export function HostDashboard() {
             <div className="space-y-3 text-center lg:text-left">
               <h2 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight drop-shadow-sm">Готовы начать игру?</h2>
               <p className="text-violet-100 max-w-md text-sm sm:text-base md:text-lg">
-                Создайте новую комнату в один клик. Игроки смогут присоединиться по QR-коду со своих смартфонов.
+                Создайте новую игру в один клик. Игроки смогут присоединиться по QR-коду со своих смартфонов.
               </p>
             </div>
             <Button 
@@ -128,7 +128,7 @@ export function HostDashboard() {
           <Card className="border-slate-200 shadow-sm">
             <CardHeader className="pb-2">
               <CardTitle className="text-base md:text-lg">Последние игры</CardTitle>
-              <CardDescription>История запущенных комнат</CardDescription>
+              <CardDescription>История запущенных игр</CardDescription>
             </CardHeader>
             <CardContent>
               {history.length === 0 ? (
