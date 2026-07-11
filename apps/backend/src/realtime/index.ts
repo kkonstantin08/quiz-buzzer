@@ -11,6 +11,12 @@ import { hostDisconnectTimers } from './host-reconnect';
 import crypto from 'crypto';
 import { appEvents } from '../events';
 import { deleteRoom } from '../rooms';
+import { withValidation, cleanupValidationRateLimits } from './validation';
+import { 
+  SyncTimeSchema, SyncAckSchema, RoomCreateSchema, HostRejoinRoomSchema, 
+  RoomJoinSchema, ParticipantRejoinSchema, RoundStartSchema, BuzzSubmitStrictSchema,
+  RoundResetSchema, EmptyPayloadSchema 
+} from 'shared';
 
 export const participantDisconnectTimers = new Map<string, NodeJS.Timeout>();
 
@@ -132,11 +138,11 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
   io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, import('socket.io').DefaultEventsMap, CustomSocketData>) => {
     
     // Time Sync
-    socket.on('SYNC_TIME', (clientTime: number, callback: (serverTime: number) => void) => {
+    socket.on('SYNC_TIME', withValidation(SyncTimeSchema, 'SYNC_TIME', (clientTime: number, callback: (serverTime: number) => void) => {
       if (callback) callback(Date.now());
-    });
+    }));
 
-    socket.on('SYNC_ACK', (data: { clientTime: number, serverTime: number, clientReceiveTime: number }) => {
+    socket.on('SYNC_ACK', withValidation(SyncAckSchema, 'SYNC_ACK', (data: { clientTime: number, serverTime: number, clientReceiveTime: number }) => {
       const serverReceiveTime = Date.now();
       const rtt = data.clientReceiveTime - data.clientTime;
       const offset = data.serverTime - (data.clientTime + rtt / 2);
@@ -163,14 +169,15 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       stats.medianOffset = sortedOffset[Math.floor(sortedOffset.length / 2)];
       stats.jitter = sortedRtt[sortedRtt.length - 1] - sortedRtt[0];
       stats.lastSyncTime = serverReceiveTime;
-    });
+    }));
 
     socket.on('disconnect', () => {
       socketToSyncStats.delete(socket.id);
+      cleanupValidationRateLimits(socket.id);
     });
 
     // Create Room (Host only)
-    socket.on('ROOM_CREATE', async (token, callback) => {
+    socket.on('ROOM_CREATE', withValidation(RoomCreateSchema, 'ROOM_CREATE', async (token, callback) => {
       try {
         // Prefer userId already set by cookie middleware; fall back to explicit token
         let userId = socket.data.userId;
@@ -179,11 +186,13 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
           userId = decoded.userId;
         }
         if (!userId) {
-          return callback({ success: false, error: 'Требуется авторизация' });
+          if (callback) return callback({ success: false, error: 'Требуется авторизация' });
+          return;
         }
 
         if (socket.data.role === 'participant') {
-          return callback(rejectSocketAction('ROOM_CREATE', 'participant_cannot_create', socket.id));
+          if (callback) return callback(rejectSocketAction('ROOM_CREATE', 'participant_cannot_create', socket.id));
+          return;
         }
 
         const user = await prisma.hostUser.findUnique({
@@ -192,7 +201,8 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
         });
 
         if (!user || !user.subscription || user.subscription.status !== 'active' || user.subscription.currentPeriodEnd < new Date()) {
-          return callback({ success: false, error: 'Для создания комнаты нужна активная подписка' });
+          if (callback) return callback({ success: false, error: 'Для создания комнаты нужна активная подписка' });
+          return;
         }
 
         socket.data.userId = userId;
@@ -215,67 +225,78 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
           [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers]
         );
 
-        callback({ success: true, room });
+        if (callback) callback({ success: true, room });
       } catch (error) {
-        callback({ success: false, error: 'Ошибка авторизации' });
+        if (callback) callback({ success: false, error: 'Ошибка авторизации' });
       }
-    });
+    }) as any);
 
     // Rejoin Room (Host only)
-    socket.on('HOST_REJOIN_ROOM', ({ roomId }, callback) => {
+    socket.on('HOST_REJOIN_ROOM', withValidation(HostRejoinRoomSchema, 'HOST_REJOIN_ROOM', ({ roomId }, callback) => {
       if (!roomId || typeof roomId !== 'string') {
-        return callback({ success: false, error: 'Комната недоступна' });
+        if (callback) return callback({ success: false, error: 'Комната недоступна' });
+        return;
       }
       
       const userId = socket.data.userId;
       if (!userId) {
-        return callback({ success: false, error: 'Комната недоступна' });
+        if (callback) return callback({ success: false, error: 'Комната недоступна' });
+        return;
       }
 
       const room = rooms.get(roomId);
       if (!room) {
-        return callback({ success: false, error: 'Комната недоступна' });
+        if (callback) return callback({ success: false, error: 'Комната недоступна' });
+        return;
       }
 
       if (room.hostUserId !== userId) {
-        return callback({ success: false, error: 'Комната недоступна' });
+        if (callback) return callback({ success: false, error: 'Комната недоступна' });
+        return;
       }
 
       if (room.roundState === RoomState.FINISHED) {
-        return callback({ success: false, error: 'Комната недоступна' });
+        if (callback) return callback({ success: false, error: 'Комната недоступна' });
+        return;
       }
 
       reattachHostToRoom(socket, room, io);
-      callback({ success: true, room });
-    });
+      if (callback) callback({ success: true, room });
+    }) as any);
 
     // Join Room (Participant)
-    socket.on('ROOM_JOIN', ({ roomCode, displayName }, callback) => {
+    socket.on('ROOM_JOIN', withValidation(RoomJoinSchema, 'ROOM_JOIN', ({ roomCode, displayName }, callback) => {
       if (socket.data.role === 'host') {
-        return callback(rejectSocketAction('ROOM_JOIN', 'host_cannot_join', socket.id));
+        if (callback) return callback(rejectSocketAction('ROOM_JOIN', 'host_cannot_join', socket.id));
+        return;
       }
       if (socket.data.role === 'participant') {
-        return callback(rejectSocketAction('ROOM_JOIN', 'already_joined', socket.id));
+        if (callback) return callback(rejectSocketAction('ROOM_JOIN', 'already_joined', socket.id));
+        return;
       }
 
       if (!displayName || displayName.trim().length === 0) {
-        return callback({ success: false, error: 'Введите имя' });
+        if (callback) return callback({ success: false, error: 'Введите имя' });
+        return;
       }
 
       // Sanitize displayName to prevent injection
       const safeDisplayName = xss(displayName).trim().substring(0, 20);
       if (safeDisplayName.length === 0) {
-        return callback({ success: false, error: 'Недопустимое имя' });
+        if (callback) return callback({ success: false, error: 'Недопустимое имя' });
+        return;
       }
 
       const room = getRoomByCode(roomCode);
       if (!room) {
-        return callback({ success: false, error: 'Комната не найдена' });
+        if (callback) return callback({ success: false, error: 'Комната не найдена' });
+        return;
       }
 
       // Block joining a finished or expired room
       if (room.roundState === RoomState.FINISHED) {
-        return callback({ success: false, error: 'Игра уже завершена' });
+        if (callback) return callback({ success: false, error: 'Игра уже завершена' });
+        return;
       }
 
       const participantId = crypto.randomUUID();
@@ -306,28 +327,32 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       const safeRoom = { ...room, participants: room.participants.map(({ reconnectTokenHash, ...p }) => p) };
       io.to(room.roomId).emit('ROOM_STATE_UPDATED', safeRoom as any);
       
-      callback({ success: true, participant: safeParticipant as any, room: safeRoom as any, reconnectToken });
-    });
+      if (callback) callback({ success: true, participant: safeParticipant as any, room: safeRoom as any, reconnectToken });
+    }) as any);
 
     // Rejoin Room (Participant)
-    socket.on('PARTICIPANT_REJOIN', ({ roomCode, participantId, reconnectToken }, callback) => {
+    socket.on('PARTICIPANT_REJOIN', withValidation(ParticipantRejoinSchema, 'PARTICIPANT_REJOIN', ({ roomCode, participantId, reconnectToken }, callback) => {
       const room = getRoomByCode(roomCode);
       if (!room) {
-        return callback({ success: false, error: 'Комната не найдена' });
+        if (callback) return callback({ success: false, error: 'Комната не найдена' });
+        return;
       }
 
       if (room.roundState === RoomState.FINISHED) {
-        return callback({ success: false, error: 'Игра уже завершена' });
+        if (callback) return callback({ success: false, error: 'Игра уже завершена' });
+        return;
       }
 
       const participant = room.participants.find(p => p.id === participantId);
       if (!participant || !participant.reconnectTokenHash) {
-        return callback({ success: false, error: 'Участник не найден или недействителен' });
+        if (callback) return callback({ success: false, error: 'Участник не найден или недействителен' });
+        return;
       }
 
       const hash = crypto.createHash('sha256').update(reconnectToken).digest('hex');
       if (participant.reconnectTokenHash !== hash) {
-        return callback({ success: false, error: 'Неверный токен восстановления' });
+        if (callback) return callback({ success: false, error: 'Неверный токен восстановления' });
+        return;
       }
 
       // If the participant was connected on another socket, revoke it
@@ -362,11 +387,11 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       io.to(room.roomId).emit('ROOM_STATE_UPDATED', safeRoom as any);
       
       const { reconnectTokenHash: _hash, ...safeParticipant } = participant;
-      callback({ success: true, participant: safeParticipant as any, room: safeRoom as any });
-    });
+      if (callback) callback({ success: true, participant: safeParticipant as any, room: safeRoom as any });
+    }) as any);
 
     // Start Round (Host)
-    socket.on('ROUND_START', (callback) => {
+    socket.on('ROUND_START', withValidation(RoundStartSchema, 'ROUND_START', (data, callback) => {
       const roomId = socketToRoom.get(socket.id);
       if (!roomId) return callback && callback({ success: false, error: 'Вы не в комнате' });
       
@@ -389,16 +414,16 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       io.to(roomId).emit('ROOM_STATE_UPDATED', room);
       io.to(roomId).emit('ROUND_STARTED');
       if (callback) callback({ success: true });
-    });
+    }));
 
     // Rate limiting map for BUZZ_SUBMIT
     const buzzRateLimits = new Map<string, number>();
 
     // Submit Buzz (Participant)
-    socket.on('BUZZ_SUBMIT', (data: any, callback?: any) => {
+    socket.on('BUZZ_SUBMIT', withValidation(BuzzSubmitStrictSchema, 'BUZZ_SUBMIT', (data: any, callback?: any) => {
       const receivedAt = Date.now();
       const clientPressedAt = data && typeof data.clientPressedAt === 'number' ? data.clientPressedAt : Date.now();
-      const actualCallback = typeof data === 'function' ? data : callback;
+      const actualCallback = callback;
 
       const lastBuzz = buzzRateLimits.get(socket.id) || 0;
       if (receivedAt - lastBuzz < 500) { // 500ms limit
@@ -495,10 +520,10 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       buffer.buzzes.push({ socketId: socket.id, timestamp: validatedPressedAt, receivedAt });
 
       if (actualCallback) actualCallback({ success: true });
-    });
+    }));
 
     // Reveal First (Host)
-    socket.on('FIRST_REVEAL', (callback) => {
+    socket.on('FIRST_REVEAL', withValidation(EmptyPayloadSchema, 'FIRST_REVEAL', (data, callback) => {
       const roomId = socketToRoom.get(socket.id);
       if (!roomId) return callback && callback({ success: false, error: 'Вы не в комнате' });
       
@@ -517,13 +542,10 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       io.to(roomId).emit('FIRST_REVEALED', room.firstBuzzerId!);
       
       if (callback) callback({ success: true });
-    });
+    }));
 
     // Reset Round (Host)
-    socket.on('ROUND_RESET', (dataOrCallback?: any, maybeCallback?: any) => {
-      const data = typeof dataOrCallback === 'function' ? undefined : dataOrCallback;
-      const callback = typeof dataOrCallback === 'function' ? dataOrCallback : maybeCallback;
-
+    socket.on('ROUND_RESET', withValidation(RoundResetSchema, 'ROUND_RESET', (data, callback) => {
       const roomId = socketToRoom.get(socket.id);
       if (!roomId) return callback && callback({ success: false, error: 'Вы не в комнате' });
       
@@ -556,10 +578,10 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       io.to(roomId).emit('ROUND_RESET_DONE');
       
       if (callback) callback({ success: true });
-    });
+    }));
 
     // Finish Room (Host)
-    socket.on('ROOM_FINISH', async (callback) => {
+    socket.on('ROOM_FINISH', withValidation(EmptyPayloadSchema, 'ROOM_FINISH', async (data, callback) => {
       const roomId = socketToRoom.get(socket.id);
       if (!roomId) return callback && callback({ success: false, error: 'Вы не в комнате' });
       
@@ -602,11 +624,11 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       );
 
       if (callback) callback({ success: true });
-    });
+    }));
 
-    socket.on('ROOM_LEAVE', () => {
+    socket.on('ROOM_LEAVE', withValidation(EmptyPayloadSchema, 'ROOM_LEAVE', () => {
       handleDisconnect(socket);
-    });
+    }));
 
     socket.on('disconnect', () => {
       handleDisconnect(socket);
