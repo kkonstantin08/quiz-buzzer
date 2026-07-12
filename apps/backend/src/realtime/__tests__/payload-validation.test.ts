@@ -120,11 +120,11 @@ describe('Socket Payload Validation', () => {
     });
   });
   
-  it('handles empty payload gracefully for ROOM_LEAVE (no callback expected)', (done) => {
+  it('emits the shared ERROR_EVENT object for invalid payloads without a callback', (done) => {
     clientSocket.emit('ROOM_LEAVE', { someRandomData: 123 }); // strict error
     
-    clientSocket.once('ERROR_EVENT', (msg: string) => {
-      expect(msg).toBe('Некорректные данные');
+    clientSocket.once('ERROR_EVENT', (payload: { message: string }) => {
+      expect(payload).toEqual({ message: 'Некорректные данные' });
       done();
     });
   });

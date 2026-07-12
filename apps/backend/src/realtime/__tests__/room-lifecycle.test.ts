@@ -80,15 +80,8 @@ afterEach(() => {
 
 describe('Room Lifecycle', () => {
   // ── 1. Post-finish 5-minute cleanup ───────────────────────────────────────
-  it('1. Finished room is deleted 5 minutes after ROOM_FINISH', async () => {
-    // Arrange: mock timer loader so we control when it fires
-    const capturedTimers: { cb: () => void; ms: number }[] = [];
-    jest.spyOn(lifecycleTimerLoader, 'setTimeout').mockImplementation((cb, ms) => {
-      capturedTimers.push({ cb, ms });
-      return setTimeout(() => {}, 99999); // dummy
-    });
-    jest.spyOn(lifecycleTimerLoader, 'clearTimeout').mockImplementation(() => {});
-
+  it('1. Finished room is deleted 5 minutes after ROOM_FINISH', () => {
+    jest.useFakeTimers();
     const io = makeMockIo();
     const buzzBuffers = new Map<string, any>();
     const room = createRoom('host-1', 'sock-1');
@@ -97,26 +90,17 @@ describe('Room Lifecycle', () => {
     schedulePostFinishCleanup(room.roomId, io, buzzBuffers, []);
 
     expect(rooms.has(room.roomId)).toBe(true);
-
-    // Find and fire the 5-minute timer
-    const five = capturedTimers.find(t => t.ms === 5 * 60 * 1000);
-    expect(five).toBeDefined();
-    five!.cb();
+    jest.advanceTimersByTime(5 * 60 * 1000);
 
     expect(rooms.has(room.roomId)).toBe(false);
 
     io.close();
+    jest.useRealTimers();
   });
 
   // ── 2. 24-hour max lifetime cleanup ───────────────────────────────────────
   it('2. Room is deleted after 24 hours from creation', () => {
-    const capturedTimers: { cb: () => void; ms: number }[] = [];
-    jest.spyOn(lifecycleTimerLoader, 'setTimeout').mockImplementation((cb, ms) => {
-      capturedTimers.push({ cb, ms });
-      return setTimeout(() => {}, 99999);
-    });
-    jest.spyOn(lifecycleTimerLoader, 'clearTimeout').mockImplementation(() => {});
-
+    jest.useFakeTimers();
     const io = makeMockIo();
     const buzzBuffers = new Map<string, any>();
     const room = createRoom('host-1', 'sock-1');
@@ -124,14 +108,12 @@ describe('Room Lifecycle', () => {
     scheduleMaxLifetimeCleanup(room.roomId, io, buzzBuffers, []);
 
     expect(rooms.has(room.roomId)).toBe(true);
-
-    const timer24 = capturedTimers.find(t => t.ms >= 23 * 60 * 60 * 1000);
-    expect(timer24).toBeDefined();
-    timer24!.cb();
+    jest.advanceTimersByTime(24 * 60 * 60 * 1000);
 
     expect(rooms.has(room.roomId)).toBe(false);
 
     io.close();
+    jest.useRealTimers();
   });
 
   // ── 3. History saved exactly once ─────────────────────────────────────────

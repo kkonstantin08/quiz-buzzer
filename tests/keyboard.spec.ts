@@ -26,21 +26,23 @@ test.describe('Keyboard Navigation', () => {
 
   test('Host login can be completed with keyboard only', async ({ page }) => {
     await page.goto('/login');
-    
-    await page.keyboard.press('Tab'); // Skip link
-    await page.keyboard.press('Tab'); // Logo link
-    await page.keyboard.press('Tab'); // Email
-    
+
+    await page.getByLabel('Email').focus();
     await page.keyboard.type('host@test.com');
     await page.keyboard.press('Tab'); // Password
     await page.keyboard.type('password');
-    
+
     // Press enter to submit
     await page.keyboard.press('Enter');
-    
-    // Should navigate or show error. In this case without backend it might show error
-    // We just verify it can trigger the form
-    await expect(page.locator('form')).toBeVisible();
+
+    // A keyboard submit either completes login or exposes the server error.
+    await expect
+      .poll(async () => {
+        if (page.url().endsWith('/dashboard')) return 'dashboard';
+        if (await page.getByRole('alert').isVisible()) return 'alert';
+        return 'pending';
+      })
+      .not.toBe('pending');
   });
 
 });

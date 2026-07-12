@@ -1,6 +1,6 @@
 import { Server } from 'socket.io';
 import { PrismaClient } from '@prisma/client';
-import { RoomData, RoomState } from 'shared';
+import { InternalRoomData, RoomState } from 'shared';
 import { rooms, deleteRoom } from '../rooms';
 
 // ---------------------------------------------------------------------------
@@ -19,7 +19,7 @@ export const lifecycleTimerLoader = {
 // History persistence (idempotent)
 // ---------------------------------------------------------------------------
 export async function saveGameHistory(
-  room: RoomData,
+  room: InternalRoomData,
   prisma: PrismaClient
 ): Promise<void> {
   if (room.historySaved) return; // Already saved — skip

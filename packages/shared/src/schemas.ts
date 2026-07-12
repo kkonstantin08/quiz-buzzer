@@ -15,17 +15,9 @@ export const ParticipantRejoinSchema = z.object({
 
 export const RoundStartSchema = z.void().or(z.undefined()); // No arguments expected
 
-export const BuzzSubmitSchema = z.object({
-  clientPressedAt: z.number().finite().nonnegative().max(Date.now() + 86400000 * 365), // Not more than a year in the future
-}).strict().optional().or(z.void()); // Wait, currently it's (data: { clientPressedAt: number }) but data can be empty/undefined based on index.ts line 400. Let's enforce { clientPressedAt } but allow missing data for fallback.
-
-// Let's look closely at BuzzSubmitSchema:
-// In index.ts: `socket.on('BUZZ_SUBMIT', (data: any, callback?: any) => {`
-// clientPressedAt = data && typeof data.clientPressedAt === 'number' ? data.clientPressedAt : Date.now();
-// Let's strict it:
 export const BuzzSubmitStrictSchema = z.object({
   clientPressedAt: z.number().finite().nonnegative().max(Date.now() + 86400000 * 365),
-}).strict().optional(); // Data is optional, clientPressedAt is required if data is provided.
+}).strict().optional();
 
 export const RoundResetSchema = z.object({
   winnerId: z.string().max(128).nullable().optional(),
@@ -39,9 +31,7 @@ export const SyncAckSchema = z.object({
   clientReceiveTime: z.number().finite().nonnegative(),
 }).strict();
 
-export const HostClearScoresSchema = z.object({
-  roomId: z.string().max(128),
-}).strict();
+export const HostClearScoresSchema = z.void().or(z.undefined()).or(z.null()).or(z.object({}).strict());
 
 export const HostRejoinRoomSchema = z.object({
   roomId: z.string().max(128),

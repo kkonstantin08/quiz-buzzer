@@ -38,7 +38,17 @@ export function ParticipantRoom() {
   const [myParticipantId, setMyParticipantId] = useState<string | null>(null);
   const announce = useAriaLive();
   const buzzTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const myParticipantIdRef = useRef<string | null>(null);
+  const roomCodeRef = useRef(roomCode);
   const shouldReduceMotion = useReducedMotion();
+
+  useEffect(() => {
+    myParticipantIdRef.current = myParticipantId;
+  }, [myParticipantId]);
+
+  useEffect(() => {
+    roomCodeRef.current = roomCode;
+  }, [roomCode]);
 
   useEffect(() => {
     if (room?.roundState === RoomState.ACTIVE && room.unlockAt) {
@@ -97,10 +107,11 @@ export function ParticipantRoom() {
           socket.emit(
             "PARTICIPANT_REJOIN",
             { roomCode: roomCode || "", participantId, reconnectToken },
-            (res: any) => {
+            (res) => {
               if (res.success && res.room && res.participant) {
                 setRoom(res.room);
                 setName(res.participant.displayName);
+                myParticipantIdRef.current = res.participant.id;
                 setMyParticipantId(res.participant.id);
               } else {
                 localStorage.removeItem(`quiz_participant_${roomCode}`);
@@ -154,12 +165,13 @@ export function ParticipantRoom() {
     socket.emit(
       "ROOM_JOIN",
       { roomCode: roomCode || "", displayName: name },
-      (res: any) => {
+      (res) => {
         setIsJoining(false);
-        if (res.success && res.room) {
+        if (res.success) {
           setRoom(res.room);
           announce("Вы успешно вошли в игру");
           if (res.participant?.id && res.reconnectToken) {
+            myParticipantIdRef.current = res.participant.id;
             setMyParticipantId(res.participant.id);
             localStorage.setItem(
               `quiz_participant_${roomCode}`,
@@ -180,105 +192,108 @@ export function ParticipantRoom() {
   };
 
   useEffect(() => {
-    if (!room) return;
-
     const onStateUpdate = (updatedRoom: PublicRoomData) => {
-      const prevRoom = room;
-      setRoom(updatedRoom);
-
-      if (
-        updatedRoom.roundState === RoomState.WAITING ||
-        updatedRoom.roundState === RoomState.ACTIVE
-      ) {
-        setAmIFirst(false);
-        setIsBuzzedLocal(false);
-      }
-
-      if (
-        updatedRoom.roundState === RoomState.ACTIVE &&
-        prevRoom?.roundState !== RoomState.ACTIVE
-      ) {
-        announce("Раунд начат! Жмите кнопку.");
-      }
-
-      if (
-        updatedRoom.roundState === RoomState.REVEALED &&
-        prevRoom?.roundState !== RoomState.REVEALED
-      ) {
-        const firstP = updatedRoom.participants.find(
-          (p) => p.id === updatedRoom.firstBuzzerId,
-        );
-        const myParticipant = myParticipantId 
-          ? updatedRoom.participants.find((p) => p.id === myParticipantId)
-          : null;
-
-        if (myParticipantId && updatedRoom.firstBuzzerId === myParticipantId) {
-          setAmIFirst(true);
-          announce("Вы нажали первым!");
-        } else {
+      setRoom((previousRoom) => {
+        if (
+          updatedRoom.roundState === RoomState.WAITING ||
+          updatedRoom.roundState === RoomState.ACTIVE
+        ) {
           setAmIFirst(false);
-          if (firstP) announce(`Первым нажал: ${firstP.displayName}`);
+          setIsBuzzedLocal(false);
         }
-      }
 
-      if (
-        updatedRoom.roundState === RoomState.FINISHED &&
-        prevRoom?.roundState !== RoomState.FINISHED
-      ) {
-        let winnerName: string | null = null;
-        let winnerScore = 0;
-        if (updatedRoom.participants.length > 0) {
-          const sorted = [...updatedRoom.participants].sort(
-            (a, b) => b.score - a.score,
+        if (
+          updatedRoom.roundState === RoomState.ACTIVE &&
+          previousRoom?.roundState !== RoomState.ACTIVE
+        ) {
+          announce("Раунд начат! Жмите кнопку.");
+        }
+
+        if (
+          updatedRoom.roundState === RoomState.REVEALED &&
+          previousRoom?.roundState !== RoomState.REVEALED
+        ) {
+          const firstParticipant = updatedRoom.participants.find(
+            (participant) => participant.id === updatedRoom.firstBuzzerId,
           );
-          winnerScore = sorted[0].score;
-          if (winnerScore > 0) winnerName = sorted[0].displayName;
+          const currentParticipantId = myParticipantIdRef.current;
+
+          if (
+            currentParticipantId &&
+            updatedRoom.firstBuzzerId === currentParticipantId
+          ) {
+            setAmIFirst(true);
+            announce("Вы нажали первым!");
+          } else {
+            setAmIFirst(false);
+            if (firstParticipant) {
+              announce(`Первым нажал: ${firstParticipant.displayName}`);
+            }
+          }
         }
-        setWinnerInfo({ winnerName, winnerScore });
-        announce(
-          `Игра завершена. Победитель: ${winnerName || "Нет победителя"}`,
-        );
-      }
 
-      if (
-        updatedRoom.isHostConnected === false &&
-        prevRoom?.isHostConnected !== false
-      ) {
-        announce("Ведущий отключился. Ожидаем восстановления...", "assertive");
-      } else if (
-        updatedRoom.isHostConnected === true &&
-        prevRoom?.isHostConnected === false
-      ) {
-        announce("Ведущий вернулся в игру");
-      }
+        if (
+          updatedRoom.roundState === RoomState.FINISHED &&
+          previousRoom?.roundState !== RoomState.FINISHED
+        ) {
+          let winnerName: string | null = null;
+          let winnerScore = 0;
+          if (updatedRoom.participants.length > 0) {
+            const sorted = [...updatedRoom.participants].sort(
+              (a, b) => b.score - a.score,
+            );
+            winnerScore = sorted[0].score;
+            if (winnerScore > 0) winnerName = sorted[0].displayName;
+          }
+          setWinnerInfo({ winnerName, winnerScore });
+          announce(
+            `Игра завершена. Победитель: ${winnerName || "Нет победителя"}`,
+          );
+        }
 
-      setIsHostDisconnected(!updatedRoom.isHostConnected);
+        if (
+          updatedRoom.isHostConnected === false &&
+          previousRoom?.isHostConnected !== false
+        ) {
+          announce("Ведущий отключился. Ожидаем восстановления...", "assertive");
+        } else if (
+          updatedRoom.isHostConnected === true &&
+          previousRoom?.isHostConnected === false
+        ) {
+          announce("Ведущий вернулся в игру");
+        }
+
+        setIsHostDisconnected(!updatedRoom.isHostConnected);
+        return updatedRoom;
+      });
     };
 
-    socket.on("ROOM_STATE_UPDATED", onStateUpdate);
-
-    socket.on("ROOM_CLOSED", (data) => {
-      localStorage.removeItem(`quiz_participant_${roomCode}`);
+    const onRoomClosed = (data: { reason: string }) => {
+      localStorage.removeItem(`quiz_participant_${roomCodeRef.current}`);
       setRoomClosedReason(data.reason);
       setRoom(null);
-    });
+    };
 
-    socket.on("PARTICIPANT_CONTROL_REVOKED", () => {
-      localStorage.removeItem(`quiz_participant_${roomCode}`);
+    const onControlRevoked = () => {
+      localStorage.removeItem(`quiz_participant_${roomCodeRef.current}`);
       setRoom(null);
       setError("Вы вошли с другого устройства или вкладки");
       announce(
         "Управление отозвано. Вы вошли с другого устройства или вкладки",
         "assertive",
       );
-    });
+    };
+
+    socket.on("ROOM_STATE_UPDATED", onStateUpdate);
+    socket.on("ROOM_CLOSED", onRoomClosed);
+    socket.on("PARTICIPANT_CONTROL_REVOKED", onControlRevoked);
 
     return () => {
       socket.off("ROOM_STATE_UPDATED", onStateUpdate);
-      socket.off("ROOM_CLOSED");
-      socket.off("PARTICIPANT_CONTROL_REVOKED");
+      socket.off("ROOM_CLOSED", onRoomClosed);
+      socket.off("PARTICIPANT_CONTROL_REVOKED", onControlRevoked);
     };
-  }, [room, roomCode]);
+  }, []);
 
   const handleBuzz = (
     e?:
@@ -316,7 +331,7 @@ export function ParticipantRoom() {
     setIsBuzzedLocal(true);
     announce("Сигнал отправлен");
 
-    const clientPressedAt = timeSync.getServerTime();
+    const clientPressedAt = Date.now();
 
     socket.emit("BUZZ_SUBMIT", { clientPressedAt }, (res) => {
       if (res && res.success) {

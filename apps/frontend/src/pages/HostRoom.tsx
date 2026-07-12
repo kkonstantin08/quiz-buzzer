@@ -26,6 +26,7 @@ export function HostRoom() {
   const [qrOpen, setQrOpen] = useState(false);
   const [finishOpen, setFinishOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [winnerInfo, setWinnerInfo] = useState<{winnerName: string | null, winnerScore: number} | null>(null);
   const soundSettingsRef = React.useRef({ enabled: true, theme: 'classic' });
   const announce = useAriaLive();
@@ -53,7 +54,7 @@ export function HostRoom() {
       }
 
       socket.emit('HOST_REJOIN_ROOM', { roomId }, (res) => {
-        if (res.success && res.room) {
+        if (res.success) {
           setRoom(res.room);
           setReconnectState('connected');
           announce('Вы успешно подключились к игре как ведущий');
@@ -96,54 +97,64 @@ export function HostRoom() {
 
   useEffect(() => {
     const onStateUpdate = (updatedRoom: PublicRoomData) => {
-      const prevRoom = room;
-      setRoom(updatedRoom);
+      setRoom((previousRoom) => {
+        if (updatedRoom.roundState === RoomState.REVEALED && updatedRoom.firstBuzzerId) {
+          const participant = updatedRoom.participants.find(p => p.id === updatedRoom.firstBuzzerId);
+          setFirstBuzzerName(participant ? participant.displayName : 'Неизвестный участник');
 
-      if (updatedRoom.roundState === RoomState.REVEALED && updatedRoom.firstBuzzerId) {
-        const p = updatedRoom.participants.find(p => p.id === updatedRoom.firstBuzzerId);
-        setFirstBuzzerName(p ? p.displayName : 'Неизвестный участник');
-        
-        if (prevRoom?.roundState !== RoomState.REVEALED) {
-          playSound('buzz', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
-          announce(`Первым нажал: ${p ? p.displayName : 'Неизвестный участник'}`);
+          if (previousRoom?.roundState !== RoomState.REVEALED) {
+            playSound('buzz', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
+            announce(`Первым нажал: ${participant ? participant.displayName : 'Неизвестный участник'}`);
+          }
+        } else if (updatedRoom.roundState === RoomState.WAITING || updatedRoom.roundState === RoomState.ACTIVE) {
+          setFirstBuzzerName('');
         }
-      } else if (updatedRoom.roundState === RoomState.WAITING || updatedRoom.roundState === RoomState.ACTIVE) {
-        setFirstBuzzerName('');
-      }
 
-      if (updatedRoom.roundState === RoomState.ACTIVE && prevRoom?.roundState !== RoomState.ACTIVE) {
-        announce('Раунд запущен. Игроки могут нажимать на пульты.');
-      }
-
-      if (updatedRoom.roundState === RoomState.FINISHED && prevRoom?.roundState !== RoomState.FINISHED) {
-        let winnerName: string | null = null;
-        let winnerScore = 0;
-        if (updatedRoom.participants.length > 0) {
-          const sorted = [...updatedRoom.participants].sort((a, b) => b.score - a.score);
-          winnerScore = sorted[0].score;
-          if (winnerScore > 0) winnerName = sorted[0].displayName;
+        if (updatedRoom.roundState === RoomState.ACTIVE && previousRoom?.roundState !== RoomState.ACTIVE) {
+          announce('Раунд запущен. Игроки могут нажимать на пульты.');
         }
-        setWinnerInfo({ winnerName, winnerScore });
 
-        if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-          confetti({
-            particleCount: 150,
-            spread: 80,
-            origin: { y: 0.6 },
-            colors: ['#ef4444', '#f59e0b', '#3b82f6', '#10b981']
-          });
+        if (updatedRoom.roundState === RoomState.FINISHED && previousRoom?.roundState !== RoomState.FINISHED) {
+          let winnerName: string | null = null;
+          let winnerScore = 0;
+          if (updatedRoom.participants.length > 0) {
+            const sorted = [...updatedRoom.participants].sort((a, b) => b.score - a.score);
+            winnerScore = sorted[0].score;
+            if (winnerScore > 0) winnerName = sorted[0].displayName;
+          }
+          setWinnerInfo({ winnerName, winnerScore });
+
+          if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            confetti({
+              particleCount: 150,
+              spread: 80,
+              origin: { y: 0.6 },
+              colors: ['#ef4444', '#f59e0b', '#3b82f6', '#10b981']
+            });
+          }
+          playSound('fanfare', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
+          announce(`Игра завершена. Победитель: ${winnerName || 'никто'}.`);
         }
-        playSound('fanfare', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
-        announce(`Игра завершена. Победитель: ${winnerName || 'никто'}.`);
-      }
+
+        return updatedRoom;
+      });
+    };
+
+    const onRoomClosed = (data: { reason: string }) => {
+      setRoom(null);
+      setReconnectState('unavailable');
+      setReconnectError(data.reason);
+      announce(`Игра закрыта: ${data.reason}`, 'assertive');
     };
 
     socket.on('ROOM_STATE_UPDATED', onStateUpdate);
+    socket.on('ROOM_CLOSED', onRoomClosed);
 
     return () => {
       socket.off('ROOM_STATE_UPDATED', onStateUpdate);
+      socket.off('ROOM_CLOSED', onRoomClosed);
     };
-  }, [room]);
+  }, []);
 
   if (reconnectState === 'restoring') {
     return (
@@ -220,8 +231,14 @@ export function HostRoom() {
   };
 
   const handleClearScoreboard = () => {
-    if (!roomId) return;
-    socket.emit('HOST_CLEAR_SCORES', { roomId });
+    socket.emit('HOST_CLEAR_SCORES', (result) => {
+      if (result.success) {
+        setActionError(null);
+        return;
+      }
+      setActionError(result.error);
+      announce(result.error, 'assertive');
+    });
   };
 
   const handleCopy = () => {
@@ -347,6 +364,11 @@ export function HostRoom() {
     <main id="main-content" tabIndex={-1} className={bgClass} style={bgStyle}>
       {showOverlay && <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] z-0" />}
       <div className="relative z-10 dashboard-container">
+      {actionError && (
+        <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-center font-medium text-red-700">
+          {actionError}
+        </p>
+      )}
       
       {/* Mobile-optimized Header with Room Code and QR Button */}
       <div className={`flex flex-col sm:flex-row items-center justify-between gap-4 mb-6 p-4 rounded-2xl border ${
@@ -550,10 +572,13 @@ export function HostRoom() {
         <Card className={`shadow-lg order-2 ${
           isDarkTheme 
             ? "bg-slate-900/60 border-slate-800/80 text-white backdrop-blur-md" 
-            : "bg-white/80 border-slate-200 text-slate-900 backdrop-blur"
+          : "bg-white/80 border-slate-200 text-slate-900 backdrop-blur"
         }`}>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between gap-3">
             <CardTitle className={isDarkTheme ? "text-white" : ""}>Участники ({room.participants.length})</CardTitle>
+            <Button variant="outline" size="sm" onClick={handleClearScoreboard}>
+              Очистить счёт
+            </Button>
           </CardHeader>
           <CardContent>
             {room.participants.length === 0 ? (
