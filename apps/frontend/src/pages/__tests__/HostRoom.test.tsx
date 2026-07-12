@@ -32,6 +32,16 @@ vi.mock('../../services/api', () => ({
 describe('HostRoom Frontend Reconnect & States', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    socket.connected = false;
+    // @ts-ignore
+    socket.connect.mockImplementation(() => {
+      socket.connected = true;
+      setTimeout(() => {
+        // @ts-ignore
+        const connectCalls = socket.on.mock.calls.filter(call => call[0] === 'connect');
+        connectCalls.forEach(call => call[1]());
+      }, 0);
+    });
   });
 
   const renderComponent = (roomId: string) => {
