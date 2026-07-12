@@ -43,9 +43,6 @@ export interface InternalRoomData extends Omit<PublicRoomData, 'participants'> {
   roundId: string;
 }
 
-// Deprecated: use PublicRoomData or InternalRoomData directly
-export type RoomData = InternalRoomData;
-
 import { z } from 'zod';
 import * as schemas from './schemas';
 
@@ -60,21 +57,51 @@ export type SyncAckPayload = z.infer<typeof schemas.SyncAckSchema>;
 export type HostClearScoresPayload = z.infer<typeof schemas.HostClearScoresSchema>;
 export type HostRejoinRoomPayload = z.infer<typeof schemas.HostRejoinRoomSchema>;
 
+export type SocketSuccessResult = {
+  success: true;
+};
+
+export type SocketErrorResult = {
+  success: false;
+  error: string;
+};
+
+export type RoomCreateResult =
+  | (SocketSuccessResult & { room: PublicRoomData })
+  | SocketErrorResult;
+export type RoomJoinResult =
+  | (SocketSuccessResult & {
+      participant: PublicParticipant;
+      room: PublicRoomData;
+      reconnectToken: string;
+    })
+  | SocketErrorResult;
+export type ParticipantRejoinResult =
+  | (SocketSuccessResult & { participant: PublicParticipant; room: PublicRoomData })
+  | SocketErrorResult;
+export type BuzzSubmitResult =
+  | (SocketSuccessResult & { status: 'accepted' })
+  | SocketErrorResult;
+export type HostRejoinRoomResult =
+  | (SocketSuccessResult & { room: PublicRoomData })
+  | SocketErrorResult;
+export type SocketActionResult = SocketSuccessResult | SocketErrorResult;
+
 // Client -> Server Events
 export interface ClientToServerEvents {
-  ROOM_CREATE: (token: string, callback: (res: { success: boolean, room?: PublicRoomData, error?: string }) => void) => void;
-  ROOM_JOIN: (data: RoomJoinPayload, callback: (res: { success: boolean, participant?: PublicParticipant, room?: PublicRoomData, reconnectToken?: string, error?: string }) => void) => void;
-  PARTICIPANT_REJOIN: (data: ParticipantRejoinPayload, callback: (res: { success: boolean, participant?: PublicParticipant, room?: PublicRoomData, error?: string }) => void) => void;
-  ROUND_START: (callback?: (res: { success: boolean, error?: string }) => void) => void;
-  BUZZ_SUBMIT: (data: BuzzSubmitPayload, callback?: (res: { success: boolean, status?: 'accepted', error?: string }) => void) => void;
-  FIRST_REVEAL: (callback?: (res: { success: boolean, error?: string }) => void) => void;
-  ROUND_RESET: (data?: RoundResetPayload, callback?: (res: { success: boolean, error?: string }) => void) => void;
-  ROOM_FINISH: (callback?: (res: { success: boolean, error?: string }) => void) => void;
+  ROOM_CREATE: (token: string, callback: (res: RoomCreateResult) => void) => void;
+  ROOM_JOIN: (data: RoomJoinPayload, callback: (res: RoomJoinResult) => void) => void;
+  PARTICIPANT_REJOIN: (data: ParticipantRejoinPayload, callback: (res: ParticipantRejoinResult) => void) => void;
+  ROUND_START: (callback?: (res: SocketActionResult) => void) => void;
+  BUZZ_SUBMIT: (data: BuzzSubmitPayload, callback?: (res: BuzzSubmitResult) => void) => void;
+  FIRST_REVEAL: (callback?: (res: SocketActionResult) => void) => void;
+  ROUND_RESET: (data?: RoundResetPayload, callback?: (res: SocketActionResult) => void) => void;
+  ROOM_FINISH: (callback?: (res: SocketActionResult) => void) => void;
   ROOM_LEAVE: () => void;
   SYNC_TIME: (clientTime: number, callback: (serverTime: number) => void) => void;
   SYNC_ACK: (data: SyncAckPayload) => void;
-  HOST_CLEAR_SCORES: (data: HostClearScoresPayload, callback?: (res: { success: boolean, error?: string }) => void) => void;
-  HOST_REJOIN_ROOM: (data: HostRejoinRoomPayload, callback: (res: { success: boolean, room?: PublicRoomData, error?: string }) => void) => void;
+  HOST_CLEAR_SCORES: (data: HostClearScoresPayload, callback?: (res: SocketActionResult) => void) => void;
+  HOST_REJOIN_ROOM: (data: HostRejoinRoomPayload, callback: (res: HostRejoinRoomResult) => void) => void;
 }
 
 // Server -> Client Events

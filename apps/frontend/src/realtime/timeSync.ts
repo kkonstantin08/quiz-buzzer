@@ -32,8 +32,6 @@ class TimeSyncService {
     if (!socket.connected) return;
 
     const startClientTime = Date.now();
-    // Use ts-ignore if type isn't fully updated yet or if there's type mismatch during compilation
-    // @ts-ignore
     socket.emit('SYNC_TIME', startClientTime, (serverTime: number) => {
       const endClientTime = Date.now();
       const rtt = endClientTime - startClientTime;

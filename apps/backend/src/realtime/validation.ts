@@ -1,21 +1,24 @@
 import { z } from 'zod';
 import { Socket } from 'socket.io';
+import { SocketErrorResult, SocketSuccessResult } from 'shared';
 import { socketToRoom } from '../rooms';
 
 const invalidPayloadRates = new Map<string, { count: number; windowStart: number }>();
 const MAX_ERRORS_PER_MINUTE = 10;
 const RATE_LIMIT_WINDOW_MS = 60000;
+type ValidationCallbackResult = (SocketSuccessResult & Record<string, unknown>) | SocketErrorResult | number;
+type ValidationCallback = (result: ValidationCallbackResult) => void;
 
 export function withValidation<T>(
   schema: z.ZodSchema<T>,
   eventName: string,
-  handler: (data: T, callback?: any) => void
+  handler: (data: T, callback?: ValidationCallback) => void,
 ) {
-  return function (this: Socket, dataOrCallback?: any, maybeCallback?: any) {
+  return function (this: Socket, dataOrCallback?: unknown, maybeCallback?: unknown) {
     const socket = this;
     const isCallbackFirst = typeof dataOrCallback === 'function';
     const data = isCallbackFirst ? undefined : dataOrCallback;
-    const callback = isCallbackFirst ? dataOrCallback : maybeCallback;
+    const callback = (isCallbackFirst ? dataOrCallback : maybeCallback) as ValidationCallback | undefined;
 
     // Rate limiting check
     const now = Date.now();
@@ -30,7 +33,7 @@ export function withValidation<T>(
       if (typeof callback === 'function') {
         callback({ success: false, error: errorMsg });
       } else {
-        socket.emit('ERROR_EVENT', errorMsg);
+        socket.emit('ERROR_EVENT', { message: errorMsg });
       }
       return; // Do not process further
     }
@@ -54,17 +57,12 @@ export function withValidation<T>(
       if (typeof callback === 'function') {
         callback({ success: false, error: errorMsg });
       } else {
-        socket.emit('ERROR_EVENT', errorMsg);
+        socket.emit('ERROR_EVENT', { message: errorMsg });
       }
       return;
     }
 
-    // Call the original handler with validated data
-    if (isCallbackFirst) {
-      (handler as any).call(socket, result.data as T, callback);
-    } else {
-      (handler as any).call(socket, result.data as T, callback);
-    }
+    handler.call(socket, result.data, callback);
   };
 }
 

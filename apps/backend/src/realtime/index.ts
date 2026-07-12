@@ -1,9 +1,9 @@
-import { Server, Socket } from 'socket.io';
+import { DefaultEventsMap, Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../prisma';
 import { config } from '../config';
 import { rooms, socketToRoom, createRoom, getRoomByCode } from '../rooms';
-import { RoomState, ClientToServerEvents, ServerToClientEvents, InternalRoomData, PublicRoomData, PublicParticipant } from 'shared';
+import { BuzzSubmitResult, ClientToServerEvents, InternalRoomData, PublicRoomData, RoomState, ServerToClientEvents, SocketErrorResult } from 'shared';
 import xss from 'xss';
 import { reattachHostToRoom, startHostReconnectTimeout } from './host-reconnect';
 import { saveGameHistory, schedulePostFinishCleanup, scheduleMaxLifetimeCleanup, postFinishTimers, maxLifetimeTimers } from './room-lifecycle';
@@ -30,7 +30,10 @@ export interface CustomSocketData {
   intentionalLogout?: boolean;
 }
 
-function rejectSocketAction(action: string, reason: string, socketId: string, roomId?: string) {
+type RealtimeSocket = Socket<ClientToServerEvents, ServerToClientEvents, DefaultEventsMap, CustomSocketData>;
+type RealtimeServer = Server<ClientToServerEvents, ServerToClientEvents, DefaultEventsMap, CustomSocketData>;
+
+function rejectSocketAction(action: string, reason: string, socketId: string, roomId?: string): SocketErrorResult {
   console.warn(JSON.stringify({
     event: 'socket_action_rejected',
     action,
@@ -48,7 +51,7 @@ function rejectSocketAction(action: string, reason: string, socketId: string, ro
   return { success: false, error: errorMsg };
 }
 
-function requireHostSocket(socket: Socket<any, any, any, CustomSocketData>, room: InternalRoomData, action: string) {
+function requireHostSocket(socket: RealtimeSocket, room: InternalRoomData, action: string) {
   if (socket.data.role !== 'host') {
     return rejectSocketAction(action, 'not_a_host', socket.id, room.roomId);
   }
@@ -58,7 +61,7 @@ function requireHostSocket(socket: Socket<any, any, any, CustomSocketData>, room
   return null;
 }
 
-function requireParticipantSocket(socket: Socket<any, any, any, CustomSocketData>, room: InternalRoomData, action: string) {
+function requireParticipantSocket(socket: RealtimeSocket, room: InternalRoomData, action: string) {
   if (socket.data.role !== 'participant') {
     return rejectSocketAction(action, 'not_a_participant', socket.id, room.roomId);
   }
@@ -92,11 +95,11 @@ export function toPublicRoomData(room: InternalRoomData): PublicRoomData {
   };
 }
 
-export function emitRoomState(io: Server<ClientToServerEvents, ServerToClientEvents, import('socket.io').DefaultEventsMap, CustomSocketData>, room: InternalRoomData) {
+export function emitRoomState(io: RealtimeServer, room: InternalRoomData) {
   io.to(room.roomId).emit('ROOM_STATE_UPDATED', toPublicRoomData(room));
 }
 
-export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEvents, import('socket.io').DefaultEventsMap, CustomSocketData>) {
+export function setupSocketIO(io: RealtimeServer) {
   // Grace period buffers for each room
   const buzzBuffers = new Map<string, { roundId: string, timer: NodeJS.Timeout, buzzes: { participantId: string, timestamp: number, receivedAt: number }[] }>();
 
@@ -162,10 +165,10 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
     }
   });
 
-  io.on('connection', (socket: Socket<ClientToServerEvents, ServerToClientEvents, import('socket.io').DefaultEventsMap, CustomSocketData>) => {
+  io.on('connection', (socket: RealtimeSocket) => {
     
     // Time Sync
-    socket.on('SYNC_TIME', withValidation(SyncTimeSchema, 'SYNC_TIME', (clientTime: number, callback: (serverTime: number) => void) => {
+    socket.on('SYNC_TIME', withValidation(SyncTimeSchema, 'SYNC_TIME', (_clientTime, callback) => {
       if (callback) callback(Date.now());
     }));
 
@@ -445,10 +448,10 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
     const buzzRateLimits = new Map<string, number>();
 
     // Submit Buzz (Participant)
-    socket.on('BUZZ_SUBMIT', withValidation(BuzzSubmitStrictSchema, 'BUZZ_SUBMIT', (data: any, callback?: any) => {
+    socket.on('BUZZ_SUBMIT', withValidation(BuzzSubmitStrictSchema, 'BUZZ_SUBMIT', (data, callback) => {
       const receivedAt = Date.now();
-      const clientPressedAt = data && typeof data.clientPressedAt === 'number' ? data.clientPressedAt : Date.now();
-      const actualCallback = callback;
+      const clientPressedAt = data?.clientPressedAt ?? Date.now();
+      const actualCallback: ((result: BuzzSubmitResult) => void) | undefined = callback;
 
       const lastBuzz = buzzRateLimits.get(socket.id) || 0;
       if (receivedAt - lastBuzz < 500) { // 500ms limit
@@ -655,7 +658,7 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
     });
   });
 
-  function handleDisconnect(socket: Socket<ClientToServerEvents, ServerToClientEvents, import('socket.io').DefaultEventsMap, CustomSocketData>) {
+  function handleDisconnect(socket: RealtimeSocket) {
     const roomId = socketToRoom.get(socket.id);
     if (!roomId) return;
 

@@ -107,7 +107,7 @@ export function ParticipantRoom() {
           socket.emit(
             "PARTICIPANT_REJOIN",
             { roomCode: roomCode || "", participantId, reconnectToken },
-            (res: any) => {
+            (res) => {
               if (res.success && res.room && res.participant) {
                 setRoom(res.room);
                 setName(res.participant.displayName);
@@ -165,9 +165,9 @@ export function ParticipantRoom() {
     socket.emit(
       "ROOM_JOIN",
       { roomCode: roomCode || "", displayName: name },
-      (res: any) => {
+      (res) => {
         setIsJoining(false);
-        if (res.success && res.room) {
+        if (res.success) {
           setRoom(res.room);
           announce("Вы успешно вошли в игру");
           if (res.participant?.id && res.reconnectToken) {

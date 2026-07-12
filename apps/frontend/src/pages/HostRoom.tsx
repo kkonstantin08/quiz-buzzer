@@ -53,7 +53,7 @@ export function HostRoom() {
       }
 
       socket.emit('HOST_REJOIN_ROOM', { roomId }, (res) => {
-        if (res.success && res.room) {
+        if (res.success) {
           setRoom(res.room);
           setReconnectState('connected');
           announce('Вы успешно подключились к игре как ведущий');

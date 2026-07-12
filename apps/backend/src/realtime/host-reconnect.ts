@@ -1,16 +1,18 @@
-import { Socket, Server } from 'socket.io';
-import { RoomData, RoomState } from 'shared';
+import { DefaultEventsMap, Socket, Server } from 'socket.io';
+import { ClientToServerEvents, InternalRoomData, RoomState, ServerToClientEvents } from 'shared';
 import { rooms, socketToRoom, deleteRoom } from '../rooms';
 import { CustomSocketData } from './index';
 import { postFinishTimers, maxLifetimeTimers, cancelRoomLifecycleTimers } from './room-lifecycle';
 
 // Maps roomId to the NodeJS Timeout
 export const hostDisconnectTimers = new Map<string, NodeJS.Timeout>();
+type RealtimeSocket = Socket<ClientToServerEvents, ServerToClientEvents, DefaultEventsMap, CustomSocketData>;
+type RealtimeServer = Server<ClientToServerEvents, ServerToClientEvents, DefaultEventsMap, CustomSocketData>;
 
 export function reattachHostToRoom(
-  socket: Socket<any, any, any, CustomSocketData>,
-  room: RoomData,
-  io: Server
+  socket: RealtimeSocket,
+  room: InternalRoomData,
+  io: RealtimeServer,
 ) {
   // Cancel disconnect timer if active
   cancelHostReconnectTimeout(room.roomId);
@@ -29,7 +31,7 @@ export function reattachHostToRoom(
   socket.join(room.roomId);
 }
 
-export function revokePreviousHostControl(room: RoomData, io: Server) {
+export function revokePreviousHostControl(room: InternalRoomData, io: RealtimeServer) {
   const previousSocketId = room.hostSocketId;
   if (!previousSocketId) return;
 
@@ -97,4 +99,3 @@ export function closeRoomAfterHostTimeout(
     participantDisconnectTimers
   );
 }
-
