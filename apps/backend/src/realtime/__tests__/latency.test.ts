@@ -4,12 +4,18 @@ import { prisma } from '../../prisma';
 import jwt from 'jsonwebtoken';
 import { config } from '../../config';
 import { rooms } from '../../rooms';
+import { participantDisconnectTimers } from '../index';
+import { hostDisconnectTimers } from '../host-reconnect';
+import { maxLifetimeTimers, postFinishTimers } from '../room-lifecycle';
 import { describe, it, expect, beforeAll, afterAll, afterEach, jest } from '@jest/globals';
 
 jest.mock('../../prisma', () => ({
   prisma: {
     hostUser: {
       findUnique: jest.fn(),
+    },
+    gameHistory: {
+      create: jest.fn(),
     },
   },
 }));
@@ -42,6 +48,10 @@ describe('Validated Latency Compensation', () => {
     if (p1Socket && p1Socket.connected) p1Socket.disconnect();
     if (p2Socket && p2Socket.connected) p2Socket.disconnect();
     rooms.clear();
+    for (const timers of [participantDisconnectTimers, hostDisconnectTimers, postFinishTimers, maxLifetimeTimers]) {
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+    }
   });
 
   const createClient = () => {
@@ -227,6 +237,26 @@ describe('Validated Latency Compensation', () => {
     expect(roomAfterGrace.firstBuzzerId).toBe(earlierParticipant?.id);
   });
 
+  it('breaks an equal validated timestamp tie by the earliest received buzz', async () => {
+    await setupRoom();
+    await new Promise<void>((resolve) => hostSocket.emit('ROUND_START', () => resolve()));
+    const room = Array.from(rooms.values())[0];
+    await sleep(Math.max(0, room.unlockAt! - Date.now()));
+
+    const identicalTimestamp = Date.now();
+    await expect(new Promise<any>((resolve) => {
+      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: identicalTimestamp }, resolve);
+    })).resolves.toEqual({ success: true, status: 'accepted' });
+    await sleep(10);
+    await expect(new Promise<any>((resolve) => {
+      p2Socket.emit('BUZZ_SUBMIT', { clientPressedAt: identicalTimestamp }, resolve);
+    })).resolves.toEqual({ success: true, status: 'accepted' });
+    await sleep(300);
+
+    const firstReceivedParticipant = room.participants.find((participant: any) => participant.socketId === p1Socket.id);
+    expect(room.firstBuzzerId).toBe(firstReceivedParticipant?.id);
+  });
+
   it('rejects future timestamp', async () => {
     await setupRoom();
     await simulateSync(p1Socket, 0, 10);
@@ -316,6 +346,51 @@ describe('Validated Latency Compensation', () => {
     // They should still be the winner because it uses participantId
     expect(roomAfterGrace.firstBuzzerId).toBe(p1Participant?.id);
     expect(roomAfterGrace.firstBuzzerId).not.toBeNull();
+  });
+
+  it('cancels the grace buffer when the host resets the round', async () => {
+    await setupRoom();
+    await new Promise<void>((resolve) => hostSocket.emit('ROUND_START', () => resolve()));
+    const room = Array.from(rooms.values())[0];
+    await sleep(Math.max(0, room.unlockAt! - Date.now()));
+
+    await new Promise<void>((resolve) => p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() }, () => resolve()));
+    await new Promise<void>((resolve) => hostSocket.emit('ROUND_RESET', {}, () => resolve()));
+    await sleep(300);
+
+    expect(room.roundState).toBe('WAITING');
+    expect(room.firstBuzzerId).toBeNull();
+  });
+
+  it('does not let an old grace timer reveal a newly started round', async () => {
+    await setupRoom();
+    await new Promise<void>((resolve) => hostSocket.emit('ROUND_START', () => resolve()));
+    const room = Array.from(rooms.values())[0];
+    await sleep(Math.max(0, room.unlockAt! - Date.now()));
+
+    await new Promise<void>((resolve) => p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() }, () => resolve()));
+    await new Promise<void>((resolve) => hostSocket.emit('ROUND_RESET', {}, () => resolve()));
+    await new Promise<void>((resolve) => hostSocket.emit('ROUND_START', () => resolve()));
+    const newRoundId = room.roundId;
+    await sleep(300);
+
+    expect(room.roundId).toBe(newRoundId);
+    expect(room.roundState).toBe('ACTIVE');
+    expect(room.firstBuzzerId).toBeNull();
+  });
+
+  it('does not let a grace timer change a room after it is finished', async () => {
+    await setupRoom();
+    await new Promise<void>((resolve) => hostSocket.emit('ROUND_START', () => resolve()));
+    const room = Array.from(rooms.values())[0];
+    await sleep(Math.max(0, room.unlockAt! - Date.now()));
+
+    await new Promise<void>((resolve) => p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() }, () => resolve()));
+    await new Promise<void>((resolve) => hostSocket.emit('ROOM_FINISH', () => resolve()));
+    await sleep(300);
+
+    expect(room.roundState).toBe('FINISHED');
+    expect(room.firstBuzzerId).toBeNull();
   });
 
 });

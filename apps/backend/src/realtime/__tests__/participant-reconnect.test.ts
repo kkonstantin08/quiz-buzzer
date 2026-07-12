@@ -82,6 +82,10 @@ describe('Participant Reconnect', () => {
     });
   };
 
+  const startRound = () => new Promise<void>((resolve) => {
+    hostSocket.emit('ROUND_START', () => setTimeout(resolve, 160));
+  });
+
   it('disconnecting sets isConnected=false and starts 5m timer', async () => {
     const { code, p1ParticipantId } = await setupRoom();
     
@@ -163,6 +167,43 @@ describe('Participant Reconnect', () => {
     expect(room.participants[0].isConnected).toBe(true);
     expect(room.participants[0].socketId).toBe(newSocket.id);
 
+    const oldSocketBuzz = await new Promise<any>((resolve) => {
+      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() }, resolve);
+    });
+    expect(oldSocketBuzz).toMatchObject({ success: false });
+
+    newSocket.disconnect();
+  });
+
+  it('keeps a buffered buzz attached to the stable participant after rejoin', async () => {
+    const { code, p1ParticipantId, p1Token } = await setupRoom();
+    const room = getRoomByCode(code)!;
+    await startRound();
+
+    await expect(new Promise<any>((resolve) => {
+      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() }, resolve);
+    })).resolves.toEqual({ success: true, status: 'accepted' });
+
+    const newSocket = createClient();
+    newSocket.connect();
+    await new Promise<void>((resolve) => {
+      newSocket.on('connect', () => {
+        newSocket.emit('PARTICIPANT_REJOIN', {
+          roomCode: code,
+          participantId: p1ParticipantId,
+          reconnectToken: p1Token,
+        }, (result: any) => {
+          expect(result).toMatchObject({ success: true });
+          resolve();
+        });
+      });
+    });
+
+    await sleep(300);
+
+    expect(room.participants).toHaveLength(1);
+    expect(room.participants[0].id).toBe(p1ParticipantId);
+    expect(room.firstBuzzerId).toBe(p1ParticipantId);
     newSocket.disconnect();
   });
 
