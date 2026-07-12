@@ -11,6 +11,7 @@
     "build": "npm run build --workspaces --if-present"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "concurrently": "^10.0.3",
     "lighthouse": "^13.4.0",
     "playwright": "^1.61.1",

@@ -74,7 +74,7 @@ export function deleteRoom(
 
   // Notify connected users about the reason
   if (io) {
-    io.to(roomId).emit('ROOM_CLOSED', reason);
+    io.to(roomId).emit('ROOM_CLOSED', { reason });
   }
 
   // Clear buzz buffer timer for this room

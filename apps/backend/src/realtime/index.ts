@@ -261,7 +261,11 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       }
 
       reattachHostToRoom(socket, room, io);
-      if (callback) callback({ success: true, room });
+      
+      const safeRoom = { ...room, participants: room.participants.map(({ reconnectTokenHash, ...p }) => p) };
+      io.to(roomId).emit('ROOM_STATE_UPDATED', safeRoom as any);
+      
+      if (callback) callback({ success: true, room: safeRoom as any });
     }) as any);
 
     // Join Room (Participant)
@@ -319,14 +323,11 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       socket.data.role = 'participant';
       socket.data.participantId = participant.id;
 
-      // Notify host and others (without hash)
-      const { reconnectTokenHash: _hash, ...safeParticipant } = participant;
-      io.to(room.roomId).emit('PARTICIPANT_JOINED', safeParticipant as any);
-      
-      // Also emit room state without hashes
+      // Emit room state without hashes
       const safeRoom = { ...room, participants: room.participants.map(({ reconnectTokenHash, ...p }) => p) };
       io.to(room.roomId).emit('ROOM_STATE_UPDATED', safeRoom as any);
       
+      const { reconnectTokenHash: _hash, ...safeParticipant } = participant;
       if (callback) callback({ success: true, participant: safeParticipant as any, room: safeRoom as any, reconnectToken });
     }) as any);
 
@@ -412,7 +413,6 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       room.unlockAt = Date.now() + 150; // Scheduled unlock buffer
       
       io.to(roomId).emit('ROOM_STATE_UPDATED', room);
-      io.to(roomId).emit('ROUND_STARTED');
       if (callback) callback({ success: true });
     }));
 
@@ -506,8 +506,6 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
 
                   const safeRoom = { ...currentRoom, participants: currentRoom.participants.map(({ reconnectTokenHash, ...p }) => p) };
                   io.to(roomId).emit('ROOM_STATE_UPDATED', safeRoom as any);
-                  io.to(roomId).emit('ROUND_LOCKED');
-                  io.to(roomId).emit('FIRST_REVEALED', currentRoom.firstBuzzerId);
                 }
               }
             }
@@ -539,7 +537,6 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
 
       room.roundState = RoomState.REVEALED;
       io.to(roomId).emit('ROOM_STATE_UPDATED', room);
-      io.to(roomId).emit('FIRST_REVEALED', room.firstBuzzerId!);
       
       if (callback) callback({ success: true });
     }));
@@ -575,7 +572,6 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       room.unlockAt = null;
 
       io.to(roomId).emit('ROOM_STATE_UPDATED', room);
-      io.to(roomId).emit('ROUND_RESET_DONE');
       
       if (callback) callback({ success: true });
     }));
@@ -613,7 +609,6 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       await saveGameHistory(room, prisma);
 
       io.to(roomId).emit('ROOM_STATE_UPDATED', room);
-      io.to(roomId).emit('ROOM_FINISHED', { winnerName, winnerScore });
 
       // Schedule 5-minute post-finish cleanup
       schedulePostFinishCleanup(
@@ -654,7 +649,6 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
           if (currentRoom) {
             currentRoom.participants = currentRoom.participants.filter(p => p.id !== participant.id);
             const safeCurrentRoom = { ...currentRoom, participants: currentRoom.participants.map(({ reconnectTokenHash, ...p }) => p) };
-            io.to(roomId).emit('PARTICIPANT_LEFT', participant.id);
             io.to(roomId).emit('ROOM_STATE_UPDATED', safeCurrentRoom as any);
           }
           participantDisconnectTimers.delete(timerKey);

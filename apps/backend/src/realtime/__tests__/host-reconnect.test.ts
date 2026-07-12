@@ -319,7 +319,9 @@ describe('Host Reconnect and Revocation', () => {
     await joinRoom(p1Socket, room.roomCode, 'Bob');
 
     const statusPromise = new Promise<void>((resolve) => {
-      p1Socket.on('HOST_DISCONNECTED', () => resolve());
+      p1Socket.on('ROOM_STATE_UPDATED', (roomState: any) => {
+        if (!roomState.isHostConnected) resolve();
+      });
     });
 
     hostSocket.disconnect();
@@ -354,7 +356,9 @@ describe('Host Reconnect and Revocation', () => {
     newHostSocket.connect();
 
     const reconnectStatusPromise = new Promise<void>((resolve) => {
-      p1Socket.on('HOST_RECONNECTED', () => resolve());
+      p1Socket.on('ROOM_STATE_UPDATED', (roomState: any) => {
+        if (roomState.isHostConnected) resolve();
+      });
     });
 
     await new Promise<any>((resolve) => {

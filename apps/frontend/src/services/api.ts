@@ -1,4 +1,8 @@
-export const BASE_URL = import.meta.env.VITE_API_URL || '/api';
+const ENV_URL = import.meta.env.DEV
+  ? (import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3001`)
+  : (import.meta.env.VITE_APP_PUBLIC_URL || '/api');
+
+export const BASE_URL = ENV_URL;
 // Strip trailing slash if any
 const cleanBaseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
 // If the URL already ends with /api, use it as is, otherwise append /api

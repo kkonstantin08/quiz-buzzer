@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Toaster } from '@/components/ui/sonner';
 import { Loader2 } from 'lucide-react';
 import { CookieBanner } from './components/CookieBanner';
+import { AriaLiveProvider } from './lib/AriaLiveContext';
+import { useFocusOnNavigation } from './lib/useFocusOnNavigation';
 
 const LandingPage = React.lazy(() => import('./pages/LandingPage').then(m => ({ default: m.LandingPage })));
 const HostAuth = React.lazy(() => import('./pages/HostAuth').then(m => ({ default: m.HostAuth })));
@@ -17,22 +19,33 @@ const PageLoader = () => (
   </div>
 );
 
+function FocusManager() {
+  useFocusOnNavigation();
+  return null;
+}
+
 export default function App() {
   return (
-    <BrowserRouter>
-      <Toaster position="top-center" />
-      <CookieBanner />
-      <Suspense fallback={<PageLoader />}>
-        <Routes>
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/room/:roomCode" element={<ParticipantRoom />} />
-          <Route path="/login" element={<HostAuth defaultIsLogin={true} />} />
-          <Route path="/register" element={<HostAuth defaultIsLogin={false} />} />
-          <Route path="/dashboard" element={<HostDashboard />} />
-          <Route path="/settings" element={<HostSettings />} />
-          <Route path="/host/room/:roomId" element={<HostRoom />} />
-        </Routes>
-      </Suspense>
-    </BrowserRouter>
+    <AriaLiveProvider>
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-4 focus:bg-white focus:text-primary focus:font-bold">
+        Перейти к основному содержимому
+      </a>
+      <BrowserRouter>
+        <FocusManager />
+        <Toaster position="top-center" />
+        <CookieBanner />
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/room/:roomCode" element={<ParticipantRoom />} />
+            <Route path="/login" element={<HostAuth defaultIsLogin={true} />} />
+            <Route path="/register" element={<HostAuth defaultIsLogin={false} />} />
+            <Route path="/dashboard" element={<HostDashboard />} />
+            <Route path="/settings" element={<HostSettings />} />
+            <Route path="/host/room/:roomId" element={<HostRoom />} />
+          </Routes>
+        </Suspense>
+      </BrowserRouter>
+    </AriaLiveProvider>
   );
 }
