@@ -11,10 +11,15 @@
   },
   "scripts": {
     "dev": "concurrently \"npm run dev -w apps/backend\" \"npm run dev -w apps/frontend\"",
-    "build": "npm run build --workspaces --if-present"
+    "build": "npm run build -w shared && npm run build -w backend && npm run build -w frontend",
+    "typecheck": "npm run build -w shared && npm run typecheck -w backend && npm run typecheck -w frontend",
+    "test": "npm run build -w shared && npm run test -w backend && npm run test -w frontend",
+    "lint": "npm run lint -w frontend",
+    "ci": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
+    "@playwright/test": "^1.61.1",
     "concurrently": "^10.0.3",
     "lighthouse": "^13.4.0",
     "playwright": "^1.61.1",

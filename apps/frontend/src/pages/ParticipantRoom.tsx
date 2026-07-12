@@ -319,6 +319,7 @@ export function ParticipantRoom() {
     return (
       <main
         id="main-content"
+        tabIndex={-1}
         className="flex flex-col items-center justify-center min-h-[100dvh] bg-slate-50 p-6 text-center"
       >
         <Crown className="w-16 h-16 text-slate-400 mb-4" />
@@ -345,6 +346,7 @@ export function ParticipantRoom() {
     return (
       <main
         id="main-content"
+        tabIndex={-1}
         className="flex flex-col items-center justify-center min-h-[100dvh] bg-slate-50 p-6 text-center"
       >
         <Crown className="w-16 h-16 text-yellow-500 mb-4" />
@@ -368,6 +370,7 @@ export function ParticipantRoom() {
     return (
       <main
         id="main-content"
+        tabIndex={-1}
         className="flex flex-col items-center justify-center min-h-[100dvh] bg-slate-50 p-4"
       >
         {logoUrl ? (
@@ -492,7 +495,7 @@ export function ParticipantRoom() {
   }
 
   return (
-    <main id="main-content" className={bgClass} style={bgStyle}>
+    <main id="main-content" tabIndex={-1} className={bgClass} style={bgStyle}>
       {showOverlay && (
         <div className="absolute inset-0 bg-black/45 backdrop-blur-[1px] z-0" />
       )}

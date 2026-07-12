@@ -1,10 +1,16 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 
 export function useFocusOnNavigation() {
   const location = useLocation();
+  const isInitialLoad = useRef(true);
 
   useEffect(() => {
+    if (isInitialLoad.current) {
+      isInitialLoad.current = false;
+      return;
+    }
+
     // We delay slightly to allow DOM updates after route change
     const timer = setTimeout(() => {
       const heading = document.querySelector('h1');

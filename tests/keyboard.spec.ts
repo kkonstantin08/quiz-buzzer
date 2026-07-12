@@ -5,6 +5,9 @@ test.describe('Keyboard Navigation', () => {
   test('Skip link is the first focusable element and works', async ({ page }) => {
     await page.goto('/');
     
+    // Wait for the main content to be rendered before interacting
+    await page.locator('#main-content').waitFor({ state: 'visible' });
+    
     // Press Tab
     await page.keyboard.press('Tab');
     

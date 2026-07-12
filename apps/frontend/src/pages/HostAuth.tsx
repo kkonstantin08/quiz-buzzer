@@ -68,7 +68,7 @@ export function HostAuth({ defaultIsLogin = true }: { defaultIsLogin?: boolean }
   };
 
   return (
-    <main id="main-content" className="relative flex flex-col items-center justify-center min-h-[100dvh] bg-slate-50 p-4 overflow-hidden">
+    <main id="main-content" tabIndex={-1} className="relative flex flex-col items-center justify-center min-h-[100dvh] bg-slate-50 p-4 overflow-hidden">
       {/* Background decoration matching Landing Page */}
       <div className="absolute inset-0 pointer-events-none flex items-center justify-center overflow-hidden">
         <div className="absolute w-[400px] h-[400px] bg-blue-200/40 rounded-full mix-blend-multiply blur-[80px] translate-x-10 -translate-y-20"></div>
