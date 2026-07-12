@@ -35,21 +35,35 @@ export interface RoomData {
   historySaved?: boolean;
 }
 
+import { z } from 'zod';
+import * as schemas from './schemas';
+
+export * from './schemas';
+
+// Infer types from Zod schemas
+export type RoomJoinPayload = z.infer<typeof schemas.RoomJoinSchema>;
+export type ParticipantRejoinPayload = z.infer<typeof schemas.ParticipantRejoinSchema>;
+export type BuzzSubmitPayload = z.infer<typeof schemas.BuzzSubmitStrictSchema>;
+export type RoundResetPayload = z.infer<typeof schemas.RoundResetSchema>;
+export type SyncAckPayload = z.infer<typeof schemas.SyncAckSchema>;
+export type HostClearScoresPayload = z.infer<typeof schemas.HostClearScoresSchema>;
+export type HostRejoinRoomPayload = z.infer<typeof schemas.HostRejoinRoomSchema>;
+
 // Client -> Server Events
 export interface ClientToServerEvents {
   ROOM_CREATE: (token: string, callback: (res: { success: boolean, room?: RoomData, error?: string }) => void) => void;
-  ROOM_JOIN: (data: { roomCode: string, displayName: string }, callback: (res: { success: boolean, participant?: Participant, room?: RoomData, reconnectToken?: string, error?: string }) => void) => void;
-  PARTICIPANT_REJOIN: (data: { roomCode: string, participantId: string, reconnectToken: string }, callback: (res: { success: boolean, participant?: Participant, room?: RoomData, error?: string }) => void) => void;
+  ROOM_JOIN: (data: RoomJoinPayload, callback: (res: { success: boolean, participant?: Participant, room?: RoomData, reconnectToken?: string, error?: string }) => void) => void;
+  PARTICIPANT_REJOIN: (data: ParticipantRejoinPayload, callback: (res: { success: boolean, participant?: Participant, room?: RoomData, error?: string }) => void) => void;
   ROUND_START: (callback?: (res: { success: boolean, error?: string }) => void) => void;
-  BUZZ_SUBMIT: (data: { clientPressedAt: number }, callback?: (res: { success: boolean, error?: string }) => void) => void;
+  BUZZ_SUBMIT: (data: BuzzSubmitPayload, callback?: (res: { success: boolean, error?: string }) => void) => void;
   FIRST_REVEAL: (callback?: (res: { success: boolean, error?: string }) => void) => void;
-  ROUND_RESET: (data?: { winnerId?: string | null }, callback?: (res: { success: boolean, error?: string }) => void) => void;
+  ROUND_RESET: (data?: RoundResetPayload, callback?: (res: { success: boolean, error?: string }) => void) => void;
   ROOM_FINISH: (callback?: (res: { success: boolean, error?: string }) => void) => void;
   ROOM_LEAVE: () => void;
   SYNC_TIME: (clientTime: number, callback: (serverTime: number) => void) => void;
-  SYNC_ACK: (data: { clientTime: number, serverTime: number, clientReceiveTime: number }) => void;
-  HOST_CLEAR_SCORES: (data: { roomId: string }, callback?: (res: { success: boolean, error?: string }) => void) => void;
-  HOST_REJOIN_ROOM: (data: { roomId: string }, callback: (res: { success: boolean, room?: RoomData, error?: string }) => void) => void;
+  SYNC_ACK: (data: SyncAckPayload) => void;
+  HOST_CLEAR_SCORES: (data: HostClearScoresPayload, callback?: (res: { success: boolean, error?: string }) => void) => void;
+  HOST_REJOIN_ROOM: (data: HostRejoinRoomPayload, callback: (res: { success: boolean, room?: RoomData, error?: string }) => void) => void;
 }
 
 // Server -> Client Events
