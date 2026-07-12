@@ -38,8 +38,8 @@ describe('HostRoom Frontend Reconnect & States', () => {
       socket.connected = true;
       setTimeout(() => {
         // @ts-ignore
-        const connectCalls = socket.on.mock.calls.filter(call => call[0] === 'connect');
-        connectCalls.forEach(call => call[1]());
+        const connectCalls = socket.on.mock.calls.filter((call: any) => call[0] === 'connect');
+        connectCalls.forEach((call: any) => call[1]());
       }, 0);
     });
   });
