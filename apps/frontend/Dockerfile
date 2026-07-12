@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -10,8 +10,8 @@ COPY packages/shared/package.json ./packages/shared/
 COPY apps/backend/package.json ./apps/backend/
 COPY apps/frontend/package.json ./apps/frontend/
 
-# Install dependencies (ignoring legacy peer deps for Vite project)
-RUN npm i --include=dev --legacy-peer-deps
+# Install dependencies
+RUN npm ci --include=dev
 
 # Copy source code
 COPY packages/shared ./packages/shared
