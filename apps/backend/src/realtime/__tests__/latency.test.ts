@@ -151,6 +151,82 @@ describe('Validated Latency Compensation', () => {
     });
   });
 
+  it('accepts a raw timestamp from a client clock that runs fast without treating it as a false start', async () => {
+    await setupRoom();
+    await simulateSync(p1Socket, 100, 10);
+
+    await new Promise<void>((resolve) => {
+      hostSocket.emit('ROUND_START', () => resolve());
+    });
+
+    const room = Array.from(rooms.values())[0];
+    const unlockAt = room.unlockAt!;
+    await sleep(Math.max(0, unlockAt - Date.now()));
+
+    await new Promise<void>((resolve) => {
+      // The client clock is 100ms ahead, so its raw timestamp is ahead too.
+      // The backend must apply its negative median offset exactly once.
+      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: unlockAt + 120 }, (res: any) => {
+        expect(res).toEqual({ success: true, status: 'accepted' });
+        resolve();
+      });
+    });
+  });
+
+  it('accepts a raw timestamp from a client clock that runs slow without treating it as future', async () => {
+    await setupRoom();
+    await simulateSync(p1Socket, -100, 10);
+
+    await new Promise<void>((resolve) => {
+      hostSocket.emit('ROUND_START', () => resolve());
+    });
+
+    const room = Array.from(rooms.values())[0];
+    const unlockAt = room.unlockAt!;
+    await sleep(Math.max(0, unlockAt - Date.now()));
+
+    await new Promise<void>((resolve) => {
+      // The client clock is 100ms behind. Applying the positive median offset
+      // once yields the actual server-side press time.
+      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: unlockAt - 80 }, (res: any) => {
+        expect(res).toEqual({ success: true, status: 'accepted' });
+        resolve();
+      });
+    });
+  });
+
+  it('does not give a client with a fast clock an advantage over an earlier raw press', async () => {
+    await setupRoom();
+    await simulateSync(p1Socket, 100, 10);
+    await simulateSync(p2Socket, 0, 10);
+
+    await new Promise<void>((resolve) => {
+      hostSocket.emit('ROUND_START', () => resolve());
+    });
+
+    const room = Array.from(rooms.values())[0];
+    const unlockAt = room.unlockAt!;
+    await sleep(Math.max(0, unlockAt - Date.now()));
+
+    // P1's wall clock is 100ms fast but it pressed later in real time.
+    // Its raw timestamp must be converted back to server time before ordering.
+    const p1Result = new Promise<any>((resolve) => {
+      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: unlockAt + 140 }, resolve);
+    });
+    await sleep(10);
+    const p2Result = new Promise<any>((resolve) => {
+      p2Socket.emit('BUZZ_SUBMIT', { clientPressedAt: unlockAt + 20 }, resolve);
+    });
+
+    await expect(p1Result).resolves.toEqual({ success: true, status: 'accepted' });
+    await expect(p2Result).resolves.toEqual({ success: true, status: 'accepted' });
+    await sleep(300);
+
+    const roomAfterGrace = Array.from(rooms.values())[0];
+    const earlierParticipant = roomAfterGrace.participants.find((p: any) => p.socketId === p2Socket.id);
+    expect(roomAfterGrace.firstBuzzerId).toBe(earlierParticipant?.id);
+  });
+
   it('rejects future timestamp', async () => {
     await setupRoom();
     await simulateSync(p1Socket, 0, 10);

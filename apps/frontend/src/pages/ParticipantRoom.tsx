@@ -316,7 +316,7 @@ export function ParticipantRoom() {
     setIsBuzzedLocal(true);
     announce("Сигнал отправлен");
 
-    const clientPressedAt = timeSync.getServerTime();
+    const clientPressedAt = Date.now();
 
     socket.emit("BUZZ_SUBMIT", { clientPressedAt }, (res) => {
       if (res && res.success) {
