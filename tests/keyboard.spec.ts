@@ -38,9 +38,14 @@ test.describe('Keyboard Navigation', () => {
     // Press enter to submit
     await page.keyboard.press('Enter');
     
-    // Should navigate or show error. In this case without backend it might show error
-    // We just verify it can trigger the form
-    await expect(page.locator('form')).toBeVisible();
+    // A keyboard submit either completes login or exposes the server error.
+    await Promise.race([
+      page.waitForURL('**/dashboard'),
+      page.getByRole('alert').waitFor({ state: 'visible' }),
+    ]);
+    expect(
+      page.url().endsWith('/dashboard') || await page.getByRole('alert').isVisible(),
+    ).toBe(true);
   });
 
 });
