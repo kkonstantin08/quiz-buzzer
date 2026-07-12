@@ -1,7 +1,7 @@
-import { RoomData, RoomState } from 'shared';
+import { InternalRoomData, RoomState } from 'shared';
 import crypto from 'crypto';
 
-export const rooms = new Map<string, RoomData>();
+export const rooms = new Map<string, InternalRoomData>();
 export const socketToRoom = new Map<string, string>();
 
 // Track in-use room codes to guarantee uniqueness
@@ -13,7 +13,7 @@ export function createRoom(
   customLogoUrl?: string | null,
   customBgUrl?: string | null,
   bgTheme?: string
-): RoomData {
+): InternalRoomData {
   // Generate a unique 6-char hex room code, retrying on collision
   let roomCode: string;
   let attempts = 0;
@@ -28,7 +28,7 @@ export function createRoom(
   usedRoomCodes.add(roomCode);
   const roomId = `room_${Date.now()}_${roomCode}`;
 
-  const newRoom: RoomData = {
+  const newRoom: InternalRoomData = {
     roomId,
     roomCode,
     hostUserId,
@@ -42,13 +42,14 @@ export function createRoom(
     bgTheme: bgTheme || 'light',
     isHostConnected: true,
     historySaved: false,
+    roundId: crypto.randomUUID(),
   };
 
   rooms.set(roomId, newRoom);
   return newRoom;
 }
 
-export function getRoomByCode(roomCode: string): RoomData | undefined {
+export function getRoomByCode(roomCode: string): InternalRoomData | undefined {
   for (const room of rooms.values()) {
     if (room.roomCode === roomCode) {
       return room;

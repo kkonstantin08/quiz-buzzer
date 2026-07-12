@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../prisma';
 import { config } from '../config';
 import { rooms, socketToRoom, createRoom, getRoomByCode } from '../rooms';
-import { RoomState, ClientToServerEvents, ServerToClientEvents, RoomData } from 'shared';
+import { RoomState, ClientToServerEvents, ServerToClientEvents, InternalRoomData, PublicRoomData, PublicParticipant } from 'shared';
 import xss from 'xss';
 import { reattachHostToRoom, startHostReconnectTimeout } from './host-reconnect';
 import { saveGameHistory, schedulePostFinishCleanup, scheduleMaxLifetimeCleanup, postFinishTimers, maxLifetimeTimers } from './room-lifecycle';
@@ -48,7 +48,7 @@ function rejectSocketAction(action: string, reason: string, socketId: string, ro
   return { success: false, error: errorMsg };
 }
 
-function requireHostSocket(socket: Socket<any, any, any, CustomSocketData>, room: RoomData, action: string) {
+function requireHostSocket(socket: Socket<any, any, any, CustomSocketData>, room: InternalRoomData, action: string) {
   if (socket.data.role !== 'host') {
     return rejectSocketAction(action, 'not_a_host', socket.id, room.roomId);
   }
@@ -58,7 +58,7 @@ function requireHostSocket(socket: Socket<any, any, any, CustomSocketData>, room
   return null;
 }
 
-function requireParticipantSocket(socket: Socket<any, any, any, CustomSocketData>, room: RoomData, action: string) {
+function requireParticipantSocket(socket: Socket<any, any, any, CustomSocketData>, room: InternalRoomData, action: string) {
   if (socket.data.role !== 'participant') {
     return rejectSocketAction(action, 'not_a_participant', socket.id, room.roomId);
   }
@@ -69,9 +69,36 @@ function requireParticipantSocket(socket: Socket<any, any, any, CustomSocketData
   return null;
 }
 
+
+export function toPublicRoomData(room: InternalRoomData): PublicRoomData {
+  return {
+    roomId: room.roomId,
+    roomCode: room.roomCode,
+    participants: room.participants.map(p => ({
+      id: p.id,
+      displayName: p.displayName,
+      joinedAt: p.joinedAt,
+      isConnected: p.isConnected,
+      score: p.score,
+    })),
+    roundState: room.roundState,
+    firstBuzzerId: room.firstBuzzerId,
+    createdAt: room.createdAt,
+    customLogoUrl: room.customLogoUrl,
+    customBgUrl: room.customBgUrl,
+    bgTheme: room.bgTheme,
+    unlockAt: room.unlockAt,
+    isHostConnected: room.isHostConnected,
+  };
+}
+
+export function emitRoomState(io: Server<ClientToServerEvents, ServerToClientEvents, import('socket.io').DefaultEventsMap, CustomSocketData>, room: InternalRoomData) {
+  io.to(room.roomId).emit('ROOM_STATE_UPDATED', toPublicRoomData(room));
+}
+
 export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEvents, import('socket.io').DefaultEventsMap, CustomSocketData>) {
   // Grace period buffers for each room
-  const buzzBuffers = new Map<string, { timer: NodeJS.Timeout, buzzes: { socketId: string, timestamp: number, receivedAt: number }[] }>();
+  const buzzBuffers = new Map<string, { roundId: string, timer: NodeJS.Timeout, buzzes: { participantId: string, timestamp: number, receivedAt: number }[] }>();
 
   interface SyncStats {
     rttWindow: number[];
@@ -225,11 +252,11 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
           [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers]
         );
 
-        if (callback) callback({ success: true, room });
+        if (callback) callback({ success: true, room: toPublicRoomData(room) });
       } catch (error) {
         if (callback) callback({ success: false, error: 'Ошибка авторизации' });
       }
-    }) as any);
+    }));
 
     // Rejoin Room (Host only)
     socket.on('HOST_REJOIN_ROOM', withValidation(HostRejoinRoomSchema, 'HOST_REJOIN_ROOM', ({ roomId }, callback) => {
@@ -262,11 +289,10 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
 
       reattachHostToRoom(socket, room, io);
       
-      const safeRoom = { ...room, participants: room.participants.map(({ reconnectTokenHash, ...p }) => p) };
-      io.to(roomId).emit('ROOM_STATE_UPDATED', safeRoom as any);
+      emitRoomState(io, room);
       
-      if (callback) callback({ success: true, room: safeRoom as any });
-    }) as any);
+      if (callback) callback({ success: true, room: toPublicRoomData(room) });
+    }));
 
     // Join Room (Participant)
     socket.on('ROOM_JOIN', withValidation(RoomJoinSchema, 'ROOM_JOIN', ({ roomCode, displayName }, callback) => {
@@ -324,12 +350,11 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       socket.data.participantId = participant.id;
 
       // Emit room state without hashes
-      const safeRoom = { ...room, participants: room.participants.map(({ reconnectTokenHash, ...p }) => p) };
-      io.to(room.roomId).emit('ROOM_STATE_UPDATED', safeRoom as any);
+      emitRoomState(io, room);
       
       const { reconnectTokenHash: _hash, ...safeParticipant } = participant;
-      if (callback) callback({ success: true, participant: safeParticipant as any, room: safeRoom as any, reconnectToken });
-    }) as any);
+      if (callback) { const { socketId, reconnectTokenHash, ...pubParticipant } = participant; callback({ success: true, participant: pubParticipant, room: toPublicRoomData(room), reconnectToken }); }
+    }));
 
     // Rejoin Room (Participant)
     socket.on('PARTICIPANT_REJOIN', withValidation(ParticipantRejoinSchema, 'PARTICIPANT_REJOIN', ({ roomCode, participantId, reconnectToken }, callback) => {
@@ -384,12 +409,11 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       socket.data.role = 'participant';
       socket.data.participantId = participant.id;
 
-      const safeRoom = { ...room, participants: room.participants.map(({ reconnectTokenHash, ...p }) => p) };
-      io.to(room.roomId).emit('ROOM_STATE_UPDATED', safeRoom as any);
+      emitRoomState(io, room);
       
       const { reconnectTokenHash: _hash, ...safeParticipant } = participant;
-      if (callback) callback({ success: true, participant: safeParticipant as any, room: safeRoom as any });
-    }) as any);
+      if (callback) { const { socketId, reconnectTokenHash, ...pubParticipant } = participant; callback({ success: true, participant: pubParticipant, room: toPublicRoomData(room) }); }
+    }));
 
     // Start Round (Host)
     socket.on('ROUND_START', withValidation(RoundStartSchema, 'ROUND_START', (data, callback) => {
@@ -409,10 +433,11 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       }
 
       room.roundState = RoomState.ACTIVE;
+      room.roundId = crypto.randomUUID();
       room.firstBuzzerId = null;
       room.unlockAt = Date.now() + 150; // Scheduled unlock buffer
       
-      io.to(roomId).emit('ROOM_STATE_UPDATED', room);
+      emitRoomState(io, room);
       if (callback) callback({ success: true });
     }));
 
@@ -482,8 +507,10 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       );
 
       let buffer = buzzBuffers.get(roomId);
-      if (!buffer) {
+      if (!buffer || buffer.roundId !== room.roundId) {
+        if (buffer) clearTimeout(buffer.timer);
         buffer = {
+          roundId: room.roundId,
           buzzes: [],
           timer: setTimeout(() => {
             const b = buzzBuffers.get(roomId);
@@ -494,18 +521,16 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
                 }
                 return a.timestamp - b.timestamp;
               });
+              const currentRoom = rooms.get(roomId);
               const winner = b.buzzes[0];
 
-              const currentRoom = rooms.get(roomId);
-              if (currentRoom && currentRoom.roundState === RoomState.ACTIVE) {
-                // Find the participantId for this socket
-                const winnerParticipantId = io.sockets.sockets.get(winner.socketId)?.data.participantId;
-                if (winnerParticipantId) {
-                  currentRoom.firstBuzzerId = winnerParticipantId;
+              if (currentRoom && currentRoom.roundState === RoomState.ACTIVE && currentRoom.roundId === b.roundId) {
+                // Find if participant is still in the room
+                const winnerParticipant = currentRoom.participants.find(p => p.id === winner.participantId);
+                if (winnerParticipant) {
+                  currentRoom.firstBuzzerId = winnerParticipant.id;
                   currentRoom.roundState = RoomState.REVEALED;
-
-                  const safeRoom = { ...currentRoom, participants: currentRoom.participants.map(({ reconnectTokenHash, ...p }) => p) };
-                  io.to(roomId).emit('ROOM_STATE_UPDATED', safeRoom as any);
+                  emitRoomState(io, currentRoom);
                 }
               }
             }
@@ -515,9 +540,9 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
         buzzBuffers.set(roomId, buffer);
       }
 
-      buffer.buzzes.push({ socketId: socket.id, timestamp: validatedPressedAt, receivedAt });
+      buffer.buzzes.push({ participantId: socket.data.participantId!, timestamp: validatedPressedAt, receivedAt });
 
-      if (actualCallback) actualCallback({ success: true });
+      if (actualCallback) actualCallback({ success: true, status: 'accepted' });
     }));
 
     // Reveal First (Host)
@@ -536,7 +561,7 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       }
 
       room.roundState = RoomState.REVEALED;
-      io.to(roomId).emit('ROOM_STATE_UPDATED', room);
+      emitRoomState(io, room);
       
       if (callback) callback({ success: true });
     }));
@@ -571,7 +596,7 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       room.firstBuzzerId = null;
       room.unlockAt = null;
 
-      io.to(roomId).emit('ROOM_STATE_UPDATED', room);
+      emitRoomState(io, room);
       
       if (callback) callback({ success: true });
     }));
@@ -608,7 +633,7 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       // Save to history (idempotent)
       await saveGameHistory(room, prisma);
 
-      io.to(roomId).emit('ROOM_STATE_UPDATED', room);
+      emitRoomState(io, room);
 
       // Schedule 5-minute post-finish cleanup
       schedulePostFinishCleanup(
@@ -639,8 +664,7 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       const participant = room.participants.find(p => p.socketId === socket.id);
       if (participant) {
         participant.isConnected = false;
-        const safeRoom = { ...room, participants: room.participants.map(({ reconnectTokenHash, ...p }) => p) };
-        io.to(roomId).emit('ROOM_STATE_UPDATED', safeRoom as any);
+        emitRoomState(io, room);
 
         // Schedule 5-minute disconnect timer
         const timerKey = `${roomId}_${participant.id}`;
@@ -648,8 +672,7 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
           const currentRoom = rooms.get(roomId);
           if (currentRoom) {
             currentRoom.participants = currentRoom.participants.filter(p => p.id !== participant.id);
-            const safeCurrentRoom = { ...currentRoom, participants: currentRoom.participants.map(({ reconnectTokenHash, ...p }) => p) };
-            io.to(roomId).emit('ROOM_STATE_UPDATED', safeCurrentRoom as any);
+            emitRoomState(io, currentRoom);
           }
           participantDisconnectTimers.delete(timerKey);
         }, 5 * 60 * 1000);
@@ -658,8 +681,7 @@ export function setupSocketIO(io: Server<ClientToServerEvents, ServerToClientEve
       } else if (room.hostSocketId === socket.id) {
         if (!socket.data.intentionalLogout) {
           startHostReconnectTimeout(roomId, io, buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>);
-          const safeRoom = { ...room, participants: room.participants.map(({ reconnectTokenHash, ...p }) => p) };
-          io.to(roomId).emit('ROOM_STATE_UPDATED', safeRoom as any);
+          emitRoomState(io, room);
         }
       }
     }

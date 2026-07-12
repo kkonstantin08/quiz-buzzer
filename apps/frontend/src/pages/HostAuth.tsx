@@ -114,7 +114,7 @@ export function HostAuth({ defaultIsLogin = true }: { defaultIsLogin?: boolean }
                 className="h-12 bg-white/80 border-slate-200/60 focus:bg-white transition-colors"
               />
             </div>
-            <div className="relative space-y-2">
+            <div className="relative">
               <Label htmlFor="auth-password" className="sr-only">Пароль</Label>
               <Input
                 id="auth-password"
@@ -138,7 +138,7 @@ export function HostAuth({ defaultIsLogin = true }: { defaultIsLogin?: boolean }
               </button>
             </div>
             {!isLogin && (
-              <div className="relative space-y-2">
+              <div className="relative">
                 <Label htmlFor="auth-confirm-password" className="sr-only">Повторите пароль</Label>
                 <Input
                   id="auth-confirm-password"

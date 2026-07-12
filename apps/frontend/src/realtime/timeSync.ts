@@ -9,7 +9,7 @@ class TimeSyncService {
   }
 
   private startSync() {
-    // Initial sync
+    // Initial sync attempt
     this.sync();
 
     // Periodic sync every 5 seconds
@@ -18,19 +18,13 @@ class TimeSyncService {
     }, 5000);
 
     socket.on('disconnect', () => {
-      if (this.intervalId) {
-        clearInterval(this.intervalId);
-        this.intervalId = null;
-      }
+      // We don't clear the interval, we just let it silently fail or we can pause it.
+      // Actually, keeping the interval is fine, `sync()` aborts if disconnected.
     });
 
     socket.on('connect', () => {
-      if (!this.intervalId) {
-        this.sync();
-        this.intervalId = setInterval(() => {
-          this.sync();
-        }, 5000);
-      }
+      // Always do an immediate sync upon connection!
+      this.sync();
     });
   }
 

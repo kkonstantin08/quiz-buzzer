@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { socket } from "../realtime/socket";
 import { timeSync } from "../realtime/timeSync";
 import { api, BASE_URL } from "../services/api";
-import { RoomState, type RoomData } from "shared";
+import { RoomState, type PublicRoomData } from "shared";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,7 +21,7 @@ import { useAriaLive } from "../lib/AriaLiveContext";
 export function ParticipantRoom() {
   const { roomCode } = useParams<{ roomCode: string }>();
   const navigate = useNavigate();
-  const [room, setRoom] = useState<RoomData | null>(null);
+  const [room, setRoom] = useState<PublicRoomData | null>(null);
   const [name, setName] = useState("");
   const [isJoining, setIsJoining] = useState(false);
   const [error, setError] = useState("");
@@ -35,6 +35,7 @@ export function ParticipantRoom() {
   const [unlockReady, setUnlockReady] = useState(false);
   const [isHostDisconnected, setIsHostDisconnected] = useState(false);
   const [roomClosedReason, setRoomClosedReason] = useState<string | null>(null);
+  const [myParticipantId, setMyParticipantId] = useState<string | null>(null);
   const announce = useAriaLive();
   const buzzTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shouldReduceMotion = useReducedMotion();
@@ -75,6 +76,18 @@ export function ParticipantRoom() {
     }
   }, [roomCode]);
 
+  // Synchronize local UI state with the current room state (crucial for page reloads)
+  useEffect(() => {
+    if (room) {
+      setIsHostDisconnected(!room.isHostConnected);
+      if (room.roundState === RoomState.REVEALED && myParticipantId && room.firstBuzzerId === myParticipantId) {
+        setAmIFirst(true);
+      } else if (room.roundState === RoomState.WAITING || room.roundState === RoomState.ACTIVE) {
+        setAmIFirst(false);
+      }
+    }
+  }, [room?.roundState, room?.firstBuzzerId, room?.isHostConnected, myParticipantId]);
+
   useEffect(() => {
     const tryRejoin = () => {
       const savedSession = localStorage.getItem(`quiz_participant_${roomCode}`);
@@ -88,6 +101,7 @@ export function ParticipantRoom() {
               if (res.success && res.room && res.participant) {
                 setRoom(res.room);
                 setName(res.participant.displayName);
+                setMyParticipantId(res.participant.id);
               } else {
                 localStorage.removeItem(`quiz_participant_${roomCode}`);
                 setRoom(null);
@@ -146,6 +160,7 @@ export function ParticipantRoom() {
           setRoom(res.room);
           announce("Вы успешно вошли в игру");
           if (res.participant?.id && res.reconnectToken) {
+            setMyParticipantId(res.participant.id);
             localStorage.setItem(
               `quiz_participant_${roomCode}`,
               JSON.stringify({
@@ -167,7 +182,7 @@ export function ParticipantRoom() {
   useEffect(() => {
     if (!room) return;
 
-    const onStateUpdate = (updatedRoom: RoomData) => {
+    const onStateUpdate = (updatedRoom: PublicRoomData) => {
       const prevRoom = room;
       setRoom(updatedRoom);
 
@@ -193,11 +208,11 @@ export function ParticipantRoom() {
         const firstP = updatedRoom.participants.find(
           (p) => p.id === updatedRoom.firstBuzzerId,
         );
-        const myParticipant = updatedRoom.participants.find(
-          (p) => p.socketId === socket.id,
-        );
+        const myParticipant = myParticipantId 
+          ? updatedRoom.participants.find((p) => p.id === myParticipantId)
+          : null;
 
-        if (myParticipant && updatedRoom.firstBuzzerId === myParticipant.id) {
+        if (myParticipantId && updatedRoom.firstBuzzerId === myParticipantId) {
           setAmIFirst(true);
           announce("Вы нажали первым!");
         } else {
@@ -301,16 +316,15 @@ export function ParticipantRoom() {
     setIsBuzzedLocal(true);
     announce("Сигнал отправлен");
 
-    const clientPressedAt = Date.now();
+    const clientPressedAt = timeSync.getServerTime();
 
-    // @ts-ignore
-    socket.emit("BUZZ_SUBMIT", { clientPressedAt }, (res: any) => {
-      // The server callback will arrive after the 250ms buffer.
-      // But we mostly rely on FIRST_REVEALED broadcast to show results.
+    socket.emit("BUZZ_SUBMIT", { clientPressedAt }, (res) => {
       if (res && res.success) {
-        // Just in case it's processed quickly or FIRST_REVEALED is missed
-        setAmIFirst(true);
-        announce("Вы нажали первым!");
+        // Signal accepted into the grace buffer.
+        // We do NOT set amIFirst here! The winner is determined only by the ROOM_STATE_UPDATED broadcast.
+      } else if (res && !res.success) {
+        announce(res.error || "Ошибка", "assertive");
+        setIsBuzzedLocal(false); // allow retry if failed
       }
     });
   };

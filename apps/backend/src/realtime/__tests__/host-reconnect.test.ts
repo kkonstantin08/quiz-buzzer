@@ -123,7 +123,7 @@ describe('Host Reconnect and Revocation', () => {
 
     expect(res.success).toBe(true);
     expect(res.room.roomId).toBe(roomId);
-    expect(res.room.hostSocketId).toBe(newHostSocket.id);
+    // `res.room` is PublicRoomData and does not contain hostSocketId
     newHostSocket.disconnect();
   });
 

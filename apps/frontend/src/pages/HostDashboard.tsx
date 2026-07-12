@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { socket } from '../realtime/socket';
-import type { RoomData } from 'shared';
+import type { PublicRoomData } from 'shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Play, History, Plus } from 'lucide-react';
@@ -57,7 +57,7 @@ export function HostDashboard() {
       socket.connect();
     }
     
-    socket.emit('ROOM_CREATE', '', (res: { success: boolean, room?: RoomData, error?: string }) => {
+    socket.emit('ROOM_CREATE', '', (res: { success: boolean, room?: PublicRoomData, error?: string }) => {
       if (res.success && res.room) {
         navigate(`/host/room/${res.room.roomId}`, { state: { room: res.room } });
       } else {

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { socket } from '../realtime/socket';
-import { RoomState, type RoomData } from 'shared';
+import { RoomState, type PublicRoomData } from 'shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -19,7 +19,7 @@ export function HostRoom() {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const [room, setRoom] = useState<RoomData | null>(location.state?.room || null);
+  const [room, setRoom] = useState<PublicRoomData | null>(location.state?.room || null);
   const [reconnectState, setReconnectState] = useState<'restoring' | 'connected' | 'revoked' | 'unavailable'>('restoring');
   const [reconnectError, setReconnectError] = useState<string | null>(null);
   const [firstBuzzerName, setFirstBuzzerName] = useState<string>('');
@@ -65,9 +65,14 @@ export function HostRoom() {
       });
     };
 
-    if (!room) {
+    if (!socket.connected) {
+      // Fresh load or page reload - always connect. 'connect' event will trigger performRejoin
+      socket.connect();
+    } else if (!room) {
+      // Already connected but no room data, need to fetch it
       performRejoin();
     } else {
+      // Connected and have room data (e.g. navigated from Dashboard)
       setReconnectState('connected');
     }
 
@@ -90,7 +95,7 @@ export function HostRoom() {
   }, [roomId]);
 
   useEffect(() => {
-    const onStateUpdate = (updatedRoom: RoomData) => {
+    const onStateUpdate = (updatedRoom: PublicRoomData) => {
       const prevRoom = room;
       setRoom(updatedRoom);
 

@@ -127,7 +127,7 @@ describe('Validated Latency Compensation', () => {
     await sleep(300); 
 
     const roomAfter = Array.from(rooms.values())[0];
-    const p1Participant = roomAfter.participants.find(p => p.socketId === p1Socket.id);
+    const p1Participant = roomAfter.participants.find((p: any) => p.socketId === p1Socket.id);
     expect(roomAfter.firstBuzzerId).toBe(p1Participant?.id);
   });
 
@@ -174,4 +174,72 @@ describe('Validated Latency Compensation', () => {
       });
     });
   });
+
+  it('concurrent buzzes within grace period - only one winner is determined', async () => {
+    await setupRoom();
+    await simulateSync(p1Socket, 0, 10);
+    await simulateSync(p2Socket, 0, 10);
+    
+    await new Promise<void>((resolve) => {
+      hostSocket.emit('ROUND_START', () => resolve());
+    });
+
+    const room = Array.from(rooms.values())[0];
+    const unlockAt = room.unlockAt || Date.now() + 150;
+    await sleep(Math.max(0, unlockAt - Date.now()));
+
+    // Both buzz almost simultaneously
+    const p1Promise = new Promise<any>((resolve) => p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: unlockAt + 20 }, resolve));
+    const p2Promise = new Promise<any>((resolve) => p2Socket.emit('BUZZ_SUBMIT', { clientPressedAt: unlockAt + 22 }, resolve));
+
+    const [r1, r2] = await Promise.all([p1Promise, p2Promise]);
+    
+    // Both should be accepted
+    expect(r1.success).toBe(true);
+    expect(r1.status).toBe('accepted');
+    expect(r2.success).toBe(true);
+    expect(r2.status).toBe('accepted');
+
+    // Neither has won YET (it takes 250ms buffer)
+    const roomBeforeGrace = Array.from(rooms.values())[0];
+    expect(roomBeforeGrace.firstBuzzerId).toBeNull();
+
+    await sleep(300); // Wait for grace period
+
+    const roomAfterGrace = Array.from(rooms.values())[0];
+    const p1Participant = roomAfterGrace.participants.find((p: any) => p.socketId === p1Socket.id);
+    const p2Participant = roomAfterGrace.participants.find((p: any) => p.socketId === p2Socket.id);
+
+    // Only one should win (p1 because timestamp is earlier)
+    expect(roomAfterGrace.firstBuzzerId).toBe(p1Participant?.id);
+  });
+
+  it('preserves winner if they disconnect before grace period ends', async () => {
+    await setupRoom();
+    await simulateSync(p1Socket, 0, 10);
+    
+    await new Promise<void>((resolve) => {
+      hostSocket.emit('ROUND_START', () => resolve());
+    });
+
+    const room = Array.from(rooms.values())[0];
+    const unlockAt = room.unlockAt || Date.now() + 150;
+    await sleep(Math.max(0, unlockAt - Date.now()));
+
+    // p1 buzzes then disconnects immediately
+    await new Promise<any>((resolve) => p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: unlockAt + 10 }, resolve));
+    
+    const p1SocketId = p1Socket.id;
+    p1Socket.disconnect(); // Disconnect BEFORE 250ms grace period finishes
+
+    await sleep(300);
+
+    const roomAfterGrace = Array.from(rooms.values())[0];
+    const p1Participant = roomAfterGrace.participants.find((p: any) => p.socketId === p1SocketId);
+    
+    // They should still be the winner because it uses participantId
+    expect(roomAfterGrace.firstBuzzerId).toBe(p1Participant?.id);
+    expect(roomAfterGrace.firstBuzzerId).not.toBeNull();
+  });
+
 });

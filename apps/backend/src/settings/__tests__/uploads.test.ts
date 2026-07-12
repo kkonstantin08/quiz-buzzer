@@ -5,8 +5,15 @@ import { config } from '../../config';
 
 describe('Upload Utility', () => {
   beforeAll(() => {
+    config.uploadDir = path.join(__dirname, '../../../test-uploads');
     if (!fs.existsSync(config.uploadDir)) {
       fs.mkdirSync(config.uploadDir, { recursive: true });
+    }
+  });
+
+  afterAll(() => {
+    if (fs.existsSync(config.uploadDir)) {
+      fs.rmSync(config.uploadDir, { recursive: true, force: true });
     }
   });
 
