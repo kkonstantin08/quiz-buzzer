@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { BillingModal } from './BillingModal';
 import { LayoutDashboard, History, Settings, LogOut, Plus, Crown, Target, User, Save, Calendar, Pencil, Upload, Loader2 } from 'lucide-react';
@@ -115,7 +115,7 @@ export function DashboardLayout({
 
       {/* Sidebar (Desktop) */}
       <aside className="w-64 bg-white border-r border-slate-200 flex-col hidden md:flex shrink-0">
-        <div className="h-16 flex items-center px-6 border-b border-slate-100 gap-3 shrink-0">
+        <Link to="/dashboard" className="h-16 flex items-center px-6 border-b border-slate-100 gap-3 shrink-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset">
           {customLogoUrl ? (
             <img src={customLogoUrl} alt="Logo" className="max-h-8 object-contain" />
           ) : (
@@ -124,7 +124,7 @@ export function DashboardLayout({
               <span className="font-black text-xl text-slate-800 tracking-tight">КвизПульт</span>
             </>
           )}
-        </div>
+        </Link>
         
         <div className="p-4 shrink-0">
           <Button onClick={onCreateRoom} className="w-full justify-start gap-2 h-11 bg-slate-900 hover:bg-slate-800 text-white shadow-md">
@@ -290,10 +290,10 @@ export function DashboardLayout({
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col h-[100dvh] overflow-y-auto">
+      <main id="main-content" className="flex-1 flex flex-col h-[100dvh] overflow-y-auto">
         {/* Mobile Header */}
         <header className="md:hidden h-16 bg-white border-b flex items-center justify-between px-4 shrink-0 shadow-sm z-10">
-          <div className="flex items-center gap-2">
+          <Link to="/dashboard" className="flex items-center gap-2 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
             {customLogoUrl ? (
               <img src={customLogoUrl} alt="Logo" className="max-h-8 object-contain" />
             ) : (
@@ -302,7 +302,7 @@ export function DashboardLayout({
                 <span className="font-black text-lg text-slate-800">КвизПульт</span>
               </>
             )}
-          </div>
+          </Link>
           <div className="flex items-center gap-1">
             {hasSubscription && (
               <Button 

@@ -257,32 +257,36 @@ export function HostSettings() {
                 <p className="text-sm text-slate-600 mb-2">Выберите звуковую тему для ваших мероприятий</p>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div 
+                  <button 
+                    type="button"
                     onClick={() => {
                       setSoundTheme('classic');
                       if (soundEnabled) playPreview('classic');
                     }}
-                    className={`border-2 rounded-xl p-4 cursor-pointer transition-all relative ${soundTheme === 'classic' ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-300'}`}
+                    className={`border-2 rounded-xl p-4 cursor-pointer transition-all relative text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${soundTheme === 'classic' ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-300'}`}
+                    aria-pressed={soundTheme === 'classic'}
                   >
                     <div className="flex items-center justify-between mb-1">
                       <div className="font-semibold text-slate-900">Классическая</div>
                       {soundEnabled && <Volume2 size={16} className="text-slate-500" />}
                     </div>
                     <div className="text-xs text-slate-600">Стандартные пики и гонги</div>
-                  </div>
-                  <div 
+                  </button>
+                  <button 
+                    type="button"
                     onClick={() => {
                       setSoundTheme('tv');
                       if (soundEnabled) playPreview('tv');
                     }}
-                    className={`border-2 rounded-xl p-4 cursor-pointer transition-all relative ${soundTheme === 'tv' ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-300'}`}
+                    className={`border-2 rounded-xl p-4 cursor-pointer transition-all relative text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${soundTheme === 'tv' ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-300'}`}
+                    aria-pressed={soundTheme === 'tv'}
                   >
                     <div className="flex items-center justify-between mb-1">
                       <div className="font-semibold text-slate-900">ТВ-шоу</div>
                       {soundEnabled && <Volume2 size={16} className="text-slate-500" />}
                     </div>
                     <div className="text-xs text-slate-600">Эффекты как в известных телеиграх</div>
-                  </div>
+                  </button>
                 </div>
               </div>
             </CardContent>
@@ -353,12 +357,12 @@ export function HostSettings() {
               {/* Задний фон (Стиль игры) */}
               <div className="space-y-4 pt-4 border-t border-slate-100">
                 <div className="space-y-1">
-                  <Label>Задний фон (Стиль игры)</Label>
+                  <div className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70" id="bg-theme-label">Задний фон (Стиль игры)</div>
                   <CardDescription>Выберите готовую тему или загрузите своё фоновое изображение для игровых экранов</CardDescription>
                 </div>
                 
                 {/* Theme Preset Selector */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2" role="group" aria-labelledby="bg-theme-label">
                   <Button
                     type="button"
                     variant="outline"

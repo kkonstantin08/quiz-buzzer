@@ -13,10 +13,10 @@ export function LandingPage() {
   return (
     <div className="min-h-[100dvh] lg:h-[100dvh] lg:overflow-hidden overflow-x-hidden bg-slate-50 flex flex-col">
       <header className="fixed top-0 w-full px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between bg-white/90 backdrop-blur-md shadow-sm border-b z-50 shrink-0 gap-2">
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        <Link to="/" className="flex items-center gap-2 sm:gap-3 shrink-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2">
           <LogoIcon />
-          <h1 className="text-lg sm:text-2xl font-extrabold text-slate-800 tracking-tight">КвизПульт</h1>
-        </div>
+          <span className="text-lg sm:text-2xl font-extrabold text-slate-800 tracking-tight">КвизПульт</span>
+        </Link>
         <nav className="flex items-center gap-3 sm:gap-4 shrink-0">
           <Link to="/login" className="text-xs sm:text-sm font-medium text-slate-600 hover:text-slate-900">
             Войти
@@ -27,7 +27,7 @@ export function LandingPage() {
         </nav>
       </header>
 
-      <main className="flex-1 w-full max-w-7xl mx-auto px-6 pt-24 pb-12 lg:pt-24 lg:pb-8 grid lg:grid-cols-2 gap-8 lg:gap-4 items-center relative">
+      <main id="main-content" className="flex-1 w-full max-w-7xl mx-auto px-6 pt-24 pb-12 lg:pt-24 lg:pb-8 grid lg:grid-cols-2 gap-8 lg:gap-4 items-center relative">
         {/* Left Column: Text */}
         <div className="space-y-4 lg:space-y-6 relative z-10 text-center lg:text-left">
           <div className="max-w-2xl mx-auto lg:mx-0 space-y-4">

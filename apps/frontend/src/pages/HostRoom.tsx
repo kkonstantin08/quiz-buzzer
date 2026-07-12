@@ -13,6 +13,7 @@ import { QrCode, Timer, Crown, LogOut, Check } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { playSound } from '../lib/sounds';
 import { api, BASE_URL } from '../services/api';
+import { useAriaLive } from '../lib/AriaLiveContext';
 
 export function HostRoom() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -27,6 +28,7 @@ export function HostRoom() {
   const [copied, setCopied] = useState(false);
   const [winnerInfo, setWinnerInfo] = useState<{winnerName: string | null, winnerScore: number} | null>(null);
   const soundSettingsRef = React.useRef({ enabled: true, theme: 'classic' });
+  const announce = useAriaLive();
 
   useEffect(() => {
     api.getSettings()
@@ -54,9 +56,11 @@ export function HostRoom() {
         if (res.success && res.room) {
           setRoom(res.room);
           setReconnectState('connected');
+          announce('Вы успешно подключились к игре как ведущий');
         } else {
           setReconnectState('unavailable');
           setReconnectError(res.error || 'Игра недоступна');
+          announce(res.error || 'Игра недоступна', 'assertive');
         }
       });
     };
@@ -73,6 +77,7 @@ export function HostRoom() {
 
     const onControlRevoked = () => {
       setReconnectState('revoked');
+      announce('Управление отозвано. Открыто с другого устройства.', 'assertive');
     };
 
     socket.on('connect', onConnect);
@@ -95,9 +100,14 @@ export function HostRoom() {
         
         if (prevRoom?.roundState !== RoomState.REVEALED) {
           playSound('buzz', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
+          announce(`Первым нажал: ${p ? p.displayName : 'Неизвестный участник'}`);
         }
       } else if (updatedRoom.roundState === RoomState.WAITING || updatedRoom.roundState === RoomState.ACTIVE) {
         setFirstBuzzerName('');
+      }
+
+      if (updatedRoom.roundState === RoomState.ACTIVE && prevRoom?.roundState !== RoomState.ACTIVE) {
+        announce('Раунд запущен. Игроки могут нажимать на пульты.');
       }
 
       if (updatedRoom.roundState === RoomState.FINISHED && prevRoom?.roundState !== RoomState.FINISHED) {
@@ -110,13 +120,16 @@ export function HostRoom() {
         }
         setWinnerInfo({ winnerName, winnerScore });
 
-        confetti({
-          particleCount: 150,
-          spread: 80,
-          origin: { y: 0.6 },
-          colors: ['#ef4444', '#f59e0b', '#3b82f6', '#10b981']
-        });
+        if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          confetti({
+            particleCount: 150,
+            spread: 80,
+            origin: { y: 0.6 },
+            colors: ['#ef4444', '#f59e0b', '#3b82f6', '#10b981']
+          });
+        }
         playSound('fanfare', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
+        announce(`Игра завершена. Победитель: ${winnerName || 'никто'}.`);
       }
     };
 
@@ -235,7 +248,7 @@ export function HostRoom() {
   if (room.roundState === RoomState.FINISHED && winnerInfo) {
     if (room.participants.length === 0) {
       return (
-        <div className="dashboard-container flex items-center justify-center min-h-[100dvh]">
+        <main id="main-content" className="dashboard-container flex items-center justify-center min-h-[100dvh]">
           <Card className="max-w-lg w-full text-center py-12 border-0 shadow-2xl shadow-slate-500/10 bg-slate-50">
             <CardContent className="space-y-6 flex flex-col items-center">
               <div className="w-24 h-24 bg-slate-200 text-slate-500 rounded-full flex items-center justify-center shadow-inner">
@@ -250,12 +263,12 @@ export function HostRoom() {
               </Button>
             </CardContent>
           </Card>
-        </div>
+        </main>
       );
     }
 
     return (
-      <div className="dashboard-container flex items-center justify-center min-h-[100dvh]">
+      <main id="main-content" className="dashboard-container flex items-center justify-center min-h-[100dvh]">
         <Card className="max-w-lg w-full text-center py-12 border-0 shadow-2xl shadow-yellow-500/20 bg-gradient-to-b from-yellow-50 to-white">
           <CardContent className="space-y-6 flex flex-col items-center">
             <div className="w-24 h-24 bg-yellow-100 text-yellow-600 rounded-full flex items-center justify-center animate-bounce shadow-inner">
@@ -281,7 +294,7 @@ export function HostRoom() {
             </Button>
           </CardContent>
         </Card>
-      </div>
+      </main>
     );
   }
 
@@ -326,7 +339,7 @@ export function HostRoom() {
   }
 
   return (
-    <div className={bgClass} style={bgStyle}>
+    <main id="main-content" className={bgClass} style={bgStyle}>
       {showOverlay && <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] z-0" />}
       <div className="relative z-10 dashboard-container">
       
@@ -578,7 +591,7 @@ export function HostRoom() {
           </CardContent>
         </Card>
       </div>
-    </div>
-    </div>
+      </div>
+    </main>
   );
 }

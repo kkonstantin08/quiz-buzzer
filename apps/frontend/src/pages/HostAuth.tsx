@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Target, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { api } from '../services/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter, CardDescription } from '@/components/ui/card';
 
 const LogoIcon = () => (
@@ -67,7 +68,7 @@ export function HostAuth({ defaultIsLogin = true }: { defaultIsLogin?: boolean }
   };
 
   return (
-    <main className="relative flex flex-col items-center justify-center min-h-[100dvh] bg-slate-50 p-4 overflow-hidden">
+    <main id="main-content" className="relative flex flex-col items-center justify-center min-h-[100dvh] bg-slate-50 p-4 overflow-hidden">
       {/* Background decoration matching Landing Page */}
       <div className="absolute inset-0 pointer-events-none flex items-center justify-center overflow-hidden">
         <div className="absolute w-[400px] h-[400px] bg-blue-200/40 rounded-full mix-blend-multiply blur-[80px] translate-x-10 -translate-y-20"></div>
@@ -80,10 +81,10 @@ export function HostAuth({ defaultIsLogin = true }: { defaultIsLogin?: boolean }
         <div className="hidden md:block absolute bottom-[15%] right-[5%] md:right-[25%] w-7 h-7 rounded-full bg-green-300 opacity-60 animate-pulse" style={{ animationDelay: '1s', animationDuration: '2.5s' }}></div>
       </div>
 
-      <div className="mb-8 flex items-center justify-center cursor-pointer gap-3 relative z-10" onClick={() => navigate('/')}>
+      <Link to="/" className="mb-8 flex items-center justify-center gap-3 relative z-10 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2">
         <LogoIcon />
         <h1 className="text-3xl font-black text-slate-800 tracking-tight drop-shadow-sm">КвизПульт</h1>
-      </div>
+      </Link>
 
       <Card className="w-full max-w-md shadow-2xl shadow-slate-200/50 border border-white/60 bg-white/70 backdrop-blur-md relative z-10 overflow-hidden">
         <CardHeader className="text-center pb-2">
@@ -92,57 +93,70 @@ export function HostAuth({ defaultIsLogin = true }: { defaultIsLogin?: boolean }
         </CardHeader>
         <CardContent className="pt-6">
           {error && (
-            <div className="mb-4 flex items-center gap-2 p-3 text-sm font-medium text-red-600 bg-red-50/80 backdrop-blur-sm border border-red-100 rounded-lg animate-in fade-in slide-in-from-top-2">
+            <div role="alert" className="mb-4 flex items-center gap-2 p-3 text-sm font-medium text-red-600 bg-red-50/80 backdrop-blur-sm border border-red-100 rounded-lg animate-in fade-in slide-in-from-top-2">
               <AlertCircle size={18} className="shrink-0" />
               <span>{error}</span>
             </div>
           )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
+              <Label htmlFor="auth-email" className="sr-only">Email</Label>
               <Input
+                id="auth-email"
+                name="email"
+                autoComplete="email"
                 type="email"
                 placeholder="Email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 required
+                aria-invalid={!!error}
                 className="h-12 bg-white/80 border-slate-200/60 focus:bg-white transition-colors"
               />
             </div>
-            <div className="relative">
+            <div className="relative space-y-2">
+              <Label htmlFor="auth-password" className="sr-only">Пароль</Label>
               <Input
+                id="auth-password"
+                name="password"
+                autoComplete={isLogin ? "current-password" : "new-password"}
                 type={showPassword ? "text" : "password"}
                 placeholder="Пароль"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 required
+                aria-invalid={!!error}
                 className="h-12 bg-white/80 border-slate-200/60 focus:bg-white transition-colors pr-12"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-0 h-full flex items-center justify-center text-slate-500 hover:text-slate-600 transition-colors"
-                tabIndex={-1}
+                className="absolute right-3 top-0 h-full flex items-center justify-center text-slate-500 hover:text-slate-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-md"
                 aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"}
               >
                 {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
             </div>
             {!isLogin && (
-              <div className="relative">
+              <div className="relative space-y-2">
+                <Label htmlFor="auth-confirm-password" className="sr-only">Повторите пароль</Label>
                 <Input
+                  id="auth-confirm-password"
+                  name="confirm-password"
+                  autoComplete="new-password"
                   type={showPassword ? "text" : "password"}
                   placeholder="Повторите пароль"
                   value={confirmPassword}
                   onChange={e => setConfirmPassword(e.target.value)}
                   onPaste={e => e.preventDefault()}
                   required
+                  aria-invalid={!!error}
                   className="h-12 bg-white/80 border-slate-200/60 focus:bg-white transition-colors pr-12"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-0 h-full flex items-center justify-center text-slate-500 hover:text-slate-600 transition-colors"
-                  tabIndex={-1}
+                  className="absolute right-3 top-0 h-full flex items-center justify-center text-slate-500 hover:text-slate-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-md"
                   aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"}
                 >
                   {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
