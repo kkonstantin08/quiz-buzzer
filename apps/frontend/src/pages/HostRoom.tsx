@@ -248,7 +248,7 @@ export function HostRoom() {
   if (room.roundState === RoomState.FINISHED && winnerInfo) {
     if (room.participants.length === 0) {
       return (
-        <main id="main-content" className="dashboard-container flex items-center justify-center min-h-[100dvh]">
+        <main id="main-content" tabIndex={-1} className="dashboard-container flex items-center justify-center min-h-[100dvh]">
           <Card className="max-w-lg w-full text-center py-12 border-0 shadow-2xl shadow-slate-500/10 bg-slate-50">
             <CardContent className="space-y-6 flex flex-col items-center">
               <div className="w-24 h-24 bg-slate-200 text-slate-500 rounded-full flex items-center justify-center shadow-inner">
@@ -268,7 +268,7 @@ export function HostRoom() {
     }
 
     return (
-      <main id="main-content" className="dashboard-container flex items-center justify-center min-h-[100dvh]">
+      <main id="main-content" tabIndex={-1} className="dashboard-container flex items-center justify-center min-h-[100dvh]">
         <Card className="max-w-lg w-full text-center py-12 border-0 shadow-2xl shadow-yellow-500/20 bg-gradient-to-b from-yellow-50 to-white">
           <CardContent className="space-y-6 flex flex-col items-center">
             <div className="w-24 h-24 bg-yellow-100 text-yellow-600 rounded-full flex items-center justify-center animate-bounce shadow-inner">
@@ -339,7 +339,7 @@ export function HostRoom() {
   }
 
   return (
-    <main id="main-content" className={bgClass} style={bgStyle}>
+    <main id="main-content" tabIndex={-1} className={bgClass} style={bgStyle}>
       {showOverlay && <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] z-0" />}
       <div className="relative z-10 dashboard-container">
       

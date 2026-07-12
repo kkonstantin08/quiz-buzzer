@@ -27,7 +27,18 @@ function FocusManager() {
 export default function App() {
   return (
     <AriaLiveProvider>
-      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-4 focus:bg-white focus:text-primary focus:font-bold">
+      <a 
+        href="#main-content" 
+        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-4 focus:bg-white focus:text-primary focus:font-bold"
+        onClick={(e) => {
+          const main = document.getElementById('main-content');
+          if (main) {
+            e.preventDefault();
+            main.focus();
+            main.scrollIntoView();
+          }
+        }}
+      >
         Перейти к основному содержимому
       </a>
       <BrowserRouter>
