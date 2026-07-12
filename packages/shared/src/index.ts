@@ -100,7 +100,7 @@ export interface ClientToServerEvents {
   ROOM_LEAVE: () => void;
   SYNC_TIME: (clientTime: number, callback: (serverTime: number) => void) => void;
   SYNC_ACK: (data: SyncAckPayload) => void;
-  HOST_CLEAR_SCORES: (data: HostClearScoresPayload, callback?: (res: SocketActionResult) => void) => void;
+  HOST_CLEAR_SCORES: (callback?: (res: SocketActionResult) => void) => void;
   HOST_REJOIN_ROOM: (data: HostRejoinRoomPayload, callback: (res: HostRejoinRoomResult) => void) => void;
 }
 

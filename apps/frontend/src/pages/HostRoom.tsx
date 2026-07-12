@@ -26,6 +26,7 @@ export function HostRoom() {
   const [qrOpen, setQrOpen] = useState(false);
   const [finishOpen, setFinishOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [winnerInfo, setWinnerInfo] = useState<{winnerName: string | null, winnerScore: number} | null>(null);
   const soundSettingsRef = React.useRef({ enabled: true, theme: 'classic' });
   const announce = useAriaLive();
@@ -230,8 +231,14 @@ export function HostRoom() {
   };
 
   const handleClearScoreboard = () => {
-    if (!roomId) return;
-    socket.emit('HOST_CLEAR_SCORES', { roomId });
+    socket.emit('HOST_CLEAR_SCORES', (result) => {
+      if (result.success) {
+        setActionError(null);
+        return;
+      }
+      setActionError(result.error);
+      announce(result.error, 'assertive');
+    });
   };
 
   const handleCopy = () => {
@@ -357,6 +364,11 @@ export function HostRoom() {
     <main id="main-content" tabIndex={-1} className={bgClass} style={bgStyle}>
       {showOverlay && <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] z-0" />}
       <div className="relative z-10 dashboard-container">
+      {actionError && (
+        <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-center font-medium text-red-700">
+          {actionError}
+        </p>
+      )}
       
       {/* Mobile-optimized Header with Room Code and QR Button */}
       <div className={`flex flex-col sm:flex-row items-center justify-between gap-4 mb-6 p-4 rounded-2xl border ${
@@ -560,10 +572,13 @@ export function HostRoom() {
         <Card className={`shadow-lg order-2 ${
           isDarkTheme 
             ? "bg-slate-900/60 border-slate-800/80 text-white backdrop-blur-md" 
-            : "bg-white/80 border-slate-200 text-slate-900 backdrop-blur"
+          : "bg-white/80 border-slate-200 text-slate-900 backdrop-blur"
         }`}>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between gap-3">
             <CardTitle className={isDarkTheme ? "text-white" : ""}>Участники ({room.participants.length})</CardTitle>
+            <Button variant="outline" size="sm" onClick={handleClearScoreboard}>
+              Очистить счёт
+            </Button>
           </CardHeader>
           <CardContent>
             {room.participants.length === 0 ? (

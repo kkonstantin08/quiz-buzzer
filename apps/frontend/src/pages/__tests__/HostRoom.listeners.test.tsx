@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { RoomState, type PublicRoomData } from "shared";
@@ -83,5 +83,29 @@ describe("HostRoom state listener", () => {
         mockSocket.on.mock.calls.filter(([event]) => event === "ROOM_STATE_UPDATED"),
       ).toHaveLength(1);
     });
+  });
+
+  it("shows the callback error when score clearing is rejected", async () => {
+    mockSocket.emit.mockImplementation(
+      (event: string, callback?: (result: unknown) => void) => {
+        if (event === "HOST_CLEAR_SCORES") {
+          callback?.({ success: false, error: "Управление отозвано" });
+        }
+        return mockSocket;
+      },
+    );
+
+    render(
+      <MemoryRouter initialEntries={[{ pathname: "/host/room/room-1", state: { room: waitingRoom } }]}>
+        <Routes>
+          <Route path="/host/room/:roomId" element={<HostRoom />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Очистить счёт" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Управление отозвано");
+    expect(mockSocket.emit).toHaveBeenCalledWith("HOST_CLEAR_SCORES", expect.any(Function));
   });
 });

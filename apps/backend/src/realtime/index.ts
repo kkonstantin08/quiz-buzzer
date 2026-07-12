@@ -15,7 +15,7 @@ import { withValidation, cleanupValidationRateLimits } from './validation';
 import { 
   SyncTimeSchema, SyncAckSchema, RoomCreateSchema, HostRejoinRoomSchema, 
   RoomJoinSchema, ParticipantRejoinSchema, RoundStartSchema, BuzzSubmitStrictSchema,
-  RoundResetSchema, EmptyPayloadSchema 
+  RoundResetSchema, EmptyPayloadSchema, HostClearScoresSchema
 } from 'shared';
 
 export const participantDisconnectTimers = new Map<string, NodeJS.Timeout>();
@@ -601,6 +601,24 @@ export function setupSocketIO(io: RealtimeServer) {
 
       emitRoomState(io, room);
       
+      if (callback) callback({ success: true });
+    }));
+
+    socket.on('HOST_CLEAR_SCORES', withValidation(HostClearScoresSchema, 'HOST_CLEAR_SCORES', (_data, callback) => {
+      const roomId = socketToRoom.get(socket.id);
+      if (!roomId) return callback && callback({ success: false, error: 'Вы не в комнате' });
+
+      const room = rooms.get(roomId);
+      if (!room) return callback && callback({ success: false, error: 'Комната не найдена' });
+
+      const rejection = requireHostSocket(socket, room, 'HOST_CLEAR_SCORES');
+      if (rejection) return callback && callback(rejection);
+
+      for (const participant of room.participants) {
+        participant.score = 0;
+      }
+
+      emitRoomState(io, room);
       if (callback) callback({ success: true });
     }));
 

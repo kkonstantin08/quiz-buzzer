@@ -31,9 +31,7 @@ export const SyncAckSchema = z.object({
   clientReceiveTime: z.number().finite().nonnegative(),
 }).strict();
 
-export const HostClearScoresSchema = z.object({
-  roomId: z.string().max(128),
-}).strict();
+export const HostClearScoresSchema = z.void().or(z.undefined()).or(z.null()).or(z.object({}).strict());
 
 export const HostRejoinRoomSchema = z.object({
   roomId: z.string().max(128),
