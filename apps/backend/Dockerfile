@@ -47,7 +47,6 @@ COPY --from=builder /app/apps/backend/package.json ./apps/backend/
 
 # Generate Prisma client in production image
 WORKDIR /app/apps/backend
-RUN npm install prisma
 RUN npx prisma generate
 
 # Copy and prepare entrypoint script
