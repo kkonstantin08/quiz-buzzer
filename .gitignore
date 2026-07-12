@@ -8,6 +8,16 @@ apps/frontend/dist/
 apps/frontend/dist-ssr/
 apps/backend/dist/
 packages/shared/dist/
+playwright-report/
+test-results/
+apps/frontend/dev-dist/
+coverage/
+*.sqlite
+*.sqlite-*
+apps/backend/uploads/
+# Playwright screenshots and traces are test output, not fixtures.
+screenshots/
+traces/
 # SQLite database files (dev artifact, not versioned)
 *.db
 *.db-journal
