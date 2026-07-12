@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
+    "@playwright/test": "^1.61.1",
     "concurrently": "^10.0.3",
     "lighthouse": "^13.4.0",
     "playwright": "^1.61.1",
