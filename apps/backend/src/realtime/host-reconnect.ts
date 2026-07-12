@@ -27,9 +27,6 @@ export function reattachHostToRoom(
   socket.data.userId = room.hostUserId;
   socketToRoom.set(socket.id, room.roomId);
   socket.join(room.roomId);
-
-  // Notify everyone in the room that the host has reconnected
-  io.to(room.roomId).emit('HOST_RECONNECTED');
 }
 
 export function revokePreviousHostControl(room: RoomData, io: Server) {
@@ -66,9 +63,6 @@ export function startHostReconnectTimeout(
   if (room) {
     room.isHostConnected = false;
   }
-
-  // Notify participants that host is disconnected
-  io.to(roomId).emit('HOST_DISCONNECTED');
 
   const timeoutMs = 10 * 60 * 1000; // 10 minutes
 

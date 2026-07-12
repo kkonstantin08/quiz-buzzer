@@ -135,42 +135,42 @@ export function ParticipantRoom() {
     if (!room) return;
 
     const onStateUpdate = (updatedRoom: RoomData) => {
+      const prevRoom = room;
       setRoom(updatedRoom);
+
       if (updatedRoom.roundState === RoomState.WAITING || updatedRoom.roundState === RoomState.ACTIVE) {
         setAmIFirst(false);
         setIsBuzzedLocal(false);
       }
+
+      if (updatedRoom.roundState === RoomState.REVEALED) {
+        const myParticipant = updatedRoom.participants.find(p => p.socketId === socket.id);
+        if (myParticipant && updatedRoom.firstBuzzerId === myParticipant.id) {
+          setAmIFirst(true);
+        } else {
+          setAmIFirst(false);
+        }
+      }
+
+      if (updatedRoom.roundState === RoomState.FINISHED && prevRoom?.roundState !== RoomState.FINISHED) {
+        let winnerName: string | null = null;
+        let winnerScore = 0;
+        if (updatedRoom.participants.length > 0) {
+          const sorted = [...updatedRoom.participants].sort((a, b) => b.score - a.score);
+          winnerScore = sorted[0].score;
+          if (winnerScore > 0) winnerName = sorted[0].displayName;
+        }
+        setWinnerInfo({ winnerName, winnerScore });
+      }
+
+      setIsHostDisconnected(!updatedRoom.isHostConnected);
     };
 
     socket.on('ROOM_STATE_UPDATED', onStateUpdate);
-    
-    socket.on('ROUND_LOCKED', () => {
-      setRoom(prev => prev ? { ...prev, roundState: RoomState.BUZZED_HIDDEN } : null);
-    });
 
-    socket.on('ROOM_FINISHED', (data) => {
-      setWinnerInfo(data);
-    });
-
-    socket.on('FIRST_REVEALED', (firstBuzzerId: string) => {
-      if (firstBuzzerId === socket.id) {
-        setAmIFirst(true);
-      } else {
-        setAmIFirst(false);
-      }
-    });
-
-    socket.on('HOST_DISCONNECTED', () => {
-      setIsHostDisconnected(true);
-    });
-
-    socket.on('HOST_RECONNECTED', () => {
-      setIsHostDisconnected(false);
-    });
-
-    socket.on('ROOM_CLOSED', (reason) => {
+    socket.on('ROOM_CLOSED', (data) => {
       localStorage.removeItem(`quiz_participant_${roomCode}`);
-      setRoomClosedReason(reason);
+      setRoomClosedReason(data.reason);
       setRoom(null);
     });
 
@@ -182,11 +182,6 @@ export function ParticipantRoom() {
 
     return () => {
       socket.off('ROOM_STATE_UPDATED', onStateUpdate);
-      socket.off('ROUND_LOCKED');
-      socket.off('ROOM_FINISHED');
-      socket.off('FIRST_REVEALED');
-      socket.off('HOST_DISCONNECTED');
-      socket.off('HOST_RECONNECTED');
       socket.off('ROOM_CLOSED');
       socket.off('PARTICIPANT_CONTROL_REVOKED');
     };

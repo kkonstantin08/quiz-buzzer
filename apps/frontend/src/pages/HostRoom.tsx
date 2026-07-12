@@ -86,44 +86,44 @@ export function HostRoom() {
 
   useEffect(() => {
     const onStateUpdate = (updatedRoom: RoomData) => {
+      const prevRoom = room;
       setRoom(updatedRoom);
+
       if (updatedRoom.roundState === RoomState.REVEALED && updatedRoom.firstBuzzerId) {
         const p = updatedRoom.participants.find(p => p.id === updatedRoom.firstBuzzerId);
         setFirstBuzzerName(p ? p.displayName : 'Неизвестный участник');
+        
+        if (prevRoom?.roundState !== RoomState.REVEALED) {
+          playSound('buzz', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
+        }
+      } else if (updatedRoom.roundState === RoomState.WAITING || updatedRoom.roundState === RoomState.ACTIVE) {
+        setFirstBuzzerName('');
+      }
+
+      if (updatedRoom.roundState === RoomState.FINISHED && prevRoom?.roundState !== RoomState.FINISHED) {
+        let winnerName: string | null = null;
+        let winnerScore = 0;
+        if (updatedRoom.participants.length > 0) {
+          const sorted = [...updatedRoom.participants].sort((a, b) => b.score - a.score);
+          winnerScore = sorted[0].score;
+          if (winnerScore > 0) winnerName = sorted[0].displayName;
+        }
+        setWinnerInfo({ winnerName, winnerScore });
+
+        confetti({
+          particleCount: 150,
+          spread: 80,
+          origin: { y: 0.6 },
+          colors: ['#ef4444', '#f59e0b', '#3b82f6', '#10b981']
+        });
+        playSound('fanfare', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
       }
     };
 
     socket.on('ROOM_STATE_UPDATED', onStateUpdate);
-    socket.on('PARTICIPANT_JOINED', () => {});
-    socket.on('PARTICIPANT_LEFT', () => {});
-    socket.on('BUZZ_RECORDED_HIDDEN', () => {});
-    socket.on('FIRST_REVEALED', (id) => {
-      const p = room?.participants.find(p => p.id === id);
-      if (p) setFirstBuzzerName(p.displayName);
-      playSound('buzz', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
-    });
-    socket.on('ROUND_RESET_DONE', () => {
-      setFirstBuzzerName('');
-    });
-    socket.on('ROOM_FINISHED', (data) => {
-      setWinnerInfo(data);
-      confetti({
-        particleCount: 150,
-        spread: 80,
-        origin: { y: 0.6 },
-        colors: ['#ef4444', '#f59e0b', '#3b82f6', '#10b981']
-      });
-      playSound('fanfare', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
-    });
 
     return () => {
       socket.off('ROOM_STATE_UPDATED', onStateUpdate);
-      socket.off('PARTICIPANT_JOINED');
-      socket.off('PARTICIPANT_LEFT');
-      socket.off('BUZZ_RECORDED_HIDDEN');
-      socket.off('FIRST_REVEALED');
-      socket.off('ROUND_RESET_DONE');
-      socket.off('ROOM_FINISHED');
     };
   }, [room]);
 
@@ -300,13 +300,42 @@ export function HostRoom() {
     bgClass = "min-h-[100dvh] bg-gradient-to-br from-violet-950 via-slate-900 to-fuchsia-950 text-slate-100";
   }
 
+  const isDarkTheme = room.bgTheme === 'dark' || room.bgTheme === 'violet-fuchsia' || !!room.customBgUrl;
+
+  // Start Round Button classes
+  const isStartDisabled = room.participants.length === 0;
+  let startBtnClass = "w-full text-xl h-16 transition-all duration-300 font-bold ";
+
+  if (isDarkTheme) {
+    if (isStartDisabled) {
+      startBtnClass += "!bg-white/5 !border !border-white/10 !text-white/20 !shadow-none cursor-not-allowed";
+    } else {
+      if (room.bgTheme === 'violet-fuchsia') {
+        startBtnClass += "!bg-gradient-to-r !from-violet-600 !to-fuchsia-600 hover:!from-violet-500 hover:!to-fuchsia-500 !text-white !shadow-xl !shadow-fuchsia-500/20 border-0";
+      } else {
+        startBtnClass += "!bg-violet-600 hover:!bg-violet-500 !text-white !shadow-xl !shadow-violet-500/20 border-0";
+      }
+    }
+  } else {
+    // Light theme
+    if (isStartDisabled) {
+      startBtnClass += "!bg-slate-100 !text-slate-400 !border !border-slate-200/60 !shadow-none cursor-not-allowed opacity-60";
+    } else {
+      startBtnClass += "bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20";
+    }
+  }
+
   return (
     <div className={bgClass} style={bgStyle}>
       {showOverlay && <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] z-0" />}
       <div className="relative z-10 dashboard-container">
       
       {/* Mobile-optimized Header with Room Code and QR Button */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6 p-4 bg-white rounded-2xl shadow-sm border">
+      <div className={`flex flex-col sm:flex-row items-center justify-between gap-4 mb-6 p-4 rounded-2xl border ${
+        isDarkTheme 
+          ? "bg-slate-900/60 border-slate-800/80 text-white backdrop-blur-md shadow-lg" 
+          : "bg-white border-slate-200 text-slate-900 shadow-sm"
+      }`}>
         <div className="flex items-center gap-4 flex-col sm:flex-row text-center sm:text-left">
           {room.customLogoUrl && (
             <img 
@@ -316,7 +345,13 @@ export function HostRoom() {
             />
           )}
           <div className="flex items-center h-full">
-            <h1 className="text-3xl font-bold text-primary tracking-wide leading-none">
+            <h1 className={`text-3xl font-bold tracking-wide leading-none ${
+              room.bgTheme === 'violet-fuchsia' 
+                ? "text-fuchsia-400" 
+                : isDarkTheme 
+                  ? "text-white" 
+                  : "text-primary"
+            }`}>
               Игра активна
             </h1>
           </div>
@@ -325,7 +360,15 @@ export function HostRoom() {
         <div className="flex gap-2 w-full sm:w-auto">
           <Dialog open={qrOpen} onOpenChange={setQrOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline" size="lg" className="h-14 gap-2 flex-1 sm:flex-none px-3 sm:px-8">
+              <Button 
+                variant="outline" 
+                size="lg" 
+                className={`h-14 gap-2 flex-1 sm:flex-none px-3 sm:px-8 ${
+                  isDarkTheme 
+                    ? "!bg-transparent border-slate-700 hover:bg-slate-800 text-white hover:text-white" 
+                    : ""
+                }`}
+              >
                 <QrCode className="w-5 h-5" />
                 QR-код
               </Button>
@@ -394,25 +437,39 @@ export function HostRoom() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
         
         {/* Primary Controls */}
-        <Card className="min-h-[300px] flex flex-col items-center justify-center shadow-lg bg-card/50 backdrop-blur border-t-4 border-t-primary order-1">
+        <Card className={`min-h-[300px] flex flex-col items-center justify-center shadow-lg border-t-4 border-t-primary order-1 ${
+          isDarkTheme 
+            ? "bg-slate-900/60 border-slate-800/80 text-white backdrop-blur-md" 
+            : "bg-white/80 border-slate-200 text-slate-900 backdrop-blur"
+        }`}>
           
           {room.roundState === RoomState.WAITING && (
             <div className="text-center space-y-6 w-full px-6">
               {room.participants.length === 0 ? (
                 <div className="space-y-4 py-4">
-                  <div className="w-16 h-16 mx-auto bg-slate-100 rounded-full flex items-center justify-center animate-pulse">
-                    <QrCode className="w-8 h-8 text-slate-500" />
+                  <div className={`w-16 h-16 mx-auto rounded-full flex items-center justify-center animate-pulse ${
+                    isDarkTheme ? "bg-slate-800 text-slate-300" : "bg-slate-100 text-slate-500"
+                  }`}>
+                    <QrCode className="w-8 h-8" />
                   </div>
-                  <h2 className="text-xl font-medium text-slate-600 animate-pulse">Ожидание подключения игроков...</h2>
+                  <h2 className={`text-xl font-medium animate-pulse ${
+                    isDarkTheme ? "text-slate-300" : "text-slate-600"
+                  }`}>
+                    Ожидание подключения игроков...
+                  </h2>
                 </div>
               ) : (
-                <h2 className="text-2xl font-semibold text-slate-600">Ожидание запуска раунда</h2>
+                <h2 className={`text-2xl font-semibold ${
+                  isDarkTheme ? "text-slate-200" : "text-slate-600"
+                }`}>
+                  Ожидание запуска раунда
+                </h2>
               )}
               <Button 
                 size="lg" 
-                className="w-full text-xl h-16 shadow-lg shadow-primary/20" 
+                className={startBtnClass}
                 onClick={handleStartRound}
-                disabled={room.participants.length === 0}
+                disabled={isStartDisabled}
               >
                 СТАРТ РАУНДА
               </Button>
@@ -421,24 +478,48 @@ export function HostRoom() {
 
           {room.roundState === RoomState.ACTIVE && (
             <div className="text-center space-y-4 animate-in fade-in zoom-in duration-300 w-full px-6">
-              <div className="w-24 h-24 rounded-full bg-green-100 text-green-600 flex items-center justify-center mx-auto mb-4 animate-pulse">
+              <div className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse ${
+                isDarkTheme ? "bg-green-950/50 text-green-400" : "bg-green-100 text-green-600"
+              }`}>
                 <Timer className="w-12 h-12" />
               </div>
-              <h2 className="text-3xl font-bold text-green-600">Раунд активен</h2>
-              <p className="text-slate-600">Ждем нажатия кнопок...</p>
+              <h2 className={`text-3xl font-bold ${
+                isDarkTheme ? "text-green-400" : "text-green-600"
+              }`}>
+                Раунд активен
+              </h2>
+              <p className={isDarkTheme ? "text-slate-350" : "text-slate-600"}>Ждем нажатия кнопок...</p>
             </div>
           )}
 
-
           {room.roundState === RoomState.REVEALED && (
             <div className="text-center space-y-6 animate-in zoom-in duration-300 w-full px-6">
-              <h2 className="text-2xl text-slate-600 font-semibold">Первым нажал:</h2>
-              <div className="text-4xl font-black text-primary py-2 break-words">{firstBuzzerName}</div>
+              <h2 className={`text-2xl font-semibold ${isDarkTheme ? "text-slate-300" : "text-slate-600"}`}>
+                Первым нажал:
+              </h2>
+              <div className={`text-4xl font-black py-2 break-words ${
+                room.bgTheme === 'violet-fuchsia' 
+                  ? "text-fuchsia-400" 
+                  : isDarkTheme 
+                    ? "text-violet-400" 
+                    : "text-primary"
+              }`}>
+                {firstBuzzerName}
+              </div>
               <div className="flex flex-col sm:flex-row gap-4 mt-4">
                 <Button size="lg" className="w-full bg-green-600 hover:bg-green-700 text-white h-16 text-lg shadow-lg shadow-green-600/20" onClick={handleCorrect}>
                   Верно (+1)
                 </Button>
-                <Button size="lg" variant="outline" className="w-full h-16 text-lg" onClick={handleWrong}>
+                <Button 
+                  size="lg" 
+                  variant="outline" 
+                  className={`w-full h-16 text-lg ${
+                    isDarkTheme 
+                      ? "!bg-transparent border-slate-700 hover:bg-slate-800 text-white hover:text-white" 
+                      : ""
+                  }`} 
+                  onClick={handleWrong}
+                >
                   Мимо
                 </Button>
               </div>
@@ -448,30 +529,43 @@ export function HostRoom() {
         </Card>
 
         {/* Participants Table */}
-        <Card className="shadow-lg order-2">
+        <Card className={`shadow-lg order-2 ${
+          isDarkTheme 
+            ? "bg-slate-900/60 border-slate-800/80 text-white backdrop-blur-md" 
+            : "bg-white/80 border-slate-200 text-slate-900 backdrop-blur"
+        }`}>
           <CardHeader>
-            <CardTitle>Участники ({room.participants.length})</CardTitle>
+            <CardTitle className={isDarkTheme ? "text-white" : ""}>Участники ({room.participants.length})</CardTitle>
           </CardHeader>
           <CardContent>
             {room.participants.length === 0 ? (
-              <div className="text-center py-8 text-slate-600">Пока никого нет</div>
+              <div className={`text-center py-8 ${isDarkTheme ? "text-slate-400" : "text-slate-600"}`}>
+                Пока никого нет
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-12">#</TableHead>
-                      <TableHead>Имя</TableHead>
-                      <TableHead className="text-right">Баллы</TableHead>
+                    <TableRow className={isDarkTheme ? "border-slate-800/80 hover:bg-transparent" : ""}>
+                      <TableHead className={`w-12 ${isDarkTheme ? "text-slate-400" : ""}`}>#</TableHead>
+                      <TableHead className={isDarkTheme ? "text-slate-400" : ""}>Имя</TableHead>
+                      <TableHead className={`text-right ${isDarkTheme ? "text-slate-400" : ""}`}>Баллы</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {room.participants.map((p, i) => (
-                      <TableRow key={p.id}>
-                        <TableCell className="font-medium text-slate-600">{i + 1}</TableCell>
-                        <TableCell className="font-semibold">{p.displayName}</TableCell>
+                      <TableRow key={p.id} className={isDarkTheme ? "border-slate-800/80 hover:bg-slate-800/30" : ""}>
+                        <TableCell className={`font-medium ${isDarkTheme ? "text-slate-400" : "text-slate-600"}`}>{i + 1}</TableCell>
+                        <TableCell className={`font-semibold ${isDarkTheme ? "text-slate-200" : "text-slate-900"}`}>{p.displayName}</TableCell>
                         <TableCell className="text-right">
-                          <Badge variant={p.score > 0 ? "default" : "secondary"} className="text-sm px-3 py-1">
+                          <Badge 
+                            variant={p.score > 0 ? "default" : "secondary"} 
+                            className={`text-sm px-3 py-1 ${
+                              isDarkTheme && p.score <= 0 
+                                ? "bg-slate-800 text-slate-300 hover:bg-slate-700" 
+                                : ""
+                            }`}
+                          >
                             {p.score ?? 0}
                           </Badge>
                         </TableCell>
@@ -482,7 +576,7 @@ export function HostRoom() {
               </div>
             )}
           </CardContent>
-          </Card>
+        </Card>
       </div>
     </div>
     </div>

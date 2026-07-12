@@ -69,18 +69,8 @@ export interface ClientToServerEvents {
 // Server -> Client Events
 export interface ServerToClientEvents {
   ROOM_STATE_UPDATED: (room: RoomData) => void;
-  PARTICIPANT_JOINED: (participant: Participant) => void;
-  PARTICIPANT_LEFT: (participantId: string) => void;
-  ROUND_STARTED: () => void;
-  ROUND_LOCKED: () => void;
-  BUZZ_RECORDED_HIDDEN: () => void;
-  FIRST_REVEALED: (firstBuzzerId: string) => void;
-  ROUND_RESET_DONE: () => void;
-  ROOM_FINISHED: (data: { winnerName: string | null, winnerScore: number }) => void;
-  ERROR_EVENT: (error: string) => void;
+  ERROR_EVENT: (data: { message: string }) => void;
   HOST_CONTROL_REVOKED: () => void;
   PARTICIPANT_CONTROL_REVOKED: () => void;
-  HOST_DISCONNECTED: () => void;
-  HOST_RECONNECTED: () => void;
-  ROOM_CLOSED: (reason: string) => void;
+  ROOM_CLOSED: (data: { reason: string }) => void;
 }
