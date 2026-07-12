@@ -166,3 +166,47 @@ docker compose logs cloudflared | grep trycloudflare
 Чтобы сделать бэкап:
 1. Остановите базу данных: `docker compose stop backend`
 2. Скопируйте файлы из volume (например, смонтировав в другой контейнер).
+
+## 🤖 Continuous Integration (GitHub Actions)
+
+Проект использует GitHub Actions для автоматической проверки каждого Pull Request и коммитов в ветку `main`. 
+Запуск CI также можно инициировать вручную (workflow_dispatch) на вкладке Actions.
+
+### Выполняемые проверки (Jobs)
+
+- **CI / Install and contract**: проверка неизменности `package-lock.json`, сборка общих пакетов, валидация схемы Prisma и контрактов Socket.IO.
+- **CI / Backend**: запуск миграций в чистой временной БД, typecheck и юнит/интеграционные тесты бэкенда.
+- **CI / Frontend**: линтинг (oxlint), typecheck, тесты (vitest) и production-сборка клиентской части.
+- **CI / Docker smoke**: полная сборка Docker-образов, запуск контейнеров с безопасными тестовыми env-переменными, healthcheck-проверки и проверка конфигурации портов.
+- **CI / Accessibility**: автоматизированные тесты доступности интерфейса (A11y, Keyboard-only) с помощью Playwright.
+
+> **Важно**: CI выполняет только проверки и **не осуществляет деплой** проекта (Continuous Deployment) и публикацию Docker-образов.
+
+### Локальный запуск проверок
+
+Чтобы воспроизвести основные CI-шаги локально перед отправкой коммита, выполните команду из корня:
+```bash
+npm run ci
+```
+Эта команда последовательно запустит `lint`, `typecheck`, `test` и `build` во всех workspaces.
+
+Для локальной проверки `docker-smoke` выполните сборку и запуск Docker Compose с тестовыми `.env` переменными:
+```bash
+docker compose build && docker compose up -d
+curl http://localhost/api/health
+docker compose down -v --remove-orphans
+```
+
+### Настройка Branch Protection
+
+Для максимальной надежности в настройках репозитория на GitHub (Settings -> Branches -> Branch protection rules для `main`) необходимо включить следующие опции:
+1. **Require status checks to pass before merging**
+2. Включить опцию **Require branches to be up to date before merging**
+3. Добавить в список обязательных проверок (Status checks that are required):
+   - `CI / Install and contract`
+   - `CI / Backend`
+   - `CI / Frontend`
+   - `CI / Docker smoke`
+   - `CI / Accessibility` (после настройки Playwright-задач)
+
+Слияние (merge) PR будет заблокировано, пока все указанные проверки не завершатся успешно.
