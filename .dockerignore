@@ -1,8 +1,9 @@
-node_modules
-npm-debug.log
-Dockerfile
-.dockerignore
+**/node_modules
+**/.env
+**/dist
 .git
 .gitignore
-.env
-dist
+Dockerfile
+.dockerignore
+npm-debug.log
+test_output.log
