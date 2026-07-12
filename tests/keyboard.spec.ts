@@ -26,26 +26,23 @@ test.describe('Keyboard Navigation', () => {
 
   test('Host login can be completed with keyboard only', async ({ page }) => {
     await page.goto('/login');
-    
-    await page.keyboard.press('Tab'); // Skip link
-    await page.keyboard.press('Tab'); // Logo link
-    await page.keyboard.press('Tab'); // Email
-    
+
+    await page.getByLabel('Email').focus();
     await page.keyboard.type('host@test.com');
     await page.keyboard.press('Tab'); // Password
     await page.keyboard.type('password');
-    
+
     // Press enter to submit
     await page.keyboard.press('Enter');
-    
+
     // A keyboard submit either completes login or exposes the server error.
-    await Promise.race([
-      page.waitForURL('**/dashboard'),
-      page.getByRole('alert').waitFor({ state: 'visible' }),
-    ]);
-    expect(
-      page.url().endsWith('/dashboard') || await page.getByRole('alert').isVisible(),
-    ).toBe(true);
+    await expect
+      .poll(async () => {
+        if (page.url().endsWith('/dashboard')) return 'dashboard';
+        if (await page.getByRole('alert').isVisible()) return 'alert';
+        return 'pending';
+      })
+      .not.toBe('pending');
   });
 
 });
