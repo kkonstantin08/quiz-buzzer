@@ -96,54 +96,64 @@ export function HostRoom() {
 
   useEffect(() => {
     const onStateUpdate = (updatedRoom: PublicRoomData) => {
-      const prevRoom = room;
-      setRoom(updatedRoom);
+      setRoom((previousRoom) => {
+        if (updatedRoom.roundState === RoomState.REVEALED && updatedRoom.firstBuzzerId) {
+          const participant = updatedRoom.participants.find(p => p.id === updatedRoom.firstBuzzerId);
+          setFirstBuzzerName(participant ? participant.displayName : 'Неизвестный участник');
 
-      if (updatedRoom.roundState === RoomState.REVEALED && updatedRoom.firstBuzzerId) {
-        const p = updatedRoom.participants.find(p => p.id === updatedRoom.firstBuzzerId);
-        setFirstBuzzerName(p ? p.displayName : 'Неизвестный участник');
-        
-        if (prevRoom?.roundState !== RoomState.REVEALED) {
-          playSound('buzz', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
-          announce(`Первым нажал: ${p ? p.displayName : 'Неизвестный участник'}`);
+          if (previousRoom?.roundState !== RoomState.REVEALED) {
+            playSound('buzz', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
+            announce(`Первым нажал: ${participant ? participant.displayName : 'Неизвестный участник'}`);
+          }
+        } else if (updatedRoom.roundState === RoomState.WAITING || updatedRoom.roundState === RoomState.ACTIVE) {
+          setFirstBuzzerName('');
         }
-      } else if (updatedRoom.roundState === RoomState.WAITING || updatedRoom.roundState === RoomState.ACTIVE) {
-        setFirstBuzzerName('');
-      }
 
-      if (updatedRoom.roundState === RoomState.ACTIVE && prevRoom?.roundState !== RoomState.ACTIVE) {
-        announce('Раунд запущен. Игроки могут нажимать на пульты.');
-      }
-
-      if (updatedRoom.roundState === RoomState.FINISHED && prevRoom?.roundState !== RoomState.FINISHED) {
-        let winnerName: string | null = null;
-        let winnerScore = 0;
-        if (updatedRoom.participants.length > 0) {
-          const sorted = [...updatedRoom.participants].sort((a, b) => b.score - a.score);
-          winnerScore = sorted[0].score;
-          if (winnerScore > 0) winnerName = sorted[0].displayName;
+        if (updatedRoom.roundState === RoomState.ACTIVE && previousRoom?.roundState !== RoomState.ACTIVE) {
+          announce('Раунд запущен. Игроки могут нажимать на пульты.');
         }
-        setWinnerInfo({ winnerName, winnerScore });
 
-        if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-          confetti({
-            particleCount: 150,
-            spread: 80,
-            origin: { y: 0.6 },
-            colors: ['#ef4444', '#f59e0b', '#3b82f6', '#10b981']
-          });
+        if (updatedRoom.roundState === RoomState.FINISHED && previousRoom?.roundState !== RoomState.FINISHED) {
+          let winnerName: string | null = null;
+          let winnerScore = 0;
+          if (updatedRoom.participants.length > 0) {
+            const sorted = [...updatedRoom.participants].sort((a, b) => b.score - a.score);
+            winnerScore = sorted[0].score;
+            if (winnerScore > 0) winnerName = sorted[0].displayName;
+          }
+          setWinnerInfo({ winnerName, winnerScore });
+
+          if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            confetti({
+              particleCount: 150,
+              spread: 80,
+              origin: { y: 0.6 },
+              colors: ['#ef4444', '#f59e0b', '#3b82f6', '#10b981']
+            });
+          }
+          playSound('fanfare', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
+          announce(`Игра завершена. Победитель: ${winnerName || 'никто'}.`);
         }
-        playSound('fanfare', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
-        announce(`Игра завершена. Победитель: ${winnerName || 'никто'}.`);
-      }
+
+        return updatedRoom;
+      });
+    };
+
+    const onRoomClosed = (data: { reason: string }) => {
+      setRoom(null);
+      setReconnectState('unavailable');
+      setReconnectError(data.reason);
+      announce(`Игра закрыта: ${data.reason}`, 'assertive');
     };
 
     socket.on('ROOM_STATE_UPDATED', onStateUpdate);
+    socket.on('ROOM_CLOSED', onRoomClosed);
 
     return () => {
       socket.off('ROOM_STATE_UPDATED', onStateUpdate);
+      socket.off('ROOM_CLOSED', onRoomClosed);
     };
-  }, [room]);
+  }, []);
 
   if (reconnectState === 'restoring') {
     return (
