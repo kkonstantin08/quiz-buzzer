@@ -9,6 +9,13 @@ import { requireAuth, AuthRequest } from './middleware';
 import { appEvents } from '../events';
 export const authRouter = Router();
 
+const hostCookieOptions = {
+  httpOnly: true,
+  secure: process.env.USE_HTTPS === 'true',
+  sameSite: 'lax' as const,
+  path: '/',
+};
+
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 5, // 5 attempts
@@ -62,11 +69,8 @@ authRouter.post('/login', loginLimiter, async (req, res) => {
     const token = jwt.sign({ userId: user.id, sessionId: session.id }, config.jwtSecret, { expiresIn: '7d' });
     
     // Set JWT in httpOnly cookie (inaccessible to JavaScript)
-    const isHttps = process.env.USE_HTTPS === 'true';
     res.cookie('hostToken', token, {
-      httpOnly: true,
-      secure: isHttps,
-      sameSite: 'lax',
+      ...hostCookieOptions,
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
     });
     
@@ -120,14 +124,17 @@ authRouter.get('/me', requireAuth, async (req: AuthRequest, res) => {
 });
 
 authRouter.post('/logout', requireAuth, async (req: AuthRequest, res) => {
-  if (req.sessionId) {
-    await prisma.session.update({
-      where: { id: req.sessionId },
-      data: { revokedAt: new Date() }
-    });
-    appEvents.emit('host_logout', req.sessionId);
-  }
-  res.clearCookie('hostToken', { httpOnly: true, sameSite: 'strict' });
+  await prisma.session.update({
+    where: { id: req.sessionId! },
+    data: { revokedAt: new Date() }
+  });
+  appEvents.emit('host_logout', req.sessionId!);
+  res.clearCookie('hostToken', hostCookieOptions);
+  return res.json({ success: true });
+});
+
+authRouter.post('/clear-session', (_req, res) => {
+  res.clearCookie('hostToken', hostCookieOptions);
   return res.json({ success: true });
 });
 
@@ -255,11 +262,8 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
     const token = jwt.sign({ userId: user.id, sessionId: session.id }, config.jwtSecret, { expiresIn: '7d' });
 
     // Set JWT in httpOnly cookie (inaccessible to JavaScript)
-    const isHttps = process.env.USE_HTTPS === 'true';
     res.cookie('hostToken', token, {
-      httpOnly: true,
-      secure: isHttps,
-      sameSite: 'lax',
+      ...hostCookieOptions,
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
     });
 

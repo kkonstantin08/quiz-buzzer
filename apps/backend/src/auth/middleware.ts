@@ -1,44 +1,28 @@
 import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
-import { prisma } from '../prisma';
-import { config } from '../config';
+import { HostSessionAuthCode, validateHostToken } from './session';
 
 export interface AuthRequest extends Request {
   userId?: string;
   sessionId?: string;
 }
 
+function errorForAuthCode(code: HostSessionAuthCode) {
+  if (code === 'AUTH_SESSION_MISSING') return 'Session not found';
+  if (code === 'AUTH_SESSION_EXPIRED') return 'Session expired';
+  if (code === 'AUTH_SESSION_REVOKED') return 'Session revoked';
+  return 'Invalid token';
+}
+
 export const requireAuth = async (req: AuthRequest, res: Response, next: NextFunction) => {
-  let token = req.cookies?.hostToken;
-  if (!token) {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'No token provided' });
-    token = authHeader.split(' ')[1];
+  const token = req.cookies?.hostToken;
+  if (typeof token !== 'string' || token.length === 0) {
+    return res.status(401).json({ error: 'No token provided' });
   }
-  
-  try {
-    const decoded = jwt.verify(token, config.jwtSecret) as { userId: string; sessionId?: string };
-    
-    if (decoded.sessionId) {
-      const session = await prisma.session.findUnique({ where: { id: decoded.sessionId } });
-      if (!session) {
-        return res.status(401).json({ error: 'Session not found' });
-      }
-      if (session.userId !== decoded.userId) {
-        return res.status(401).json({ error: 'Session invalid' });
-      }
-      if (session.expiresAt < new Date()) {
-        return res.status(401).json({ error: 'Session expired' });
-      }
-      if (session.revokedAt) {
-        return res.status(401).json({ error: 'Session revoked' });
-      }
-    }
-    
-    req.userId = decoded.userId;
-    req.sessionId = decoded.sessionId;
-    next();
-  } catch (err) {
-    return res.status(401).json({ error: 'Invalid token' });
-  }
+
+  const validation = await validateHostToken(token);
+  if (!validation.valid) return res.status(401).json({ error: errorForAuthCode(validation.code) });
+
+  req.userId = validation.identity.userId;
+  req.sessionId = validation.identity.sessionId;
+  next();
 };
