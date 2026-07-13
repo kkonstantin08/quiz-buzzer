@@ -26,16 +26,31 @@ export function createSocketAuthRecovery(onRecovered: () => void | Promise<void>
   return async (error: Error) => {
     if (!isSocketAuthError(error)) return false;
 
+    const previousReconnection = socket.io.opts.reconnection;
     socket.io.opts.reconnection = false;
     socket.disconnect();
     if (recoveryStarted) {
+      socket.io.opts.reconnection = previousReconnection;
       onRecoveryError();
       return true;
     }
 
     recoveryStarted = true;
+    let clearSessionFailed = false;
     try {
       await api.clearSession();
+    } catch {
+      clearSessionFailed = true;
+    } finally {
+      socket.io.opts.reconnection = previousReconnection;
+    }
+
+    if (clearSessionFailed) {
+      onRecoveryError();
+      return true;
+    }
+
+    try {
       await onRecovered();
     } catch {
       onRecoveryError();
