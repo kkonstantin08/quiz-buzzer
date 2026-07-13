@@ -98,6 +98,20 @@ describe('Socket.IO host session authentication', () => {
     });
   }
 
+  function waitForAuthErrorCode(client: ClientSocket): Promise<string | undefined> {
+    return new Promise((resolve) => {
+      client.once('connect_error', (error) => {
+        const data: unknown = Reflect.get(error, 'data');
+        resolve(
+          typeof data === 'object' && data !== null && 'code' in data && typeof data.code === 'string'
+            ? data.code
+            : undefined,
+        );
+      });
+      client.connect();
+    });
+  }
+
   function createRoom(client: ClientSocket) {
     return new Promise<{ success: boolean; room?: { roomId: string }; error?: string }>((resolve) => {
       client.emit('ROOM_CREATE', resolve);
@@ -137,6 +151,12 @@ describe('Socket.IO host session authentication', () => {
     const client = createClient(createToken());
 
     await expect(waitForConnection(client)).resolves.toBe('rejected');
+  });
+
+  it('returns a stable auth error code for an invalid host cookie', async () => {
+    const client = createClient('not-a-jwt');
+
+    await expect(waitForAuthErrorCode(client)).resolves.toBe('AUTH_TOKEN_INVALID');
   });
 
   it('does not allow a connected host to act after its Session is revoked', async () => {

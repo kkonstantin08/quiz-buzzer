@@ -1,8 +1,6 @@
 import { DefaultEventsMap, Server, Socket } from 'socket.io';
-import jwt from 'jsonwebtoken';
-import type { Session } from '@prisma/client';
 import { prisma } from '../prisma';
-import { config } from '../config';
+import { HostSessionAuthCode, validateHostSession, validateHostToken } from '../auth/session';
 import { rooms, socketToRoom, createRoom, getRoomByCode } from '../rooms';
 import { BuzzSubmitResult, ClientToServerEvents, InternalRoomData, PublicRoomData, RoomCreateResult, RoomState, ServerToClientEvents, SocketErrorResult } from 'shared';
 import xss from 'xss';
@@ -57,26 +55,22 @@ function getHostTokenFromCookie(cookieHeader: string | undefined): string | unde
   return match ? decodeURIComponent(match[1]) : undefined;
 }
 
-function hasHostSessionClaims(decoded: string | jwt.JwtPayload): decoded is jwt.JwtPayload & { userId: string; sessionId: string } {
-  return typeof decoded !== 'string' && typeof decoded.userId === 'string' && typeof decoded.sessionId === 'string';
-}
-
-function isActiveSession(session: Pick<Session, 'userId' | 'expiresAt' | 'revokedAt'> | null, userId: string) {
-  return Boolean(session && session.userId === userId && session.expiresAt > new Date() && session.revokedAt === null);
-}
-
 async function requireAuthenticatedHostSession(socket: RealtimeSocket, action: string) {
   const { userId, sessionId } = socket.data;
   if (!userId || !sessionId) {
     return rejectSocketAction(action, 'not_a_host', socket.id);
   }
 
-  const session = await prisma.session.findUnique({ where: { id: sessionId } });
-  if (!isActiveSession(session, userId)) {
+  const validation = await validateHostSession({ userId, sessionId });
+  if (!validation.valid) {
     return rejectSocketAction(action, 'not_a_host', socket.id);
   }
 
   return null;
+}
+
+function socketAuthError(code: HostSessionAuthCode) {
+  return Object.assign(new Error('Host session invalid'), { data: { code } });
 }
 
 async function requireHostSocket(socket: RealtimeSocket, room: InternalRoomData, action: string) {
@@ -150,21 +144,14 @@ export function setupSocketIO(io: RealtimeServer) {
         return next();
       }
 
-      const decoded = jwt.verify(token, config.jwtSecret);
-      if (!hasHostSessionClaims(decoded)) {
-        return next(new Error('Host session invalid'));
-      }
+      const validation = await validateHostToken(token);
+      if (!validation.valid) return next(socketAuthError(validation.code));
 
-      const session = await prisma.session.findUnique({ where: { id: decoded.sessionId } });
-      if (!isActiveSession(session, decoded.userId)) {
-        return next(new Error('Host session invalid'));
-      }
-
-      socket.data.userId = decoded.userId;
-      socket.data.sessionId = decoded.sessionId;
+      socket.data.userId = validation.identity.userId;
+      socket.data.sessionId = validation.identity.sessionId;
       return next();
     } catch {
-      return next(new Error('Host session invalid'));
+      return next(socketAuthError('AUTH_SESSION_INVALID'));
     }
   });
 

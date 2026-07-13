@@ -3,7 +3,9 @@ import bcrypt from 'bcrypt';
 import request from 'supertest';
 import express from 'express';
 import cookieParser from 'cookie-parser';
+import jwt from 'jsonwebtoken';
 import { authRouter } from '../index';
+import { config } from '../../config';
 
 // Create a small express app for testing
 const app = express();
@@ -119,5 +121,43 @@ describe('Session Revocation & Auth', () => {
       .get('/auth/me')
       .set('Cookie', cookies2);
     expect(meRes2.status).toBe(200);
+  });
+
+  it('rejects a signed JWT without sessionId and does not accept it from Bearer auth', async () => {
+    const tokenWithoutSession = jwt.sign({ userId: testUserId }, config.jwtSecret);
+
+    const cookieResponse = await request(app)
+      .get('/auth/me')
+      .set('Cookie', `hostToken=${tokenWithoutSession}`);
+    const bearerResponse = await request(app)
+      .get('/auth/me')
+      .set('Authorization', `Bearer ${tokenWithoutSession}`);
+
+    expect(cookieResponse.status).toBe(401);
+    expect(bearerResponse.status).toBe(401);
+  });
+
+  it('clears an invalid host cookie without revoking any Session', async () => {
+    const activeSession = await prisma.session.create({
+      data: {
+        userId: testUserId,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+
+    const response = await request(app)
+      .post('/auth/clear-session')
+      .set('Cookie', 'hostToken=not-a-jwt');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ success: true });
+    expect(response.headers['set-cookie']).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('hostToken='),
+        expect.stringContaining('HttpOnly'),
+        expect.stringContaining('SameSite=Lax'),
+      ]),
+    );
+    await expect(prisma.session.findUnique({ where: { id: activeSession.id } })).resolves.toMatchObject({ revokedAt: null });
   });
 });

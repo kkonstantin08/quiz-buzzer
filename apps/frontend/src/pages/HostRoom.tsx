@@ -14,6 +14,7 @@ import confetti from 'canvas-confetti';
 import { playSound } from '../lib/sounds';
 import { api, BASE_URL } from '../services/api';
 import { useAriaLive } from '../lib/AriaLiveContext';
+import { useSocketAuthRecovery } from '../realtime/authRecovery';
 
 export function HostRoom() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -30,6 +31,11 @@ export function HostRoom() {
   const [winnerInfo, setWinnerInfo] = useState<{winnerName: string | null, winnerScore: number} | null>(null);
   const soundSettingsRef = React.useRef({ enabled: true, theme: 'classic' });
   const announce = useAriaLive();
+
+  useSocketAuthRecovery(
+    () => { announce('Сессия ведущего недействительна. Войдите снова.', 'assertive'); navigate('/login', { replace: true }); },
+    () => { announce('Не удалось восстановить подключение. Войдите снова.', 'assertive'); navigate('/login', { replace: true }); },
+  );
 
   useEffect(() => {
     api.getSettings()
