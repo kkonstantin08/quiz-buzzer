@@ -548,27 +548,6 @@ export function setupSocketIO(io: RealtimeServer) {
       if (actualCallback) actualCallback({ success: true, status: 'accepted' });
     }));
 
-    // Reveal First (Host)
-    socket.on('FIRST_REVEAL', withValidation(EmptyPayloadSchema, 'FIRST_REVEAL', (data, callback) => {
-      const roomId = socketToRoom.get(socket.id);
-      if (!roomId) return callback && callback({ success: false, error: 'Вы не в комнате' });
-      
-      const room = rooms.get(roomId);
-      if (!room) return callback && callback({ success: false, error: 'Комната не найдена' });
-
-      const rejection = requireHostSocket(socket, room, 'FIRST_REVEAL');
-      if (rejection) return callback && callback(rejection);
-
-      if (room.roundState !== RoomState.BUZZED_HIDDEN) {
-        return callback && callback({ success: false, error: 'Нельзя открыть ответ сейчас' });
-      }
-
-      room.roundState = RoomState.REVEALED;
-      emitRoomState(io, room);
-      
-      if (callback) callback({ success: true });
-    }));
-
     // Reset Round (Host)
     socket.on('ROUND_RESET', withValidation(RoundResetSchema, 'ROUND_RESET', (data, callback) => {
       const roomId = socketToRoom.get(socket.id);

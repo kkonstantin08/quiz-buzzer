@@ -3,7 +3,6 @@
 export enum RoomState {
   WAITING = 'WAITING',
   ACTIVE = 'ACTIVE',
-  BUZZED_HIDDEN = 'BUZZED_HIDDEN',
   REVEALED = 'REVEALED',
   FINISHED = 'FINISHED',
 }
@@ -94,7 +93,6 @@ export interface ClientToServerEvents {
   PARTICIPANT_REJOIN: (data: ParticipantRejoinPayload, callback: (res: ParticipantRejoinResult) => void) => void;
   ROUND_START: (callback?: (res: SocketActionResult) => void) => void;
   BUZZ_SUBMIT: (data: BuzzSubmitPayload, callback?: (res: BuzzSubmitResult) => void) => void;
-  FIRST_REVEAL: (callback?: (res: SocketActionResult) => void) => void;
   ROUND_RESET: (data?: RoundResetPayload, callback?: (res: SocketActionResult) => void) => void;
   ROOM_FINISH: (callback?: (res: SocketActionResult) => void) => void;
   ROOM_LEAVE: () => void;

@@ -467,9 +467,7 @@ export function ParticipantRoom() {
     room.roundState === RoomState.WAITING ||
     (room.roundState === RoomState.ACTIVE && !isEffectivelyActive);
   const isActive = isEffectivelyActive;
-  const isLocked =
-    room.roundState === RoomState.BUZZED_HIDDEN ||
-    room.roundState === RoomState.REVEALED;
+  const isLocked = room.roundState === RoomState.REVEALED;
 
   let btnColor = "bg-slate-400";
   let shadowColor = "shadow-slate-500/50";

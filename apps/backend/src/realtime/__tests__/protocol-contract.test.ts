@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { z } from 'zod';
 import { expect, describe, it, jest } from '@jest/globals';
-import type { InternalRoomData } from 'shared';
+import { RoomState, type InternalRoomData } from 'shared';
 import { emitRoomState, toPublicRoomData } from '../index';
 import { withValidation } from '../validation';
 
@@ -13,7 +13,7 @@ const eventNames = (source: string, method: 'on' | 'emit') =>
 
 const clientToServerEvents = new Set([
   'ROOM_CREATE', 'ROOM_JOIN', 'PARTICIPANT_REJOIN', 'ROUND_START', 'BUZZ_SUBMIT',
-  'FIRST_REVEAL', 'ROUND_RESET', 'ROOM_FINISH', 'ROOM_LEAVE', 'SYNC_TIME',
+  'ROUND_RESET', 'ROOM_FINISH', 'ROOM_LEAVE', 'SYNC_TIME',
   'SYNC_ACK', 'HOST_CLEAR_SCORES', 'HOST_REJOIN_ROOM',
 ]);
 const serverToClientEvents = new Set([
@@ -22,6 +22,10 @@ const serverToClientEvents = new Set([
 ]);
 
 describe('Socket.IO protocol contract', () => {
+  it('exposes only supported round states', () => {
+    expect(Object.values(RoomState)).toEqual(['WAITING', 'ACTIVE', 'REVEALED', 'FINISHED']);
+  });
+
   it('maps every shared client event to a backend handler and every frontend producer to the shared map', () => {
     const realtimeSource = readSource('src/realtime/index.ts');
     const backendHandlers = eventNames(realtimeSource, 'on');
