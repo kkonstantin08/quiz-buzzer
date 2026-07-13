@@ -17,6 +17,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Crown } from "lucide-react";
 import { useAriaLive } from "../lib/AriaLiveContext";
+import { isSocketAuthError, useSocketAuthRecovery } from "../realtime/authRecovery";
 
 export function ParticipantRoom() {
   const { roomCode } = useParams<{ roomCode: string }>();
@@ -40,7 +41,13 @@ export function ParticipantRoom() {
   const buzzTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const myParticipantIdRef = useRef<string | null>(null);
   const roomCodeRef = useRef(roomCode);
+  const joinPendingRef = useRef(false);
   const shouldReduceMotion = useReducedMotion();
+
+  useSocketAuthRecovery(
+    () => { socket.connect(); },
+    () => { setIsJoining(false); setError("Не удалось подключиться к игре. Повторите попытку."); },
+  );
 
   useEffect(() => {
     myParticipantIdRef.current = myParticipantId;
@@ -153,19 +160,17 @@ export function ParticipantRoom() {
 
   const handleJoin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || joinPendingRef.current) return;
 
+    joinPendingRef.current = true;
     setIsJoining(true);
     setError("");
 
-    if (!socket.connected) {
-      socket.connect();
-    }
-
-    socket.emit(
+    const emitJoin = () => socket.emit(
       "ROOM_JOIN",
       { roomCode: roomCode || "", displayName: name },
       (res) => {
+        joinPendingRef.current = false;
         setIsJoining(false);
         if (res.success) {
           setRoom(res.room);
@@ -189,6 +194,22 @@ export function ParticipantRoom() {
         }
       },
     );
+
+    if (socket.connected) {
+      emitJoin();
+      return;
+    }
+
+    const onConnectError = (error: Error) => {
+      if (isSocketAuthError(error)) return;
+      socket.off("connect", emitJoin);
+      joinPendingRef.current = false;
+      setIsJoining(false);
+      setError("Не удалось подключиться к игре. Повторите попытку.");
+    };
+    socket.once("connect", emitJoin);
+    socket.once("connect_error", onConnectError);
+    socket.connect();
   };
 
   useEffect(() => {

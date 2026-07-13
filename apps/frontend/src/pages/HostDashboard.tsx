@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { socket } from '../realtime/socket';
-import type { PublicRoomData } from 'shared';
+import { emitRoomCreateWhenConnected } from '../realtime/roomCreate';
+import { useSocketAuthRecovery } from '../realtime/authRecovery';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Play, History, Plus } from 'lucide-react';
@@ -20,6 +21,12 @@ export function HostDashboard() {
   const [loading, setLoading] = useState(true);
   const [history, setHistory] = useState<any[]>([]);
   const [gamesCount, setGamesCount] = useState(0);
+  const [isCreating, setIsCreating] = useState(false);
+
+  useSocketAuthRecovery(
+    () => { toast.error('Сессия ведущего недействительна. Войдите снова.'); navigate('/login', { replace: true }); },
+    () => { toast.error('Не удалось восстановить подключение. Войдите снова.'); navigate('/login', { replace: true }); },
+  );
 
   useEffect(() => {
     checkAuth();
@@ -53,28 +60,18 @@ export function HostDashboard() {
   };
 
   const handleCreateRoom = () => {
-    if (!socket.connected) {
-      const handleConnectError = () => {
-        toast.error('Сессия ведущего недействительна. Войдите снова.');
-        navigate('/login', { replace: true });
-      };
-      const handleConnect = () => {
-        socket.off('connect_error', handleConnectError);
-      };
-      socket.once('connect_error', handleConnectError);
-      socket.once('connect', handleConnect);
-      socket.connect();
-    }
-    
-    socket.emit('ROOM_CREATE', (res: { success: boolean, room?: PublicRoomData, error?: string }) => {
+    if (isCreating) return;
+    setIsCreating(true);
+    emitRoomCreateWhenConnected((res) => {
+      setIsCreating(false);
       if (res.success && res.room) {
         navigate(`/host/room/${res.room.roomId}`, { state: { room: res.room } });
       } else {
         toast.error('Не удалось создать игру', {
-          description: res.error || 'Внутренняя ошибка сервера. Пожалуйста, попробуйте позже.'
+          description: !res.success ? res.error : 'Внутренняя ошибка сервера. Пожалуйста, попробуйте позже.'
         });
       }
-    });
+    }, () => { setIsCreating(false); toast.error('Не удалось подключиться к серверу.'); });
   };
 
   const handleLogout = async () => {
@@ -124,6 +121,7 @@ export function HostDashboard() {
             </div>
             <Button 
               onClick={handleCreateRoom} 
+              disabled={isCreating}
               className="h-14 sm:h-16 px-6 sm:px-8 text-base sm:text-lg bg-white text-violet-600 hover:bg-slate-50 hover:text-violet-700 shadow-xl shadow-black/20 shrink-0 w-full lg:w-auto rounded-2xl transition-all hover:scale-105 active:scale-95 font-bold"
             >
               <Play className="mr-2 h-5 w-5 sm:h-6 sm:w-6 fill-current" />

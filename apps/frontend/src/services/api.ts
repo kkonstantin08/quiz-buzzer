@@ -71,6 +71,10 @@ export const api = {
     await customFetch(`${API_URL}/auth/logout`, { method: 'POST' });
   },
 
+  async clearSession() {
+    await customFetch(`${API_URL}/auth/clear-session`, { method: 'POST' });
+  },
+
   async getMe() {
     const res = await customFetch(`${API_URL}/auth/me`);
     if (!res.ok) {
