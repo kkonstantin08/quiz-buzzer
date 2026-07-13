@@ -253,7 +253,7 @@ describe('Validated Latency Compensation', () => {
     const room = Array.from(rooms.values())[0];
     await sleep(Math.max(0, room.unlockAt! - Date.now()));
 
-    const identicalTimestamp = Date.now();
+    const identicalTimestamp = room.unlockAt! + 10;
     await expect(new Promise<any>((resolve) => {
       p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: identicalTimestamp }, resolve);
     })).resolves.toEqual({ success: true, status: 'accepted' });
@@ -340,7 +340,7 @@ describe('Validated Latency Compensation', () => {
 
     await sleep(Math.max(0, room.unlockAt! - Date.now()));
     await expect(new Promise<any>((resolve) => {
-      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() }, resolve);
+      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: room.unlockAt! + 10 }, resolve);
     })).resolves.toEqual({ success: true, status: 'accepted' });
 
     expect(room.roundState).toBe('ACTIVE');
@@ -369,7 +369,9 @@ describe('Validated Latency Compensation', () => {
     await sleep(Math.max(0, unlockAt - Date.now()));
 
     // p1 buzzes then disconnects immediately
-    await new Promise<any>((resolve) => p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: unlockAt + 10 }, resolve));
+    await expect(new Promise<any>((resolve) => {
+      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: unlockAt + 10 }, resolve);
+    })).resolves.toEqual({ success: true, status: 'accepted' });
     
     const p1SocketId = p1Socket.id;
     p1Socket.disconnect(); // Disconnect BEFORE 250ms grace period finishes
@@ -390,7 +392,9 @@ describe('Validated Latency Compensation', () => {
     const room = Array.from(rooms.values())[0];
     await sleep(Math.max(0, room.unlockAt! - Date.now()));
 
-    await new Promise<void>((resolve) => p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() }, () => resolve()));
+    await expect(new Promise<any>((resolve) => {
+      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: room.unlockAt! + 10 }, resolve);
+    })).resolves.toEqual({ success: true, status: 'accepted' });
     await new Promise<void>((resolve) => hostSocket.emit('ROUND_RESET', {}, () => resolve()));
     await sleep(300);
 
@@ -404,7 +408,9 @@ describe('Validated Latency Compensation', () => {
     const room = Array.from(rooms.values())[0];
     await sleep(Math.max(0, room.unlockAt! - Date.now()));
 
-    await new Promise<void>((resolve) => p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() }, () => resolve()));
+    await expect(new Promise<any>((resolve) => {
+      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: room.unlockAt! + 10 }, resolve);
+    })).resolves.toEqual({ success: true, status: 'accepted' });
     await new Promise<void>((resolve) => hostSocket.emit('ROUND_RESET', {}, () => resolve()));
     await new Promise<void>((resolve) => hostSocket.emit('ROUND_START', () => resolve()));
     const newRoundId = room.roundId;
@@ -421,7 +427,9 @@ describe('Validated Latency Compensation', () => {
     const room = Array.from(rooms.values())[0];
     await sleep(Math.max(0, room.unlockAt! - Date.now()));
 
-    await new Promise<void>((resolve) => p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() }, () => resolve()));
+    await expect(new Promise<any>((resolve) => {
+      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: room.unlockAt! + 10 }, resolve);
+    })).resolves.toEqual({ success: true, status: 'accepted' });
     await new Promise<void>((resolve) => hostSocket.emit('ROOM_FINISH', () => resolve()));
     await sleep(300);
 
