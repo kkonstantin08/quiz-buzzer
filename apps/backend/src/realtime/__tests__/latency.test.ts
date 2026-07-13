@@ -320,6 +320,32 @@ describe('Validated Latency Compensation', () => {
     expect(roomAfterGrace.firstBuzzerId).toBe(p1Participant?.id);
   });
 
+  it('transitions directly from ACTIVE to REVEALED with one authoritative winner snapshot', async () => {
+    await setupRoom();
+    await new Promise<void>((resolve) => hostSocket.emit('ROUND_START', () => resolve()));
+
+    const room = Array.from(rooms.values())[0];
+    const snapshots: any[] = [];
+    hostSocket.on('ROOM_STATE_UPDATED', (snapshot) => snapshots.push(snapshot));
+
+    await sleep(Math.max(0, room.unlockAt! - Date.now()));
+    await expect(new Promise<any>((resolve) => {
+      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() }, resolve);
+    })).resolves.toEqual({ success: true, status: 'accepted' });
+
+    expect(room.roundState).toBe('ACTIVE');
+    expect(room.firstBuzzerId).toBeNull();
+
+    await sleep(300);
+
+    const p1Participant = room.participants.find((participant: any) => participant.socketId === p1Socket.id);
+    const revealedSnapshots = snapshots.filter((snapshot) => snapshot.roundState === 'REVEALED');
+    expect(room.roundState).toBe('REVEALED');
+    expect(room.firstBuzzerId).toBe(p1Participant?.id);
+    expect(revealedSnapshots).toHaveLength(1);
+    expect(revealedSnapshots[0].firstBuzzerId).toBe(p1Participant?.id);
+  });
+
   it('preserves winner if they disconnect before grace period ends', async () => {
     await setupRoom();
     await simulateSync(p1Socket, 0, 10);

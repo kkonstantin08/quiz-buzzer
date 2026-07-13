@@ -215,7 +215,6 @@ export function HostRoom() {
   const joinUrl = `${publicUrl}/room/${room.roomCode}`;
 
   const handleStartRound = () => socket.emit('ROUND_START');
-  const handleReveal = () => socket.emit('FIRST_REVEAL');
   const handleReset = (winnerId: string | null = null) => {
     socket.emit('ROUND_RESET', { winnerId });
   };

@@ -111,15 +111,6 @@ describe('Socket Payload Validation', () => {
     }
   });
 
-  it('handles empty payload gracefully for FIRST_REVEAL', (done) => {
-    // Should pass validation, but fail auth since we are not host in a room
-    clientSocket.emit('FIRST_REVEAL', null, (res: any) => {
-      expect(res.success).toBe(false);
-      expect(res.error).toBe('Вы не в комнате');
-      done();
-    });
-  });
-  
   it('emits the shared ERROR_EVENT object for invalid payloads without a callback', (done) => {
     clientSocket.emit('ROOM_LEAVE', { someRandomData: 123 }); // strict error
     
