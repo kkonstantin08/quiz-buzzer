@@ -164,9 +164,18 @@ export function HostSettings() {
 
   const handleCreateRoom = () => {
     if (!socket.connected) {
+      const handleConnectError = () => {
+        toast.error('Сессия ведущего недействительна. Войдите снова.');
+        navigate('/login', { replace: true });
+      };
+      const handleConnect = () => {
+        socket.off('connect_error', handleConnectError);
+      };
+      socket.once('connect_error', handleConnectError);
+      socket.once('connect', handleConnect);
       socket.connect();
     }
-    socket.emit('ROOM_CREATE', '', (res: { success: boolean, room?: PublicRoomData, error?: string }) => {
+    socket.emit('ROOM_CREATE', (res: { success: boolean, room?: PublicRoomData, error?: string }) => {
       if (res.success && res.room) {
         navigate(`/host/room/${res.room.roomId}`, { state: { room: res.room } });
       } else {

@@ -112,6 +112,19 @@ describe('Socket.IO host session authentication', () => {
     await expect(createRoom(client)).resolves.toMatchObject({ success: true });
   });
 
+  it('does not authorize the legacy ROOM_CREATE token payload', async () => {
+    const token = jwt.sign({ userId, sessionId }, config.jwtSecret);
+    const client = createClient(token);
+
+    await expect(waitForConnection(client)).resolves.toBe('connected');
+    const result = await new Promise<{ success: boolean }>((resolve) => {
+      client.emit('ROOM_CREATE', token, resolve);
+    });
+
+    expect(result.success).toBe(false);
+    expect(rooms.size).toBe(0);
+  });
+
   it.each([
     { label: 'a JWT without sessionId', createToken: () => jwt.sign({ userId }, config.jwtSecret) },
     { label: 'a missing Session', createToken: () => jwt.sign({ userId, sessionId }, config.jwtSecret), createSession: () => null },
@@ -138,7 +151,7 @@ describe('Socket.IO host session authentication', () => {
     const actions = [
       (callback: (result: { success: boolean }) => void) => client.emit('HOST_REJOIN_ROOM', { roomId: room.room?.roomId }, callback),
       (callback: (result: { success: boolean }) => void) => client.emit('ROUND_START', callback),
-      (callback: (result: { success: boolean }) => void) => client.emit('ROUND_RESET', undefined, callback),
+      (callback: (result: { success: boolean }) => void) => client.emit('ROUND_RESET', callback),
       (callback: (result: { success: boolean }) => void) => client.emit('HOST_CLEAR_SCORES', callback),
       (callback: (result: { success: boolean }) => void) => client.emit('ROOM_FINISH', callback),
     ];

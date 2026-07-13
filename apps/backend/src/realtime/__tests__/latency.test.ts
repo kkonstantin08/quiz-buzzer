@@ -14,6 +14,9 @@ jest.mock('../../prisma', () => ({
     hostUser: {
       findUnique: jest.fn(),
     },
+    session: {
+      findUnique: jest.fn(),
+    },
     gameHistory: {
       create: jest.fn(),
     },
@@ -54,10 +57,11 @@ describe('Validated Latency Compensation', () => {
     }
   });
 
-  const createClient = () => {
+  const createClient = (token?: string) => {
     return Client(`http://localhost:${port}`, {
       transports: ['websocket'],
       autoConnect: false,
+      extraHeaders: token ? { Cookie: `hostToken=${encodeURIComponent(token)}` } : undefined,
     });
   };
 
@@ -66,9 +70,15 @@ describe('Validated Latency Compensation', () => {
       id: 'host123',
       subscription: { status: 'active', currentPeriodEnd: new Date(Date.now() + 10000) },
     } as any);
-    const token = jwt.sign({ userId: 'host123' }, config.jwtSecret);
+    const token = jwt.sign({ userId: 'host123', sessionId: 'session-host123' }, config.jwtSecret);
+    (prisma.session.findUnique as any).mockResolvedValue({
+      id: 'session-host123',
+      userId: 'host123',
+      expiresAt: new Date(Date.now() + 10000),
+      revokedAt: null,
+    });
 
-    hostSocket = createClient();
+    hostSocket = createClient(token);
     p1Socket = createClient();
     p2Socket = createClient();
 
@@ -76,7 +86,7 @@ describe('Validated Latency Compensation', () => {
     
     return new Promise((resolve) => {
       hostSocket.on('connect', () => {
-        hostSocket.emit('ROOM_CREATE', token, (res: any) => {
+        hostSocket.emit('ROOM_CREATE', (res: any) => {
           const code = res.room.roomCode;
           p1Socket.connect();
           p2Socket.connect();

@@ -4,7 +4,7 @@ import type { Session } from '@prisma/client';
 import { prisma } from '../prisma';
 import { config } from '../config';
 import { rooms, socketToRoom, createRoom, getRoomByCode } from '../rooms';
-import { BuzzSubmitResult, ClientToServerEvents, InternalRoomData, PublicRoomData, RoomState, ServerToClientEvents, SocketErrorResult } from 'shared';
+import { BuzzSubmitResult, ClientToServerEvents, InternalRoomData, PublicRoomData, RoomCreateResult, RoomState, ServerToClientEvents, SocketErrorResult } from 'shared';
 import xss from 'xss';
 import { reattachHostToRoom, startHostReconnectTimeout } from './host-reconnect';
 import { saveGameHistory, schedulePostFinishCleanup, scheduleMaxLifetimeCleanup, postFinishTimers, maxLifetimeTimers } from './room-lifecycle';
@@ -14,7 +14,7 @@ import { appEvents } from '../events';
 import { deleteRoom } from '../rooms';
 import { withValidation, cleanupValidationRateLimits } from './validation';
 import { 
-  SyncTimeSchema, SyncAckSchema, RoomCreateSchema, HostRejoinRoomSchema, 
+  SyncTimeSchema, SyncAckSchema, HostRejoinRoomSchema,
   RoomJoinSchema, ParticipantRejoinSchema, RoundStartSchema, BuzzSubmitStrictSchema,
   RoundResetSchema, EmptyPayloadSchema, HostClearScoresSchema
 } from 'shared';
@@ -230,7 +230,19 @@ export function setupSocketIO(io: RealtimeServer) {
     });
 
     // Create Room (Host only)
-    socket.on('ROOM_CREATE', withValidation(RoomCreateSchema, 'ROOM_CREATE', async (_token, callback) => {
+    socket.on('ROOM_CREATE', async (...args: unknown[]) => {
+      const [firstArgument, secondArgument] = args;
+      const callback = typeof firstArgument === 'function'
+        ? firstArgument as (result: RoomCreateResult) => void
+        : typeof secondArgument === 'function'
+          ? secondArgument as (result: RoomCreateResult) => void
+          : undefined;
+
+      if (args.length !== 1 || typeof firstArgument !== 'function') {
+        if (callback) callback({ success: false, error: 'Некорректные данные' });
+        return;
+      }
+
       try {
         const sessionRejection = await requireAuthenticatedHostSession(socket, 'ROOM_CREATE');
         if (sessionRejection) {
@@ -282,7 +294,7 @@ export function setupSocketIO(io: RealtimeServer) {
       } catch (error) {
         if (callback) callback({ success: false, error: 'Ошибка авторизации' });
       }
-    }));
+    });
 
     // Rejoin Room (Host only)
     socket.on('HOST_REJOIN_ROOM', withValidation(HostRejoinRoomSchema, 'HOST_REJOIN_ROOM', async ({ roomId }, callback) => {

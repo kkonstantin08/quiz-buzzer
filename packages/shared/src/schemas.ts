@@ -1,7 +1,5 @@
 import { z } from 'zod';
 
-export const RoomCreateSchema = z.string().max(4096).optional(); // token is optional string, JWTs can be long
-
 export const RoomJoinSchema = z.object({
   roomCode: z.string().min(1).max(10), // Assuming room code is a short string, usually 6 chars
   displayName: z.string().min(1).max(50),
