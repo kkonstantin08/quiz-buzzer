@@ -8,7 +8,10 @@ import { config } from '../../config';
 import { type PublicRoomData, type SocketActionResult } from 'shared';
 
 jest.mock('../../prisma', () => ({
-  prisma: { hostUser: { findUnique: jest.fn() } },
+  prisma: {
+    hostUser: { findUnique: jest.fn() },
+    session: { findUnique: jest.fn() },
+  },
 }));
 
 type FindUniqueMock = {
@@ -46,7 +49,7 @@ describe('HOST_CLEAR_SCORES', () => {
   const createClient = (token?: string) => Client(`http://localhost:${port}`, {
     transports: ['websocket'],
     autoConnect: false,
-    auth: token ? { token } : undefined,
+    extraHeaders: token ? { Cookie: `hostToken=${encodeURIComponent(token)}` } : undefined,
   });
 
   const connect = (socket: ClientSocket) => new Promise<void>((resolve) => {
@@ -56,15 +59,23 @@ describe('HOST_CLEAR_SCORES', () => {
 
   const createRoom = async (hostId: string) => {
     const findUnique = prisma.hostUser.findUnique as unknown as FindUniqueMock;
+    const sessionFindUnique = prisma.session.findUnique as unknown as FindUniqueMock;
     findUnique.mockResolvedValue({
       id: hostId,
       subscription: { status: 'active', currentPeriodEnd: new Date(Date.now() + 60_000) },
     });
-    const token = jwt.sign({ userId: hostId }, config.jwtSecret);
-    const socket = createClient();
+    const sessionId = `session-${hostId}`;
+    const token = jwt.sign({ userId: hostId, sessionId }, config.jwtSecret);
+    sessionFindUnique.mockResolvedValue({
+      id: sessionId,
+      userId: hostId,
+      expiresAt: new Date(Date.now() + 60_000),
+      revokedAt: null,
+    });
+    const socket = createClient(token);
     await connect(socket);
     const result = await new Promise<{ room: PublicRoomData }>((resolve) => {
-      socket.emit('ROOM_CREATE', token, resolve);
+      socket.emit('ROOM_CREATE', resolve);
     });
     return { socket, room: result.room, token };
   };
@@ -150,6 +161,12 @@ describe('HOST_CLEAR_SCORES', () => {
     secondRoom.participants.push({
       id: 'second-player', displayName: 'Второй', socketId: 'second', joinedAt: 1,
       isConnected: true, score: 11,
+    });
+    (prisma.session.findUnique as unknown as FindUniqueMock).mockResolvedValue({
+      id: 'session-host-1',
+      userId: 'host-1',
+      expiresAt: new Date(Date.now() + 60_000),
+      revokedAt: null,
     });
 
     await expect(clearScores(hostSocket)).resolves.toEqual({ success: true });

@@ -13,6 +13,9 @@ jest.mock('../../prisma', () => ({
     hostUser: {
       findUnique: jest.fn(),
     },
+    session: {
+      findUnique: jest.fn(),
+    },
   },
 }));
 
@@ -46,6 +49,12 @@ describe('Host Reconnect and Revocation', () => {
 
   beforeEach(() => {
     timerCallbacks = [];
+    (prisma.session.findUnique as any).mockImplementation(({ where: { id } }: { where: { id: string } }) => Promise.resolve({
+      id,
+      userId: id === 'session-host456' ? 'host456' : 'host123',
+      expiresAt: new Date(Date.now() + 10000),
+      revokedAt: null,
+    }));
     jest.spyOn(reconnectTimeoutLoader, 'setTimeout').mockImplementation((cb) => {
       timerCallbacks.push(cb);
       return 12345 as any;
@@ -69,7 +78,7 @@ describe('Host Reconnect and Revocation', () => {
     return Client(`http://localhost:${port}`, {
       transports: ['websocket'],
       autoConnect: false,
-      auth: token ? { token } : undefined,
+      extraHeaders: token ? { Cookie: `hostToken=${encodeURIComponent(token)}` } : undefined,
     });
   };
 
@@ -78,8 +87,8 @@ describe('Host Reconnect and Revocation', () => {
       id: 'host123',
       subscription: { status: 'active', currentPeriodEnd: new Date(Date.now() + 10000) },
     } as any);
-    hostToken = jwt.sign({ userId: 'host123' }, config.jwtSecret);
-    host2Token = jwt.sign({ userId: 'host456' }, config.jwtSecret); // different host
+    hostToken = jwt.sign({ userId: 'host123', sessionId: 'session-host123' }, config.jwtSecret);
+    host2Token = jwt.sign({ userId: 'host456', sessionId: 'session-host456' }, config.jwtSecret); // different host
 
     hostSocket = createClient(hostToken);
     p1Socket = createClient();
@@ -88,7 +97,7 @@ describe('Host Reconnect and Revocation', () => {
     
     return new Promise((resolve) => {
       hostSocket.on('connect', () => {
-        hostSocket.emit('ROOM_CREATE', hostToken, (res: any) => {
+        hostSocket.emit('ROOM_CREATE', (res: any) => {
           resolve(res.room.roomId);
         });
       });
@@ -160,7 +169,7 @@ describe('Host Reconnect and Revocation', () => {
   it('3. Stranger user cannot restore room', async () => {
     const roomId = await setupRoom();
 
-    const strangerSocket = createClient();
+    const strangerSocket = createClient(host2Token);
     strangerSocket.connect();
 
     const res = await new Promise<any>((resolve) => {
@@ -170,7 +179,7 @@ describe('Host Reconnect and Revocation', () => {
           id: 'host456',
           subscription: { status: 'active' },
         } as any);
-        strangerSocket.emit('ROOM_CREATE', host2Token, () => {
+        strangerSocket.emit('ROOM_CREATE', () => {
           // Now try to rejoin the original room
           strangerSocket.emit('HOST_REJOIN_ROOM', { roomId }, resolve);
         });

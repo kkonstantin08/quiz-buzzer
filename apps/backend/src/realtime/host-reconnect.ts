@@ -26,7 +26,6 @@ export function reattachHostToRoom(
   room.hostSocketId = socket.id;
   room.isHostConnected = true;
   socket.data.role = 'host';
-  socket.data.userId = room.hostUserId;
   socketToRoom.set(socket.id, room.roomId);
   socket.join(room.roomId);
 }

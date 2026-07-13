@@ -88,7 +88,7 @@ export type SocketActionResult = SocketSuccessResult | SocketErrorResult;
 
 // Client -> Server Events
 export interface ClientToServerEvents {
-  ROOM_CREATE: (token: string, callback: (res: RoomCreateResult) => void) => void;
+  ROOM_CREATE: (callback: (res: RoomCreateResult) => void) => void;
   ROOM_JOIN: (data: RoomJoinPayload, callback: (res: RoomJoinResult) => void) => void;
   PARTICIPANT_REJOIN: (data: ParticipantRejoinPayload, callback: (res: ParticipantRejoinResult) => void) => void;
   ROUND_START: (callback?: (res: SocketActionResult) => void) => void;

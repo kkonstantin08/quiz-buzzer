@@ -47,6 +47,15 @@ describe('Socket.IO protocol contract', () => {
     expect(frontendEvents).toContain('HOST_CLEAR_SCORES');
   });
 
+  it('defines ROOM_CREATE as a callback-only event without a token schema', () => {
+    const sharedSource = readSource('..', '..', 'packages/shared/src/index.ts');
+    const schemaSource = readSource('..', '..', 'packages/shared/src/schemas.ts');
+
+    expect(sharedSource).toContain('ROOM_CREATE: (callback: (res: RoomCreateResult) => void) => void;');
+    expect(sharedSource).not.toContain('ROOM_CREATE: (token: string');
+    expect(schemaSource).not.toContain('RoomCreateSchema');
+  });
+
   it('has a producer for every shared server event and sends persistent state only through emitRoomState', () => {
     const realtimeSource = readSource('src/realtime/index.ts');
     const producerSources = [

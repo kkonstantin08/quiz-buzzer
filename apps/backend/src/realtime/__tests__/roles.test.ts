@@ -11,6 +11,9 @@ jest.mock('../../prisma', () => ({
     hostUser: {
       findUnique: jest.fn(),
     },
+    session: {
+      findUnique: jest.fn(),
+    },
   },
 }));
 
@@ -46,10 +49,11 @@ describe('Socket Roles Enforcement', () => {
     jest.clearAllMocks();
   });
 
-  const createClient = () => {
+  const createClient = (token?: string) => {
     return Client(`http://localhost:${port}`, {
       transports: ['websocket'],
       autoConnect: false,
+      extraHeaders: token ? { Cookie: `hostToken=${encodeURIComponent(token)}` } : undefined,
     });
   };
 
@@ -58,9 +62,15 @@ describe('Socket Roles Enforcement', () => {
       id: 'host123',
       subscription: { status: 'active', currentPeriodEnd: new Date(Date.now() + 10000) },
     } as any);
-    hostToken = jwt.sign({ userId: 'host123' }, config.jwtSecret);
+    hostToken = jwt.sign({ userId: 'host123', sessionId: 'session-host123' }, config.jwtSecret);
+    (prisma.session.findUnique as any).mockResolvedValue({
+      id: 'session-host123',
+      userId: 'host123',
+      expiresAt: new Date(Date.now() + 10000),
+      revokedAt: null,
+    });
 
-    hostSocket = createClient();
+    hostSocket = createClient(hostToken);
     p1Socket = createClient();
     p2Socket = createClient();
 
@@ -68,7 +78,7 @@ describe('Socket Roles Enforcement', () => {
     
     return new Promise((resolve) => {
       hostSocket.on('connect', () => {
-        hostSocket.emit('ROOM_CREATE', hostToken, (res: any) => {
+        hostSocket.emit('ROOM_CREATE', (res: any) => {
           resolve(res.room.roomCode);
         });
       });
