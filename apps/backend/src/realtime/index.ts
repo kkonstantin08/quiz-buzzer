@@ -1,5 +1,6 @@
 import { DefaultEventsMap, Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
+import type { Session } from '@prisma/client';
 import { prisma } from '../prisma';
 import { config } from '../config';
 import { rooms, socketToRoom, createRoom, getRoomByCode } from '../rooms';
@@ -51,12 +52,40 @@ function rejectSocketAction(action: string, reason: string, socketId: string, ro
   return { success: false, error: errorMsg };
 }
 
-function requireHostSocket(socket: RealtimeSocket, room: InternalRoomData, action: string) {
-  if (socket.data.role !== 'host') {
-    return rejectSocketAction(action, 'not_a_host', socket.id, room.roomId);
+function getHostTokenFromCookie(cookieHeader: string | undefined): string | undefined {
+  const match = cookieHeader?.match(/(?:^|;\s*)hostToken=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : undefined;
+}
+
+function hasHostSessionClaims(decoded: string | jwt.JwtPayload): decoded is jwt.JwtPayload & { userId: string; sessionId: string } {
+  return typeof decoded !== 'string' && typeof decoded.userId === 'string' && typeof decoded.sessionId === 'string';
+}
+
+function isActiveSession(session: Pick<Session, 'userId' | 'expiresAt' | 'revokedAt'> | null, userId: string) {
+  return Boolean(session && session.userId === userId && session.expiresAt > new Date() && session.revokedAt === null);
+}
+
+async function requireAuthenticatedHostSession(socket: RealtimeSocket, action: string) {
+  const { userId, sessionId } = socket.data;
+  if (!userId || !sessionId) {
+    return rejectSocketAction(action, 'not_a_host', socket.id);
   }
-  if (socket.data.userId !== room.hostUserId) {
-    return rejectSocketAction(action, 'host_id_mismatch', socket.id, room.roomId);
+
+  const session = await prisma.session.findUnique({ where: { id: sessionId } });
+  if (!isActiveSession(session, userId)) {
+    return rejectSocketAction(action, 'not_a_host', socket.id);
+  }
+
+  return null;
+}
+
+async function requireHostSocket(socket: RealtimeSocket, room: InternalRoomData, action: string) {
+  const sessionRejection = await requireAuthenticatedHostSession(socket, action);
+  if (sessionRejection) {
+    return sessionRejection;
+  }
+  if (socket.data.role !== 'host' || socket.data.userId !== room.hostUserId || room.hostSocketId !== socket.id) {
+    return rejectSocketAction(action, 'not_a_host', socket.id, room.roomId);
   }
   return null;
 }
@@ -113,36 +142,30 @@ export function setupSocketIO(io: RealtimeServer) {
   }
   const socketToSyncStats = new Map<string, SyncStats>();
 
-  // Authenticate socket connections via httpOnly cookie or explicit auth token
+  // Authenticate host sockets only through the httpOnly host cookie.
   io.use(async (socket, next) => {
-    // Try explicit token from handshake auth first (legacy)
-    let token: string | undefined = socket.handshake.auth?.token;
-
-    // Fall back to httpOnly cookie sent with the HTTP upgrade request
-    if (!token) {
-      const cookieStr = socket.handshake.headers.cookie || '';
-      const match = cookieStr.match(/(?:^|;\s*)hostToken=([^;]+)/);
-      if (match) token = decodeURIComponent(match[1]);
-    }
-
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, config.jwtSecret) as { userId: string, sessionId?: string };
-        socket.data.userId = decoded.userId;
-        
-        if (decoded.sessionId) {
-          const session = await prisma.session.findUnique({ where: { id: decoded.sessionId } });
-          if (session && session.userId === decoded.userId && session.expiresAt > new Date() && !session.revokedAt) {
-            socket.data.sessionId = decoded.sessionId;
-          } else {
-            return next(new Error('Session revoked'));
-          }
-        }
-      } catch {
-        // Ignore invalid tokens — participants don't need auth
+    try {
+      const token = getHostTokenFromCookie(socket.handshake.headers.cookie);
+      if (!token) {
+        return next();
       }
+
+      const decoded = jwt.verify(token, config.jwtSecret);
+      if (!hasHostSessionClaims(decoded)) {
+        return next(new Error('Host session invalid'));
+      }
+
+      const session = await prisma.session.findUnique({ where: { id: decoded.sessionId } });
+      if (!isActiveSession(session, decoded.userId)) {
+        return next(new Error('Host session invalid'));
+      }
+
+      socket.data.userId = decoded.userId;
+      socket.data.sessionId = decoded.sessionId;
+      return next();
+    } catch {
+      return next(new Error('Host session invalid'));
     }
-    next();
   });
 
   appEvents.on('host_logout', (sessionId: string) => {
@@ -207,19 +230,19 @@ export function setupSocketIO(io: RealtimeServer) {
     });
 
     // Create Room (Host only)
-    socket.on('ROOM_CREATE', withValidation(RoomCreateSchema, 'ROOM_CREATE', async (token, callback) => {
+    socket.on('ROOM_CREATE', withValidation(RoomCreateSchema, 'ROOM_CREATE', async (_token, callback) => {
       try {
-        // Prefer userId already set by cookie middleware; fall back to explicit token
-        let userId = socket.data.userId;
-        if (!userId && token) {
-          const decoded = jwt.verify(token, config.jwtSecret) as { userId: string };
-          userId = decoded.userId;
-        }
-        if (!userId) {
-          if (callback) return callback({ success: false, error: 'Требуется авторизация' });
+        const sessionRejection = await requireAuthenticatedHostSession(socket, 'ROOM_CREATE');
+        if (sessionRejection) {
+          if (callback) callback(sessionRejection);
           return;
         }
 
+        const userId = socket.data.userId;
+        if (!userId) {
+          if (callback) callback(rejectSocketAction('ROOM_CREATE', 'not_a_host', socket.id));
+          return;
+        }
         if (socket.data.role === 'participant') {
           if (callback) return callback(rejectSocketAction('ROOM_CREATE', 'participant_cannot_create', socket.id));
           return;
@@ -262,12 +285,18 @@ export function setupSocketIO(io: RealtimeServer) {
     }));
 
     // Rejoin Room (Host only)
-    socket.on('HOST_REJOIN_ROOM', withValidation(HostRejoinRoomSchema, 'HOST_REJOIN_ROOM', ({ roomId }, callback) => {
+    socket.on('HOST_REJOIN_ROOM', withValidation(HostRejoinRoomSchema, 'HOST_REJOIN_ROOM', async ({ roomId }, callback) => {
       if (!roomId || typeof roomId !== 'string') {
         if (callback) return callback({ success: false, error: 'Комната недоступна' });
         return;
       }
       
+      const sessionRejection = await requireAuthenticatedHostSession(socket, 'HOST_REJOIN_ROOM');
+      if (sessionRejection) {
+        if (callback) callback({ success: false, error: 'Комната недоступна' });
+        return;
+      }
+
       const userId = socket.data.userId;
       if (!userId) {
         if (callback) return callback({ success: false, error: 'Комната недоступна' });
@@ -419,14 +448,14 @@ export function setupSocketIO(io: RealtimeServer) {
     }));
 
     // Start Round (Host)
-    socket.on('ROUND_START', withValidation(RoundStartSchema, 'ROUND_START', (data, callback) => {
+    socket.on('ROUND_START', withValidation(RoundStartSchema, 'ROUND_START', async (_data, callback) => {
       const roomId = socketToRoom.get(socket.id);
       if (!roomId) return callback && callback({ success: false, error: 'Вы не в комнате' });
       
       const room = rooms.get(roomId);
       if (!room) return callback && callback({ success: false, error: 'Комната не найдена' });
 
-      const rejection = requireHostSocket(socket, room, 'ROUND_START');
+      const rejection = await requireHostSocket(socket, room, 'ROUND_START');
       if (rejection) return callback && callback(rejection);
 
       const existingBuffer = buzzBuffers.get(roomId);
@@ -549,14 +578,14 @@ export function setupSocketIO(io: RealtimeServer) {
     }));
 
     // Reset Round (Host)
-    socket.on('ROUND_RESET', withValidation(RoundResetSchema, 'ROUND_RESET', (data, callback) => {
+    socket.on('ROUND_RESET', withValidation(RoundResetSchema, 'ROUND_RESET', async (data, callback) => {
       const roomId = socketToRoom.get(socket.id);
       if (!roomId) return callback && callback({ success: false, error: 'Вы не в комнате' });
       
       const room = rooms.get(roomId);
       if (!room) return callback && callback({ success: false, error: 'Комната не найдена' });
 
-      const rejection = requireHostSocket(socket, room, 'ROUND_RESET');
+      const rejection = await requireHostSocket(socket, room, 'ROUND_RESET');
       if (rejection) return callback && callback(rejection);
 
       if (data?.winnerId) {
@@ -583,14 +612,14 @@ export function setupSocketIO(io: RealtimeServer) {
       if (callback) callback({ success: true });
     }));
 
-    socket.on('HOST_CLEAR_SCORES', withValidation(HostClearScoresSchema, 'HOST_CLEAR_SCORES', (_data, callback) => {
+    socket.on('HOST_CLEAR_SCORES', withValidation(HostClearScoresSchema, 'HOST_CLEAR_SCORES', async (_data, callback) => {
       const roomId = socketToRoom.get(socket.id);
       if (!roomId) return callback && callback({ success: false, error: 'Вы не в комнате' });
 
       const room = rooms.get(roomId);
       if (!room) return callback && callback({ success: false, error: 'Комната не найдена' });
 
-      const rejection = requireHostSocket(socket, room, 'HOST_CLEAR_SCORES');
+      const rejection = await requireHostSocket(socket, room, 'HOST_CLEAR_SCORES');
       if (rejection) return callback && callback(rejection);
 
       for (const participant of room.participants) {
@@ -602,14 +631,14 @@ export function setupSocketIO(io: RealtimeServer) {
     }));
 
     // Finish Room (Host)
-    socket.on('ROOM_FINISH', withValidation(EmptyPayloadSchema, 'ROOM_FINISH', async (data, callback) => {
+    socket.on('ROOM_FINISH', withValidation(EmptyPayloadSchema, 'ROOM_FINISH', async (_data, callback) => {
       const roomId = socketToRoom.get(socket.id);
       if (!roomId) return callback && callback({ success: false, error: 'Вы не в комнате' });
       
       const room = rooms.get(roomId);
       if (!room) return callback && callback({ success: false, error: 'Комната не найдена' });
 
-      const rejection = requireHostSocket(socket, room, 'ROOM_FINISH');
+      const rejection = await requireHostSocket(socket, room, 'ROOM_FINISH');
       if (rejection) return callback && callback(rejection);
 
       if (room.roundState === RoomState.FINISHED) {
