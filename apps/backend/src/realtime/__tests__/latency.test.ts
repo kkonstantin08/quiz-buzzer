@@ -139,10 +139,10 @@ describe('Validated Latency Compensation', () => {
     // server unlockAt is around now.
     // If p1 presses at serverTime = now + 20, clientPressedAt = now + 20 + 100 = now + 120
     // If p2 presses at serverTime = now + 40, clientPressedAt = now + 40 + 0 = now + 40
-    p2Socket.emit('BUZZ_SUBMIT', { clientPressedAt: unlockAt + 40 }, () => {});
+    p2Socket.emit('BUZZ_SUBMIT', { clientPressedAt: now + 40 }, () => {});
     
     await sleep(10);
-    p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: unlockAt + 220 }, () => {}); 
+    p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: now + 220 }, () => {}); 
 
     await sleep(300); 
 
@@ -184,9 +184,10 @@ describe('Validated Latency Compensation', () => {
     await sleep(Math.max(0, unlockAt - Date.now()));
 
     await new Promise<void>((resolve) => {
+      const now = Date.now();
       // The client clock is 100ms ahead, so its raw timestamp is ahead too.
       // The backend must apply its negative median offset exactly once.
-      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: unlockAt + 120 }, (res: any) => {
+      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: now + 120 }, (res: any) => {
         expect(res).toEqual({ success: true, status: 'accepted' });
         resolve();
       });
@@ -206,9 +207,10 @@ describe('Validated Latency Compensation', () => {
     await sleep(Math.max(0, unlockAt - Date.now()));
 
     await new Promise<void>((resolve) => {
+      const now = Date.now();
       // The client clock is 100ms behind. Applying the positive median offset
       // once yields the actual server-side press time.
-      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: unlockAt - 80 }, (res: any) => {
+      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: now - 80 }, (res: any) => {
         expect(res).toEqual({ success: true, status: 'accepted' });
         resolve();
       });
@@ -228,14 +230,15 @@ describe('Validated Latency Compensation', () => {
     const unlockAt = room.unlockAt!;
     await sleep(Math.max(0, unlockAt - Date.now()));
 
+    const now = Date.now();
     // P1's wall clock is 100ms fast but it pressed later in real time.
     // Its raw timestamp must be converted back to server time before ordering.
     const p1Result = new Promise<any>((resolve) => {
-      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: unlockAt + 140 }, resolve);
+      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: now + 140 }, resolve);
     });
     await sleep(10);
     const p2Result = new Promise<any>((resolve) => {
-      p2Socket.emit('BUZZ_SUBMIT', { clientPressedAt: unlockAt + 20 }, resolve);
+      p2Socket.emit('BUZZ_SUBMIT', { clientPressedAt: now + 20 }, resolve);
     });
 
     await expect(p1Result).resolves.toEqual({ success: true, status: 'accepted' });
@@ -253,13 +256,13 @@ describe('Validated Latency Compensation', () => {
     const room = Array.from(rooms.values())[0];
     await sleep(Math.max(0, room.unlockAt! - Date.now()));
 
-    const identicalTimestamp = room.unlockAt! + 10;
+    const identicalTimestamp = Date.now() + 10;
     await expect(new Promise<any>((resolve) => {
-      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: identicalTimestamp }, resolve);
+      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() + 10 }, resolve);
     })).resolves.toEqual({ success: true, status: 'accepted' });
     await sleep(10);
     await expect(new Promise<any>((resolve) => {
-      p2Socket.emit('BUZZ_SUBMIT', { clientPressedAt: identicalTimestamp }, resolve);
+      p2Socket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() + 10 }, resolve);
     })).resolves.toEqual({ success: true, status: 'accepted' });
     await sleep(300);
 
@@ -304,9 +307,10 @@ describe('Validated Latency Compensation', () => {
     const unlockAt = room.unlockAt || Date.now() + 150;
     await sleep(Math.max(0, unlockAt - Date.now()));
 
+    const now = Date.now();
     // Both buzz almost simultaneously
-    const p1Promise = new Promise<any>((resolve) => p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: unlockAt + 20 }, resolve));
-    const p2Promise = new Promise<any>((resolve) => p2Socket.emit('BUZZ_SUBMIT', { clientPressedAt: unlockAt + 22 }, resolve));
+    const p1Promise = new Promise<any>((resolve) => p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: now + 20 }, resolve));
+    const p2Promise = new Promise<any>((resolve) => p2Socket.emit('BUZZ_SUBMIT', { clientPressedAt: now + 22 }, resolve));
 
     const [r1, r2] = await Promise.all([p1Promise, p2Promise]);
     
@@ -340,7 +344,7 @@ describe('Validated Latency Compensation', () => {
 
     await sleep(Math.max(0, room.unlockAt! - Date.now()));
     await expect(new Promise<any>((resolve) => {
-      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: room.unlockAt! + 10 }, resolve);
+      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() + 10 }, resolve);
     })).resolves.toEqual({ success: true, status: 'accepted' });
 
     expect(room.roundState).toBe('ACTIVE');
@@ -368,9 +372,10 @@ describe('Validated Latency Compensation', () => {
     const unlockAt = room.unlockAt || Date.now() + 150;
     await sleep(Math.max(0, unlockAt - Date.now()));
 
+    const now = Date.now();
     // p1 buzzes then disconnects immediately
     await expect(new Promise<any>((resolve) => {
-      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: unlockAt + 10 }, resolve);
+      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: now + 10 }, resolve);
     })).resolves.toEqual({ success: true, status: 'accepted' });
     
     const p1SocketId = p1Socket.id;
@@ -393,7 +398,7 @@ describe('Validated Latency Compensation', () => {
     await sleep(Math.max(0, room.unlockAt! - Date.now()));
 
     await expect(new Promise<any>((resolve) => {
-      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: room.unlockAt! + 10 }, resolve);
+      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() + 10 }, resolve);
     })).resolves.toEqual({ success: true, status: 'accepted' });
     await new Promise<void>((resolve) => hostSocket.emit('ROUND_RESET', {}, () => resolve()));
     await sleep(300);
@@ -409,7 +414,7 @@ describe('Validated Latency Compensation', () => {
     await sleep(Math.max(0, room.unlockAt! - Date.now()));
 
     await expect(new Promise<any>((resolve) => {
-      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: room.unlockAt! + 10 }, resolve);
+      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() + 10 }, resolve);
     })).resolves.toEqual({ success: true, status: 'accepted' });
     await new Promise<void>((resolve) => hostSocket.emit('ROUND_RESET', {}, () => resolve()));
     await new Promise<void>((resolve) => hostSocket.emit('ROUND_START', () => resolve()));
@@ -428,7 +433,7 @@ describe('Validated Latency Compensation', () => {
     await sleep(Math.max(0, room.unlockAt! - Date.now()));
 
     await expect(new Promise<any>((resolve) => {
-      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: room.unlockAt! + 10 }, resolve);
+      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() + 10 }, resolve);
     })).resolves.toEqual({ success: true, status: 'accepted' });
     await new Promise<void>((resolve) => hostSocket.emit('ROOM_FINISH', () => resolve()));
     await sleep(300);

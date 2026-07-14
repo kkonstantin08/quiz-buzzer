@@ -16,7 +16,9 @@
     "test": "npm run build -w shared && npm run test -w backend && npm run test -w frontend",
     "lint": "npm run lint -w frontend",
     "ci": "npm run lint && npm run typecheck && npm run test && npm run build",
-    "legal:check:strict": "node scripts/legal-check.mjs"
+    "legal:check": "node scripts/legal-check.mjs",
+    "legal:check:strict": "node scripts/legal-check.mjs --strict",
+    "payments:preflight": "node scripts/payments-preflight.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
