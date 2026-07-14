@@ -24,6 +24,9 @@ model HostUser {
   settings        HostSettings?
   gameHistory     GameHistory[]
   sessions        Session[]
+  legalAcceptances LegalAcceptance[]
+  payments        Payment[]
+  paymentMethods  PaymentMethod[]
 }
 
 model Session {
@@ -42,6 +45,12 @@ model Subscription {
   status             String   // active, inactive, expired, canceled
   currentPeriodStart DateTime
   currentPeriodEnd   DateTime
+  autoRenew          Boolean  @default(false)
+  cancelAtPeriodEnd  Boolean  @default(false)
+  canceledAt         DateTime?
+  nextChargeAt       DateTime?
+  lastPaymentId      String?
+  providerPaymentMethodId String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 }
@@ -68,4 +77,66 @@ model GameHistory {
   winnerScore  Int
   participants Int
   createdAt    DateTime @default(now())
+}
+
+model LegalAcceptance {
+  id               String                @id @default(uuid())
+  hostUserId       String
+  documentType     String                // TERMS, OFFER, RECURRING_PAYMENT, MARKETING, PRIVACY_ACKNOWLEDGEMENT
+  documentVersion  String
+  acceptanceSource String                // REGISTRATION, CHECKOUT, ACCOUNT_SETTINGS, DOCUMENT_UPDATE
+  ipAddress        String?
+  userAgent        String?
+  acceptedAt       DateTime              @default(now())
+
+  hostUser HostUser @relation(fields: [hostUserId], references: [id], onDelete: Cascade)
+
+  @@unique([hostUserId, documentType, documentVersion])
+  @@index([hostUserId])
+}
+
+model Payment {
+  id                String    @id @default(uuid())
+  hostUserId        String
+  provider          String
+  providerPaymentId String    @unique
+  idempotencyKey    String    @unique
+  amountMinor       Int
+  currency          String
+  status            String
+  description       String?
+  createdAt         DateTime  @default(now())
+  paidAt            DateTime?
+  updatedAt         DateTime  @updatedAt
+
+  hostUser HostUser @relation(fields: [hostUserId], references: [id], onDelete: Cascade)
+  refunds  Refund[]
+}
+
+model PaymentMethod {
+  id                      String    @id @default(uuid())
+  hostUserId              String
+  provider                String
+  providerPaymentMethodId String    @unique
+  recurringEnabled        Boolean   @default(false)
+  consentedAt             DateTime?
+  disabledAt              DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  hostUser HostUser @relation(fields: [hostUserId], references: [id], onDelete: Cascade)
+}
+
+model Refund {
+  id               String   @id @default(uuid())
+  paymentId        String
+  providerRefundId String   @unique
+  amountMinor      Int
+  currency         String
+  status           String
+  reason           String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 }

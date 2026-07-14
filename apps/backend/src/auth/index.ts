@@ -7,6 +7,7 @@ import { prisma } from '../prisma';
 import { config } from '../config';
 import { requireAuth, AuthRequest } from './middleware';
 import { appEvents } from '../events';
+import { LegalDocumentType, LegalAcceptanceSource, legalBackendConfig } from '../legal/config';
 export const authRouter = Router();
 
 const hostCookieOptions = {
@@ -221,10 +222,14 @@ authRouter.post('/avatar', requireAuth, (req: AuthRequest, res: any, next: any) 
 
 authRouter.post('/register', registerLimiter, async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, termsAccepted, displayedTermsVersion } = req.body;
     
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    if (!termsAccepted) {
+      return res.status(400).json({ error: 'Необходимо принять Пользовательское соглашение' });
     }
 
     const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -242,21 +247,44 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const user = await prisma.hostUser.create({
-      data: {
-        email,
-        passwordHash,
-      },
-    });
-
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
-    const session = await prisma.session.create({
-      data: {
-        userId: user.id,
-        expiresAt,
-      }
+    // Get client IP and User-Agent
+    const ipAddress = req.ip || req.socket.remoteAddress || null;
+    const userAgent = req.headers['user-agent'] || null;
+
+    // Use transaction for atomic creation
+    const { user, session } = await prisma.$transaction(async (tx) => {
+      const createdUser = await tx.hostUser.create({
+        data: {
+          email,
+          passwordHash,
+        },
+      });
+
+      const createdSession = await tx.session.create({
+        data: {
+          userId: createdUser.id,
+          expiresAt,
+        }
+      });
+
+      // Explicitly use server version instead of client version
+      const serverVersion = legalBackendConfig.versions[LegalDocumentType.TERMS];
+
+      await tx.legalAcceptance.create({
+        data: {
+          hostUserId: createdUser.id,
+          documentType: LegalDocumentType.TERMS,
+          documentVersion: serverVersion,
+          acceptanceSource: LegalAcceptanceSource.REGISTRATION,
+          ipAddress,
+          userAgent,
+        }
+      });
+
+      return { user: createdUser, session: createdSession };
     });
 
     const token = jwt.sign({ userId: user.id, sessionId: session.id }, config.jwtSecret, { expiresIn: '7d' });

@@ -1,7 +1,8 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Target, Rocket, QrCode, Crown } from 'lucide-react';
+import { Footer } from '../components/Footer';
 
 const LogoIcon = () => (
   <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-400 to-red-600 flex items-center justify-center shadow-lg shadow-red-500/30">
@@ -10,21 +11,27 @@ const LogoIcon = () => (
 );
 
 export function LandingPage() {
+  const navigate = useNavigate();
+
   return (
-    <div className="min-h-[100dvh] lg:h-[100dvh] lg:overflow-hidden overflow-x-hidden bg-slate-50 flex flex-col">
-      <header className="fixed top-0 w-full px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between bg-white/90 backdrop-blur-md shadow-sm border-b z-50 shrink-0 gap-2">
-        <Link to="/" className="flex items-center gap-2 sm:gap-3 shrink-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2">
-          <LogoIcon />
-          <span className="text-lg sm:text-2xl font-extrabold text-slate-800 tracking-tight">КвизПульт</span>
-        </Link>
-        <nav className="flex items-center gap-3 sm:gap-4 shrink-0">
-          <Link to="/login" className="text-xs sm:text-sm font-medium text-slate-600 hover:text-slate-900">
-            Войти
-          </Link>
-          <Link to="/register">
-            <Button size="sm" className="h-8 px-3 text-xs sm:h-9 sm:px-4 sm:text-sm">Регистрация</Button>
-          </Link>
-        </nav>
+    <div className="min-h-[100dvh] bg-slate-50 flex flex-col">
+      <header className="fixed top-0 w-full z-50 bg-white/80 backdrop-blur-md border-b border-slate-200/50 transition-all duration-300">
+        <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12">
+          <div className="flex justify-between items-center h-16 sm:h-20">
+            <div className="flex items-center gap-2 group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 rounded-md" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} tabIndex={0}>
+              <LogoIcon />
+              <span className="text-xl font-black text-slate-800 tracking-tight group-hover:text-primary transition-colors">КвизПульт</span>
+            </div>
+            <div className="flex items-center gap-3 sm:gap-4">
+              <Button variant="ghost" className="hidden sm:flex text-slate-600 hover:text-slate-900 font-medium" onClick={() => navigate('/login')}>
+                Вход
+              </Button>
+              <Button className="font-bold shadow-md shadow-primary/20 hover:shadow-primary/30 transition-all" onClick={() => navigate('/register')}>
+                Создать игру
+              </Button>
+            </div>
+          </div>
+        </div>
       </header>
 
       <main id="main-content" tabIndex={-1} className="flex-1 w-full max-w-7xl mx-auto px-6 pt-24 pb-12 lg:pt-24 lg:pb-8 grid lg:grid-cols-2 gap-8 lg:gap-4 items-center relative">
@@ -45,7 +52,7 @@ export function LandingPage() {
               </Button>
             </Link>
           </div>
-          
+
           <div className="pt-4 lg:pt-8 grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-2xl mx-auto lg:mx-0">
             {/* Card 1 */}
             <div className="bg-white rounded-[1.5rem] p-5 xl:p-6 shadow-lg shadow-slate-200/50 border border-slate-100 flex flex-col items-center sm:items-start text-center sm:text-left transition-transform hover:-translate-y-1 duration-300">
@@ -55,7 +62,7 @@ export function LandingPage() {
               <h3 className="font-bold text-base text-slate-900 mb-1">Мгновенная реакция</h3>
               <p className="text-xs text-slate-500 leading-relaxed">Сигнал доходит за миллисекунды без задержек.</p>
             </div>
-            
+
             {/* Card 2 */}
             <div className="bg-white rounded-[1.5rem] p-5 xl:p-6 shadow-lg shadow-slate-200/50 border border-slate-100 flex flex-col items-center sm:items-start text-center sm:text-left transition-transform hover:-translate-y-1 duration-300">
               <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-100 to-blue-200 text-blue-600 flex items-center justify-center shadow-inner mb-4">
@@ -82,7 +89,7 @@ export function LandingPage() {
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center -translate-y-10">
             <div className="absolute w-[400px] h-[400px] bg-blue-200/40 rounded-full mix-blend-multiply blur-[80px] translate-x-10 -translate-y-10"></div>
             <div className="absolute w-[300px] h-[300px] bg-red-200/40 rounded-full mix-blend-multiply blur-[80px] -translate-x-10 translate-y-20"></div>
-            
+
             {/* Floating geometric confetti - properly scattered around */}
             <div className="hidden md:block absolute top-[10%] left-[5%] md:left-[15%] w-8 h-8 rounded-full bg-yellow-300 opacity-70 animate-bounce" style={{ animationDuration: '3s' }}></div>
             <div className="hidden md:block absolute bottom-[25%] left-[2%] md:left-[10%] w-6 h-6 rounded-lg bg-blue-300 opacity-70 transform rotate-45 animate-pulse" style={{ animationDuration: '4s' }}></div>
@@ -98,15 +105,15 @@ export function LandingPage() {
             <div className="absolute top-0 inset-x-0 h-7 flex justify-center z-30">
               <div className="w-32 h-6 bg-slate-800 rounded-b-2xl shadow-inner"></div>
             </div>
-            
+
             {/* Volume/Power Buttons on side */}
             <div className="absolute top-32 -right-3 w-1.5 h-12 bg-slate-700 rounded-r-md"></div>
             <div className="absolute top-48 -right-3 w-1.5 h-12 bg-slate-700 rounded-r-md"></div>
             <div className="absolute top-40 -left-3 w-1.5 h-16 bg-slate-700 rounded-l-md"></div>
-            
+
             {/* Phone Screen Container */}
             <div className="w-full h-full bg-slate-50 rounded-[2.25rem] overflow-hidden flex flex-col relative shadow-inner">
-              
+
               {/* Fake Status Bar */}
               <div className="h-7 w-full flex items-center justify-between px-6 pt-1 text-[10px] font-medium text-slate-800">
                 <span>9:41</span>
@@ -121,22 +128,22 @@ export function LandingPage() {
                 <span className="font-bold text-slate-800 text-lg">Вы: Игрок 1</span>
                 <div className="absolute right-4 w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-xs text-slate-600 font-bold">1</div>
               </div>
-              
+
               {/* Button Area */}
               <div className="flex-1 flex flex-col items-center justify-center p-6 gap-10 bg-gradient-to-b from-slate-50 to-slate-200">
                 <div className="relative">
                   {/* Outer ring */}
                   <div className="absolute -inset-4 bg-red-100 rounded-full animate-pulse opacity-50"></div>
-                  
+
                   {/* The Button */}
                   <div className="relative w-44 h-44 rounded-full bg-red-500 shadow-[0_15px_30px_rgba(239,68,68,0.4),_inset_0_-8px_20px_rgba(0,0,0,0.2),_inset_0_4px_10px_rgba(255,255,255,0.4)] flex items-center justify-center border-4 border-red-600 transition-transform active:scale-95 cursor-pointer">
                     <span className="text-white font-extrabold tracking-widest text-3xl relative z-20 drop-shadow-md">ЖМИ</span>
-                    
+
                     {/* Inner highlight for 3D effect */}
                     <div className="absolute top-2 w-3/4 h-1/3 bg-gradient-to-b from-white/30 to-transparent rounded-full opacity-50"></div>
                   </div>
                 </div>
-                
+
                 <div className="text-center space-y-2">
                   <p className="text-xl font-bold text-slate-700">Ожидание вопроса...</p>
                   <p className="text-sm text-slate-600">Приготовьтесь нажать первым!</p>
@@ -149,6 +156,8 @@ export function LandingPage() {
           </div>
         </div>
       </main>
+
+      <Footer />
     </div>
   );
 }

@@ -23,4 +23,5 @@ export const config = {
     ? (process.env.CORS_ORIGIN || 'http://localhost:5173') 
     : defaultCors,
   uploadDir: process.env.UPLOAD_DIR || path.join(__dirname, '../../uploads'),
+  paymentsEnabled: process.env.PAYMENTS_ENABLED === 'true',
 };

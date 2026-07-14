@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { BillingModal } from './BillingModal';
 import { LayoutDashboard, History, Settings, LogOut, Plus, Crown, Target, User, Save, Calendar, Pencil, Upload, Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
+import { Footer } from './Footer';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
@@ -324,6 +325,10 @@ export function DashboardLayout({
         </header>
 
         {children}
+
+        <div className="mt-auto">
+          <Footer />
+        </div>
 
         <Dialog open={showLogoutDialog} onOpenChange={setShowLogoutDialog}>
           <DialogContent className="w-[95vw] max-w-[425px] p-6 rounded-2xl">
