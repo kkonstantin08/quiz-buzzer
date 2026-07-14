@@ -10,7 +10,7 @@ describe('Legal Pages Frontend Tests', () => {
   describe('LegalPagePlaceholder', () => {
     it('renders children in development (PROD=false)', () => {
       // Vitest runs in test/dev mode by default, so PROD is false
-      Object.defineProperty(import.meta.env, 'PROD', { value: false, configurable: true });
+      Object.defineProperty(import.meta.env, 'PROD', { value: false, configurable: true, enumerable: true, writable: true });
       
       render(
         <LegalPagePlaceholder title="Test Title">
@@ -23,7 +23,7 @@ describe('Legal Pages Frontend Tests', () => {
     });
 
     it('hides children and shows placeholder in production (PROD=true)', () => {
-      Object.defineProperty(import.meta.env, 'PROD', { value: true, configurable: true });
+      Object.defineProperty(import.meta.env, 'PROD', { value: true, configurable: true, enumerable: true, writable: true });
       
       render(
         <LegalPagePlaceholder title="Test Title">
@@ -39,7 +39,7 @@ describe('Legal Pages Frontend Tests', () => {
 
   describe('CookiesPage', () => {
     it('renders required technologies', () => {
-      Object.defineProperty(import.meta.env, 'PROD', { value: false, configurable: true });
+      Object.defineProperty(import.meta.env, 'PROD', { value: false, configurable: true, enumerable: true, writable: true });
       
       render(<CookiesPage />);
       
