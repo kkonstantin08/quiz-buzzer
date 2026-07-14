@@ -49,11 +49,11 @@ export const api = {
     return res.json();
   },
 
-  async register(email: string, password: string) {
+  async register(email: string, password: string, legalContext?: { termsAccepted: boolean; displayedTermsVersion: string }) {
     const res = await customFetch(`${API_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, termsAccepted: legalContext?.termsAccepted, displayedTermsVersion: legalContext?.displayedTermsVersion }),
     });
     if (!res.ok) {
       let errorMsg = 'Registration failed';

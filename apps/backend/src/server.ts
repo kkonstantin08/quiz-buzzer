@@ -12,6 +12,7 @@ import { billingRouter } from './billing';
 import { settingsRouter } from './settings';
 import { historyRouter } from './history';
 import { roomsRouter } from './rooms/api';
+import { legalRouter } from './legal';
 import { setupSocketIO } from './realtime';
 import { ClientToServerEvents, ServerToClientEvents } from 'shared';
 
@@ -52,6 +53,7 @@ app.use('/api/billing', billingRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/history', historyRouter);
 app.use('/api/rooms', roomsRouter);
+app.use('/api/legal', legalRouter);
 
 import { ensureUploadDirExists } from './utils/upload';
 

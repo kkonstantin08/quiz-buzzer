@@ -22,7 +22,15 @@ export function BillingModal({ onActivated }: { onActivated: () => void }) {
     }
   };
 
+  const paymentsEnabled = import.meta.env.VITE_PAYMENTS_ENABLED === 'true';
+
   const handleCheckout = () => {
+    if (!paymentsEnabled) {
+      toast.info('Оплата временно недоступна', {
+        description: <span className="text-slate-600">В настоящее время прием платежей отключен. Пожалуйста, воспользуйтесь бесплатной активацией.</span>
+      });
+      return;
+    }
     toast.info('В разработке', {
       description: <span className="text-slate-600">Интеграция с ЮKassa находится в разработке. Пожалуйста, воспользуйтесь бесплатной активацией.</span>
     });
@@ -119,7 +127,7 @@ export function BillingModal({ onActivated }: { onActivated: () => void }) {
                 {/* Action Buttons */}
                 <div className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both" style={{ animationDelay: '600ms' }}>
                   <Button 
-                    className="w-full h-14 text-lg font-bold bg-gradient-to-r from-violet-600 hover:from-violet-500 to-fuchsia-600 hover:to-fuchsia-500 text-white shadow-xl shadow-violet-500/30 border-0 transition-all hover:shadow-violet-500/50 hover:-translate-y-0.5" 
+                    className={`w-full h-14 text-lg font-bold text-white shadow-xl border-0 transition-all ${paymentsEnabled ? 'bg-gradient-to-r from-violet-600 hover:from-violet-500 to-fuchsia-600 hover:to-fuchsia-500 shadow-violet-500/30 hover:shadow-violet-500/50 hover:-translate-y-0.5' : 'bg-slate-400 cursor-not-allowed shadow-none'}`}
                     onClick={handleCheckout}
                   >
                     Оплатить подписку (ЮKassa)

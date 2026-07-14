@@ -9,6 +9,9 @@ import { requireAuth, AuthRequest } from '../auth/middleware';
 
 billingRouter.post('/checkout', requireAuth, async (req: AuthRequest, res: any) => {
   try {
+    if (!config.paymentsEnabled) {
+      return res.status(503).json({ error: 'В настоящее время прием платежей недоступен' });
+    }
     // Stub for YooKassa or other payment gateway
     // In the future, this will call YooKassa API to get a payment URL
     return res.json({ paymentUrl: 'https://yookassa.ru/stub' });

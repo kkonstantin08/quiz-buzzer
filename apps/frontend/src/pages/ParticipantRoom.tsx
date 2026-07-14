@@ -453,13 +453,13 @@ export function ParticipantRoom() {
             <form onSubmit={handleJoin} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="participant-name" className="sr-only">
-                  Ваше имя
+                  Имя или игровой псевдоним
                 </Label>
                 <Input
                   id="participant-name"
                   name="participantName"
                   autoComplete="username"
-                  placeholder="Ваше имя"
+                  placeholder="Имя или игровой псевдоним"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   maxLength={20}
@@ -468,6 +468,10 @@ export function ParticipantRoom() {
                   className="h-14 text-lg text-center font-semibold"
                 />
               </div>
+              <p className="text-xs text-slate-500 text-center leading-relaxed mt-2">
+                Не указывайте фамилию, телефон и другие лишние персональные данные.{' '}
+                <a href="/legal/privacy" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Политика обработки данных</a>
+              </p>
               <Button
                 type="submit"
                 className="w-full h-14 text-lg shadow-lg shadow-primary/20"
