@@ -12,7 +12,7 @@ test.describe('Legal Pages', () => {
     await expect(page.getByText('Документы находятся в разработке (черновик)')).toBeVisible();
 
     // Verify footer is present
-    await expect(page.getByText(/Тумакин Алексей Анатольевич/)).toBeVisible();
+    await expect(page.locator('footer').getByText(/Тумакин Алексей Анатольевич/)).toBeVisible();
   });
 
   test('should link to all legal documents from footer', async ({ page }) => {
