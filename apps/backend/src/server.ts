@@ -11,6 +11,7 @@ import { authRouter } from './auth';
 import { billingRouter } from './billing';
 import { settingsRouter } from './settings';
 import { historyRouter } from './history';
+import { checkBillingReadiness } from './billing/readiness';
 import { roomsRouter } from './rooms/api';
 import { legalRouter } from './legal';
 import { setupSocketIO } from './realtime';
@@ -72,6 +73,16 @@ app.get('/api/health', async (req, res) => {
 setupSocketIO(io);
 
 if (process.env.NODE_ENV !== 'test') {
+  if (config.paymentsEnabled) {
+    const readiness = checkBillingReadiness();
+    if (!readiness.ready) {
+      console.error('PAYMENTS_ENABLED=true is forbidden until YooKassa integration and payment preflight are implemented.');
+      console.error('Reasons:');
+      readiness.reasons.forEach(r => console.error(` - ${r}`));
+      process.exit(1);
+    }
+  }
+
   ensureUploadDirExists();
   server.listen(Number(config.port), '0.0.0.0', () => {
     console.log(`Backend server listening on port ${config.port}`);

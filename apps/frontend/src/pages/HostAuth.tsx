@@ -174,7 +174,7 @@ export function HostAuth({ defaultIsLogin = true }: { defaultIsLogin?: boolean }
                     </button>
                   </div>
 
-                  <div className="space-y-3 pt-2">
+                  <div className="space-y-1 pt-2">
                     <div className="flex items-start gap-2">
                       <input
                         type="checkbox"

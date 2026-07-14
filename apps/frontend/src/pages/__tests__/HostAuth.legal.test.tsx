@@ -87,4 +87,32 @@ describe('HostAuth - Legal Acceptance', () => {
       expect(api.login).toHaveBeenCalled();
     });
   });
+
+  it('displays error message when document version mismatches', async () => {
+    const { api } = await import('../../services/api');
+    api.register = vi.fn().mockRejectedValue(new Error('Версия документа изменилась. Обновите страницу и повторите действие.'));
+
+    render(
+      <BrowserRouter>
+        <HostAuth />
+      </BrowserRouter>
+    );
+
+    // Switch to Registration mode
+    fireEvent.click(screen.getByRole('button', { name: /Нет аккаунта\? Зарегистрируйтесь/i }));
+
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'test@example.com' } });
+    fireEvent.change(screen.getByLabelText('Пароль'), { target: { value: 'password123' } });
+    fireEvent.change(screen.getByLabelText('Повторите пароль'), { target: { value: 'password123' } });
+    
+    // Accept terms
+    fireEvent.click(screen.getByRole('checkbox', { name: /Я принимаю/i }));
+    
+    // Submit
+    fireEvent.click(screen.getByRole('button', { name: /Зарегистрироваться/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Версия документа изменилась. Обновите страницу и повторите действие.')).toBeInTheDocument();
+    });
+  });
 });

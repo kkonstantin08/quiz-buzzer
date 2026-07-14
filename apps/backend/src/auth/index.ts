@@ -232,6 +232,15 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Необходимо принять Пользовательское соглашение' });
     }
 
+    const serverTermsVersion = legalBackendConfig.versions[LegalDocumentType.TERMS];
+    if (displayedTermsVersion !== serverTermsVersion) {
+      return res.status(409).json({
+        code: 'DOCUMENT_VERSION_MISMATCH',
+        message: 'Версия документа изменилась. Обновите страницу и повторите действие.',
+        currentVersion: serverTermsVersion
+      });
+    }
+
     const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!EMAIL_REGEX.test(email)) {
       return res.status(400).json({ error: 'Неверный формат email' });

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -8,6 +8,17 @@ import { api } from '../services/api';
 export function BillingModal({ onActivated }: { onActivated: () => void }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [billingStatus, setBillingStatus] = useState<{ checkoutAvailable: boolean; loading: boolean }>({ checkoutAvailable: false, loading: true });
+
+  useEffect(() => {
+    api.getBillingStatus()
+      .then(status => {
+        setBillingStatus({ checkoutAvailable: status.checkoutAvailable, loading: false });
+      })
+      .catch(() => {
+        setBillingStatus({ checkoutAvailable: false, loading: false });
+      });
+  }, []);
 
   const handleFreeActivation = async () => {
     setLoading(true);
@@ -22,18 +33,19 @@ export function BillingModal({ onActivated }: { onActivated: () => void }) {
     }
   };
 
-  const paymentsEnabled = import.meta.env.VITE_PAYMENTS_ENABLED === 'true';
-
-  const handleCheckout = () => {
-    if (!paymentsEnabled) {
+  const handleCheckout = async () => {
+    if (!billingStatus.checkoutAvailable) {
       toast.info('Оплата временно недоступна', {
         description: <span className="text-slate-600">В настоящее время прием платежей отключен. Пожалуйста, воспользуйтесь бесплатной активацией.</span>
       });
       return;
     }
-    toast.info('В разработке', {
-      description: <span className="text-slate-600">Интеграция с ЮKassa находится в разработке. Пожалуйста, воспользуйтесь бесплатной активацией.</span>
-    });
+    
+    try {
+      await api.checkout();
+    } catch (err: any) {
+      toast.error(err.message || 'Ошибка инициализации оплаты');
+    }
   };
 
   return (
@@ -75,8 +87,8 @@ export function BillingModal({ onActivated }: { onActivated: () => void }) {
                     <Rocket size={20} />
                   </div>
                   <div>
-                    <h4 className="font-bold text-slate-900 text-base mb-0.5">Безлимитные игры</h4>
-                    <p className="text-slate-600 text-sm leading-snug">Создавайте неограниченное количество игр и раундов для любой аудитории.</p>
+                    <h4 className="font-bold text-slate-900 text-base mb-0.5">Полный доступ</h4>
+                    <p className="text-slate-600 text-sm leading-snug">Полный доступ к доступным функциям сервиса.</p>
                   </div>
                 </div>
 
@@ -85,8 +97,8 @@ export function BillingModal({ onActivated }: { onActivated: () => void }) {
                     <Zap size={20} />
                   </div>
                   <div>
-                    <h4 className="font-bold text-slate-900 text-base mb-0.5">Моментальный отклик</h4>
-                    <p className="text-slate-600 text-sm leading-snug">Идеальная честность игры благодаря риал-тайм архитектуре без задержек.</p>
+                    <h4 className="font-bold text-slate-900 text-base mb-0.5">Работа в реальном времени</h4>
+                    <p className="text-slate-600 text-sm leading-snug">Современная архитектура для быстрой синхронизации участников.</p>
                   </div>
                 </div>
 
@@ -97,6 +109,7 @@ export function BillingModal({ onActivated }: { onActivated: () => void }) {
                   <div>
                     <h4 className="font-bold text-slate-900 text-base mb-0.5">Простое подключение</h4>
                     <p className="text-slate-600 text-sm leading-snug">Никаких скачиваний. Участникам нужен только телефон, чтобы сканировать QR-код.</p>
+
                   </div>
                 </div>
               </div>
@@ -119,7 +132,7 @@ export function BillingModal({ onActivated }: { onActivated: () => void }) {
                       <span className="text-lg text-slate-500 font-medium mb-1">/ месяц</span>
                     </div>
                     <p className="text-xs text-slate-500">
-                      Автоматическое продление. Отмена в любой момент.
+                      {import.meta.env.DEV ? 'TODO_LEGAL(Условия тарифа уточняются)' : 'Условия тарифа уточняются'}
                     </p>
                   </div>
                 </div>
@@ -127,10 +140,12 @@ export function BillingModal({ onActivated }: { onActivated: () => void }) {
                 {/* Action Buttons */}
                 <div className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both" style={{ animationDelay: '600ms' }}>
                   <Button 
-                    className={`w-full h-14 text-lg font-bold text-white shadow-xl border-0 transition-all ${paymentsEnabled ? 'bg-gradient-to-r from-violet-600 hover:from-violet-500 to-fuchsia-600 hover:to-fuchsia-500 shadow-violet-500/30 hover:shadow-violet-500/50 hover:-translate-y-0.5' : 'bg-slate-400 cursor-not-allowed shadow-none'}`}
+                    className={`w-full h-14 text-lg font-bold text-white shadow-xl border-0 transition-all ${billingStatus.checkoutAvailable ? 'bg-gradient-to-r from-violet-600 hover:from-violet-500 to-fuchsia-600 hover:to-fuchsia-500 shadow-violet-500/30 hover:shadow-violet-500/50 hover:-translate-y-0.5' : 'bg-slate-400 cursor-not-allowed shadow-none'}`}
                     onClick={handleCheckout}
+                    disabled={billingStatus.loading || !billingStatus.checkoutAvailable}
+                    aria-disabled={billingStatus.loading || !billingStatus.checkoutAvailable}
                   >
-                    Оплатить подписку (ЮKassa)
+                    {billingStatus.loading ? 'Проверка...' : billingStatus.checkoutAvailable ? 'Оплатить подписку (ЮKassa)' : 'Оплата временно недоступна'}
                   </Button>
                   
                   <div className="relative w-full text-center py-1">

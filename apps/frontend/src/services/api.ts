@@ -223,5 +223,28 @@ export const api = {
       throw new Error(translateError(errorMsg));
     }
     return res.json();
+  },
+
+  async getBillingStatus() {
+    try {
+      const res = await customFetch(`${API_URL}/billing/status`);
+      if (!res.ok) return { paymentsEnabled: false, providerConfigured: false, checkoutAvailable: false };
+      return res.json();
+    } catch (e) {
+      return { paymentsEnabled: false, providerConfigured: false, checkoutAvailable: false };
+    }
+  },
+
+  async checkout() {
+    const res = await customFetch(`${API_URL}/billing/checkout`, { method: 'POST' });
+    if (!res.ok) {
+      let errorMsg = 'Checkout failed';
+      try {
+        const error = await res.json();
+        errorMsg = error.message || error.error || errorMsg;
+      } catch (e) {}
+      throw new Error(translateError(errorMsg));
+    }
+    return res.json();
   }
 };
