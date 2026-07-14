@@ -1,10 +1,12 @@
 import React from 'react';
 import { legalConfig } from '../../config/legal';
-import { LegalPagePlaceholder } from './LegalPagePlaceholder';
+import { LegalDraftNotice } from '../../components/LegalDraftNotice';
+import { LegalTodo } from '../../components/LegalTodo';
 
 export function DetailsPage() {
   return (
-    <LegalPagePlaceholder title="Реквизиты ИП">
+    <>
+      <LegalDraftNotice />
       <h1>Реквизиты ИП</h1>
       <div className="not-prose bg-slate-50 border border-slate-200 rounded-xl p-6 space-y-4">
         <div>
@@ -40,6 +42,6 @@ export function DetailsPage() {
           </ul>
         </div>
       </div>
-    </LegalPagePlaceholder>
+    </>
   );
 }

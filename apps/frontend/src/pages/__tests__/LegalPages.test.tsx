@@ -1,48 +1,51 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { LegalPagePlaceholder } from '../legal/LegalPagePlaceholder';
+import { LegalDraftNotice } from '../../components/LegalDraftNotice';
+import { LegalTodo } from '../../components/LegalTodo';
 import { CookiesPage } from '../legal/CookiesPage';
 
 describe('Legal Pages Frontend Tests', () => {
-  const originalEnv = import.meta.env;
+  describe('LegalDraftNotice', () => {
+    it('does not render in development (MODE=development)', () => {
+      vi.stubEnv('MODE', 'development');
 
-  describe('LegalPagePlaceholder', () => {
-    it('renders children in development (PROD=false)', () => {
-      // Vitest runs in test/dev mode by default, so PROD is false
-      vi.stubEnv('PROD', false as any);
-      
-      render(
-        <LegalPagePlaceholder title="Test Title">
-          <div data-testid="draft-content">Draft TODO_LEGAL</div>
-        </LegalPagePlaceholder>
-      );
-
-      expect(screen.getByTestId('draft-content')).toBeInTheDocument();
-      expect(screen.queryByText('Документ находится в подготовке. Приём платежей отключён.')).not.toBeInTheDocument();
+      render(<LegalDraftNotice />);
+      expect(screen.queryByText(/Документ находится в разработке/)).not.toBeInTheDocument();
     });
 
-    it('hides children and shows placeholder in production (PROD=true)', () => {
-      vi.stubEnv('PROD', true as any);
-      
-      render(
-        <LegalPagePlaceholder title="Test Title">
-          <div data-testid="draft-content">Draft TODO_LEGAL</div>
-        </LegalPagePlaceholder>
-      );
+    it('renders in production (MODE=production)', () => {
+      vi.stubEnv('MODE', 'production');
 
-      expect(screen.queryByTestId('draft-content')).not.toBeInTheDocument();
-      expect(screen.getByText('Test Title')).toBeInTheDocument();
-      expect(screen.getByText('Документ находится в подготовке. Приём платежей отключён.')).toBeInTheDocument();
+      render(<LegalDraftNotice />);
+      expect(screen.getByText(/Документ находится в разработке/)).toBeInTheDocument();
+      expect(screen.getByText(/Представленный текст является черновиком/)).toBeInTheDocument();
+    });
+  });
+
+  describe('LegalTodo', () => {
+    it('renders in development (MODE=development)', () => {
+      vi.stubEnv('MODE', 'development');
+
+      render(<LegalTodo id="test" description="Needs review" />);
+      expect(screen.getByText('TODO_LEGAL(test)')).toBeInTheDocument();
+      expect(screen.getByText('Needs review')).toBeInTheDocument();
+    });
+
+    it('does not render in production (MODE=production)', () => {
+      vi.stubEnv('MODE', 'production');
+
+      render(<LegalTodo id="test" description="Needs review" />);
+      expect(screen.queryByText('TODO_LEGAL(test)')).not.toBeInTheDocument();
     });
   });
 
   describe('CookiesPage', () => {
     it('renders required technologies', () => {
-      vi.stubEnv('PROD', false as any);
-      
+      vi.stubEnv('MODE', 'development');
+
       render(<CookiesPage />);
-      
+
       expect(screen.getByText(/hostToken/)).toBeInTheDocument();
       expect(screen.getByText(/cookieConsent/)).toBeInTheDocument();
       expect(screen.getByText(/quiz_participant_token/)).toBeInTheDocument();

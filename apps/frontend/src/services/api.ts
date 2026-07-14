@@ -56,12 +56,21 @@ export const api = {
       body: JSON.stringify({ email, password, termsAccepted: legalContext?.termsAccepted, displayedTermsVersion: legalContext?.displayedTermsVersion }),
     });
     if (!res.ok) {
-      let errorMsg = 'Registration failed';
       try {
-        const error = await res.json();
-        errorMsg = error.error || errorMsg;
-      } catch (e) {}
-      throw new Error(translateError(errorMsg));
+        const errObj = await res.json();
+        // Priority: code-specific handling first, then specific message, then generic error string
+        if (errObj.code) {
+           // We can attach the code to the error object so the UI can check it
+           const err: any = new Error(errObj.message || errObj.error || 'Registration failed');
+           err.code = errObj.code;
+           throw err;
+        }
+        const errorMsg = errObj.error || errObj.message || 'Registration failed';
+        throw new Error(translateError(errorMsg));
+      } catch (e) {
+        if (e instanceof Error && (e as any).code) throw e;
+        throw new Error(translateError(e instanceof Error ? e.message : 'Registration failed'));
+      }
     }
     return res.json();
   },

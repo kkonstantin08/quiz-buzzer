@@ -74,11 +74,10 @@ setupSocketIO(io);
 
 if (process.env.NODE_ENV !== 'test') {
   if (config.paymentsEnabled) {
-    const readiness = checkBillingReadiness();
+    const readiness = checkBillingReadiness(process.env);
     if (!readiness.ready) {
-      console.error('PAYMENTS_ENABLED=true is forbidden until YooKassa integration and payment preflight are implemented.');
-      console.error('Reasons:');
-      readiness.reasons.forEach(r => console.error(` - ${r}`));
+      console.error('CRITICAL: PAYMENTS_ENABLED=true, но инфраструктура не готова.');
+      console.error('Причины:', readiness.reasons);
       process.exit(1);
     }
   }

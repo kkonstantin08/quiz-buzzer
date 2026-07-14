@@ -4,22 +4,24 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const ROOT_DIR = path.resolve(__dirname, '..');
+const ROOT_DIR = process.env.LEGAL_CHECK_ROOT || path.resolve(__dirname, '..');
 
-const SEARCH_PATTERN = 'TODO_LEGAL';
-const EXCLUDE_DIRS = ['node_modules', 'dist', '.git', 'playwright-report', 'test-results', 'scripts'];
-const EXCLUDE_FILES = ['legal-check.mjs', 'legal-readiness-todo.md'];
+const SEARCH_PATTERN = 'TODO_LEGAL(';
+const EXCLUDE_DIRS = ['node_modules', 'dist', 'build', 'coverage', 'playwright-report', 'test-results', '.git'];
+const EXCLUDE_FILES = ['package-lock.json', 'legal-check.mjs', 'legal-check.test.mjs'];
+const ALLOWED_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.md', '.json', '.yml', '.yaml', '.html'];
 
 let foundTodos = false;
 
 function scanDirectory(dir) {
+  if (!fs.existsSync(dir)) return;
   const files = fs.readdirSync(dir);
 
   for (const file of files) {
     const fullPath = path.join(dir, file);
     const relativePath = path.relative(ROOT_DIR, fullPath);
 
-    if (EXCLUDE_DIRS.some(exclude => relativePath.startsWith(exclude) || relativePath.includes(`/${exclude}/`))) {
+    if (EXCLUDE_DIRS.some(exclude => relativePath === exclude || relativePath.startsWith(exclude + path.sep))) {
       continue;
     }
 
@@ -27,11 +29,16 @@ function scanDirectory(dir) {
       continue;
     }
 
+    if (file === 'fixtures' && relativePath.includes('legal-check')) {
+       // skip test fixtures for this script itself when scanning the root project
+       continue;
+    }
+
     const stat = fs.statSync(fullPath);
 
     if (stat.isDirectory()) {
       scanDirectory(fullPath);
-    } else if (stat.isFile() && (fullPath.endsWith('.ts') || fullPath.endsWith('.tsx') || fullPath.endsWith('.js') || fullPath.endsWith('.jsx'))) {
+    } else if (stat.isFile() && ALLOWED_EXTENSIONS.some(ext => fullPath.endsWith(ext))) {
       const content = fs.readFileSync(fullPath, 'utf8');
       const lines = content.split('\n');
 

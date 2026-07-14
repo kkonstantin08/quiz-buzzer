@@ -60,7 +60,7 @@ describe('Legal Acceptance API', () => {
       .set('Cookie', `hostToken=${authToken}`)
       .send({ documentType: 'unknown', documentVersion: '1.0' });
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe('Неизвестный тип документа');
+    expect(res.body.error).toBe('Неизвестный или недопустимый тип документа для данного действия');
   });
 
   it('rejects missing documentVersion', async () => {
@@ -82,22 +82,38 @@ describe('Legal Acceptance API', () => {
     expect(res.body.currentVersion).toBe(legalBackendConfig.versions[LegalDocumentType.OFFER]);
   });
 
-  it('rejects unknown acceptance source in URL', async () => {
+  it('returns 404 for unknown acceptance source in URL', async () => {
     const res = await request(app)
       .post('/legal/accept/hacked-source')
       .set('Cookie', `hostToken=${authToken}`)
       .send({ documentType: LegalDocumentType.OFFER, documentVersion: legalBackendConfig.versions[LegalDocumentType.OFFER] });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toBe('Неизвестный источник согласия');
+    expect(res.status).toBe(404);
   });
 
-  it('rejects checkout source', async () => {
+  it('returns 404 for checkout source (not implemented yet)', async () => {
     const res = await request(app)
       .post('/legal/accept/checkout')
       .set('Cookie', `hostToken=${authToken}`)
       .send({ documentType: LegalDocumentType.OFFER, documentVersion: legalBackendConfig.versions[LegalDocumentType.OFFER] });
-    expect(res.status).toBe(403);
-    expect(res.body.error).toBe('Принятие через checkout временно недоступно');
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 for registration source', async () => {
+    const res = await request(app)
+      .post('/legal/accept/registration')
+      .set('Cookie', `hostToken=${authToken}`)
+      .send({ documentType: LegalDocumentType.TERMS, documentVersion: legalBackendConfig.versions[LegalDocumentType.TERMS] });
+    expect(res.status).toBe(404);
+  });
+
+  it('rejects unsupported documentType for a specific route', async () => {
+    // MARKETING is not allowed in updated-document
+    const res = await request(app)
+      .post('/legal/accept/updated-document')
+      .set('Cookie', `hostToken=${authToken}`)
+      .send({ documentType: LegalDocumentType.MARKETING, documentVersion: '1.0' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Неизвестный или недопустимый тип документа для данного действия');
   });
 
   it('records acceptance idempotently', async () => {

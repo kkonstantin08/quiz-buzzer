@@ -7,6 +7,14 @@ import { requireAuth } from '../../auth/middleware';
 import jwt from 'jsonwebtoken';
 import { config } from '../../config';
 
+let mockUserId = 'test-id';
+jest.mock('../../auth/middleware', () => ({
+  requireAuth: (req: any, res: any, next: any) => {
+    req.userId = mockUserId;
+    next();
+  }
+}));
+
 const app = express();
 app.use(express.json());
 app.use(cookieParser());
@@ -25,20 +33,11 @@ describe('Billing Free Trial API', () => {
       },
     });
     testUserId = user.id;
-
-    const session = await prisma.session.create({
-      data: {
-        userId: testUserId,
-        expiresAt: new Date(Date.now() + 100000),
-      },
-    });
-
-    authToken = jwt.sign({ userId: testUserId, sessionId: session.id }, config.jwtSecret);
+    mockUserId = user.id;
   });
 
   afterEach(async () => {
     await prisma.subscription.deleteMany({ where: { hostUserId: testUserId } });
-    await prisma.session.deleteMany({ where: { userId: testUserId } });
     await prisma.hostUser.delete({ where: { id: testUserId } });
   });
 
@@ -48,8 +47,8 @@ describe('Billing Free Trial API', () => {
 
   it('activates trial exactly once when concurrent requests are made', async () => {
     // Make two concurrent requests
-    const req1 = request(app).post('/billing/activate-free').set('Cookie', `hostToken=${authToken}`).send();
-    const req2 = request(app).post('/billing/activate-free').set('Cookie', `hostToken=${authToken}`).send();
+    const req1 = request(app).post('/billing/activate-free').send();
+    const req2 = request(app).post('/billing/activate-free').send();
 
     const [res1, res2] = await Promise.all([req1, req2]);
 
@@ -76,7 +75,7 @@ describe('Billing Free Trial API', () => {
       }, options);
     });
 
-    const res = await request(app).post('/billing/activate-free').set('Cookie', `hostToken=${authToken}`).send();
+    const res = await request(app).post('/billing/activate-free').send();
     
     expect(res.status).toBe(500);
 
