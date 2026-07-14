@@ -22,17 +22,18 @@ export function Footer() {
           <div>
             <h3 className="font-semibold text-white mb-4">Документы</h3>
             <ul className="space-y-2 text-sm">
-              <li><Link to="/legal/offer" className="hover:text-white transition-colors">Публичная оферта</Link></li>
-              <li><Link to="/legal/terms" className="hover:text-white transition-colors">Пользовательское соглашение</Link></li>
-              <li><Link to="/legal/privacy" className="hover:text-white transition-colors">Политика конфиденциальности</Link></li>
+              <li><Link to={legalConfig.urls.offer} className="hover:text-white transition-colors">Публичная оферта</Link></li>
+              <li><Link to={legalConfig.urls.terms} className="hover:text-white transition-colors">Пользовательское соглашение</Link></li>
+              <li><Link to={legalConfig.urls.privacy} className="hover:text-white transition-colors">Политика конфиденциальности</Link></li>
+              <li><Link to={legalConfig.urls.subscription} className="hover:text-white transition-colors">Условия подписки</Link></li>
             </ul>
           </div>
           <div>
             <h3 className="font-semibold text-white mb-4">Информация</h3>
             <ul className="space-y-2 text-sm">
-              <li><Link to="/legal/details" className="hover:text-white transition-colors">Реквизиты</Link></li>
-              <li><Link to="/legal/cookies" className="hover:text-white transition-colors">Политика Cookie</Link></li>
-              <li><Link to="/legal/refunds" className="hover:text-white transition-colors">Возврат средств</Link></li>
+              <li><Link to={legalConfig.urls.details} className="hover:text-white transition-colors">Реквизиты</Link></li>
+              <li><Link to={legalConfig.urls.cookies} className="hover:text-white transition-colors">Политика Cookie</Link></li>
+              <li><Link to={legalConfig.urls.refunds} className="hover:text-white transition-colors">Возврат средств</Link></li>
             </ul>
           </div>
         </div>
