@@ -70,7 +70,13 @@ export function HostAuth({ defaultIsLogin = true }: { defaultIsLogin?: boolean }
       // Cookie is set server-side; just navigate
       navigate('/dashboard', { replace: true });
     } catch (err: any) {
-      setError(err.message);
+      if (err.code === 'DOCUMENT_VERSION_MISMATCH') {
+        setError('Версия Пользовательского соглашения изменилась. Обновите страницу, ознакомьтесь с новой редакцией и повторите регистрацию.');
+      } else if (err.code === 'REGISTRATION_DISABLED') {
+        setError('Регистрация временно недоступна до публикации окончательной редакции Пользовательского соглашения');
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }

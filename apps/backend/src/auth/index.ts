@@ -221,6 +221,13 @@ authRouter.post('/avatar', requireAuth, (req: AuthRequest, res: any, next: any) 
 });
 
 authRouter.post('/register', registerLimiter, async (req, res) => {
+  if (process.env.REGISTRATION_ENABLED === 'false') {
+    return res.status(503).json({
+      code: 'REGISTRATION_DISABLED',
+      message: 'Регистрация временно недоступна'
+    });
+  }
+
   try {
     const { email, password, termsAccepted, displayedTermsVersion } = req.body;
     

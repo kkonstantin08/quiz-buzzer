@@ -5,34 +5,21 @@ import { LegalDocumentType, LegalAcceptanceSource, legalBackendConfig } from './
 
 export const legalRouter = Router();
 
-legalRouter.post('/accept/:source', requireAuth, async (req: AuthRequest, res: any) => {
+async function handleAcceptance(
+  req: AuthRequest,
+  res: any,
+  acceptanceSource: LegalAcceptanceSource,
+  allowedDocumentTypes: LegalDocumentType[]
+) {
   try {
     const { documentType, documentVersion } = req.body;
-    const { source } = req.params;
 
-    if (!documentType || !Object.values(LegalDocumentType).includes(documentType)) {
-      return res.status(400).json({ error: 'Неизвестный тип документа' });
+    if (!documentType || !allowedDocumentTypes.includes(documentType)) {
+      return res.status(400).json({ error: 'Неизвестный или недопустимый тип документа для данного действия' });
     }
 
     if (!documentVersion) {
       return res.status(400).json({ error: 'Не указана версия документа' });
-    }
-
-    // Server-side mapping of URL parameter to LegalAcceptanceSource
-    const sourceMap: Record<string, LegalAcceptanceSource> = {
-      'registration': LegalAcceptanceSource.REGISTRATION,
-      'updated-document': LegalAcceptanceSource.DOCUMENT_UPDATE,
-      'account-settings': LegalAcceptanceSource.ACCOUNT_SETTINGS,
-      'checkout': LegalAcceptanceSource.CHECKOUT
-    };
-
-    const acceptanceSource = sourceMap[source.toLowerCase()];
-    if (!acceptanceSource) {
-      return res.status(400).json({ error: 'Неизвестный источник согласия' });
-    }
-
-    if (acceptanceSource === LegalAcceptanceSource.CHECKOUT) {
-      return res.status(403).json({ error: 'Принятие через checkout временно недоступно' });
     }
 
     const docType = documentType as LegalDocumentType;
@@ -74,4 +61,22 @@ legalRouter.post('/accept/:source', requireAuth, async (req: AuthRequest, res: a
     console.error('Legal accept error:', error);
     return res.status(500).json({ error: 'Внутренняя ошибка сервера' });
   }
+}
+
+legalRouter.post('/accept/updated-document', requireAuth, (req: AuthRequest, res: any) => {
+  return handleAcceptance(req, res, LegalAcceptanceSource.DOCUMENT_UPDATE, [
+    LegalDocumentType.TERMS,
+    LegalDocumentType.OFFER,
+    LegalDocumentType.PRIVACY_ACKNOWLEDGEMENT
+  ]);
+});
+
+legalRouter.post('/accept/account-settings', requireAuth, (req: AuthRequest, res: any) => {
+  return handleAcceptance(req, res, LegalAcceptanceSource.ACCOUNT_SETTINGS, [
+    LegalDocumentType.TERMS,
+    LegalDocumentType.OFFER,
+    LegalDocumentType.PRIVACY_ACKNOWLEDGEMENT,
+    LegalDocumentType.RECURRING_PAYMENT,
+    LegalDocumentType.MARKETING
+  ]);
 });

@@ -1,9 +1,11 @@
 import React from 'react';
-import { LegalPagePlaceholder } from './LegalPagePlaceholder';
+import { LegalDraftNotice } from '../../components/LegalDraftNotice';
+import { LegalTodo } from '../../components/LegalTodo';
 
 export function CookiesPage() {
   return (
-    <LegalPagePlaceholder title="Политика использования файлов cookie">
+    <>
+      <LegalDraftNotice />
       <h1>Политика использования файлов cookie</h1>
       
       <h2>1. Общие положения</h2>
@@ -18,14 +20,14 @@ export function CookiesPage() {
       <h3>2.1. Авторизация Ведущих</h3>
       <p>
         <strong>hostToken</strong> (Cookie, HttpOnly) — используется для поддержания сессии авторизованного ведущего.
-        TODO_LEGAL(подтвердить срок жизни токена: 7 дней)
+        <LegalTodo id="todo_1" description="подтвердить срок жизни токена: 7 дней" />
       </p>
 
       <h3>2.2. Согласие с правилами</h3>
       <p>
         <strong>cookieConsent</strong> (localStorage) — флаг, подтверждающий, что пользователь ознакомился 
         с политикой использования cookie.
-        TODO_LEGAL(определить срок действия согласия, например, 1 год)
+        <LegalTodo id="todo_2" description="определить срок действия согласия, например, 1 год" />
       </p>
 
       <h3>2.3. Сессии Участников</h3>
@@ -33,7 +35,7 @@ export function CookiesPage() {
         <strong>quiz_participant_token</strong> / reconnect token (sessionStorage или localStorage в зависимости от реализации) — 
         технический токен, позволяющий участнику переподключиться к комнате при кратковременном обрыве связи 
         или случайном обновлении страницы. Не содержит персональных данных.
-        TODO_LEGAL(подтвердить, что токен удаляется после завершения игры или выхода из комнаты)
+        <LegalTodo id="todo_3" description="подтвердить, что токен удаляется после завершения игры или выхода из комнаты" />
       </p>
       
       <h3>2.4. Внутренние технические параметры</h3>
@@ -49,7 +51,7 @@ export function CookiesPage() {
         технологии строго необходимы для работы базовых функций.
       </p>
 
-      <h2>TODO_LEGAL(добавить контактную информацию DPO или службы поддержки по вопросам приватности)</h2>
-    </LegalPagePlaceholder>
+      <LegalTodo id="todo_4" description="добавить контактную информацию DPO или службы поддержки по вопросам приватности" />
+    </>
   );
 }

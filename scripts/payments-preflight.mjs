@@ -2,10 +2,14 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
+import dotenv from 'dotenv';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, '..');
+
+// Load environment variables for the preflight check
+dotenv.config({ path: path.join(ROOT_DIR, 'apps/backend/.env') });
 
 async function runPreflight() {
   console.log('Начинаем проверку готовности платежной системы (payments preflight)...');
@@ -30,7 +34,7 @@ async function runPreflight() {
     execSync(`npx tsc ${readinessTs} --outDir ${tempDir} --target esnext --module nodenext`, { stdio: 'ignore' });
     
     const readinessModule = await import(path.join(tempDir, 'readiness.js'));
-    const readiness = readinessModule.checkBillingReadiness();
+    const readiness = readinessModule.checkBillingReadiness(process.env);
     
     if (!readiness.ready) {
       console.error('\n[FAIL] Preflight не пройден. Интеграция с платежным провайдером не завершена:');

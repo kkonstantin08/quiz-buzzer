@@ -90,7 +90,9 @@ describe('HostAuth - Legal Acceptance', () => {
 
   it('displays error message when document version mismatches', async () => {
     const { api } = await import('../../services/api');
-    api.register = vi.fn().mockRejectedValue(new Error('Версия документа изменилась. Обновите страницу и повторите действие.'));
+    const err: any = new Error('Версия документа изменилась...');
+    err.code = 'DOCUMENT_VERSION_MISMATCH';
+    api.register = vi.fn().mockRejectedValue(err);
 
     render(
       <BrowserRouter>
@@ -112,7 +114,32 @@ describe('HostAuth - Legal Acceptance', () => {
     fireEvent.click(screen.getByRole('button', { name: /Зарегистрироваться/i }));
 
     await waitFor(() => {
-      expect(screen.getByText('Версия документа изменилась. Обновите страницу и повторите действие.')).toBeInTheDocument();
+      expect(screen.getByText('Версия Пользовательского соглашения изменилась. Обновите страницу, ознакомьтесь с новой редакцией и повторите регистрацию.')).toBeInTheDocument();
+    });
+  });
+
+  it('displays error message when registration is disabled', async () => {
+    const { api } = await import('../../services/api');
+    const err: any = new Error('Регистрация закрыта');
+    err.code = 'REGISTRATION_DISABLED';
+    api.register = vi.fn().mockRejectedValue(err);
+
+    render(
+      <BrowserRouter>
+        <HostAuth />
+      </BrowserRouter>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Нет аккаунта\? Зарегистрируйтесь/i }));
+
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'test@example.com' } });
+    fireEvent.change(screen.getByLabelText('Пароль'), { target: { value: 'password123' } });
+    fireEvent.change(screen.getByLabelText('Повторите пароль'), { target: { value: 'password123' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: /Я принимаю/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Зарегистрироваться/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Регистрация временно недоступна до публикации окончательной редакции Пользовательского соглашения')).toBeInTheDocument();
     });
   });
 });
