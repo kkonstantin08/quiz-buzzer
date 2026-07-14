@@ -7,7 +7,6 @@ export function OfferPage() {
   return (
     <>
       <LegalDraftNotice />
-      <h1>Публичная оферта</h1>
       <h1>Публичная оферта на оказание услуг</h1>
       <p className="text-sm text-slate-500 mb-8">Версия: {legalConfig.versions.offer}. Дата: {legalConfig.dates.offer}</p>
       
