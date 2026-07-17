@@ -2,7 +2,7 @@ import { DefaultEventsMap, Server, Socket } from 'socket.io';
 import { prisma } from '../prisma';
 import { HostSessionAuthCode, validateHostSession, validateHostToken } from '../auth/session';
 import { rooms, socketToRoom, createRoom, getRoomByCode } from '../rooms';
-import { BuzzSubmitResult, ClientToServerEvents, InternalRoomData, PublicRoomData, RoomCreateResult, RoomState, ServerToClientEvents, SocketErrorResult } from 'shared';
+import { BuzzSubmitResult, ClientToServerEvents, InternalRoomData, PublicRoomData, RoomCreateResult, RoomState, ServerToClientEvents, SocketErrorResult, GameResult } from 'shared';
 import xss from 'xss';
 import { reattachHostToRoom, startHostReconnectTimeout } from './host-reconnect';
 import { saveGameHistory, schedulePostFinishCleanup, scheduleMaxLifetimeCleanup, postFinishTimers, maxLifetimeTimers } from './room-lifecycle';
@@ -11,7 +11,7 @@ import crypto from 'crypto';
 import { appEvents } from '../events';
 import { deleteRoom } from '../rooms';
 import { withValidation, cleanupValidationRateLimits } from './validation';
-import { 
+import {
   SyncTimeSchema, SyncAckSchema, HostRejoinRoomSchema,
   RoomJoinSchema, ParticipantRejoinSchema, RoundStartSchema, BuzzSubmitStrictSchema,
   RoundResetSchema, EmptyPayloadSchema, HostClearScoresSchema
@@ -46,7 +46,7 @@ function rejectSocketAction(action: string, reason: string, socketId: string, ro
   else if (reason === 'already_joined') errorMsg = 'Вы уже в комнате';
   else if (reason === 'not_a_host') errorMsg = 'Только ведущий может выполнить это действие';
   else if (reason === 'not_a_participant' || reason === 'participant_not_found') errorMsg = 'Только участник может нажать кнопку';
-  
+
   return { success: false, error: errorMsg };
 }
 
@@ -162,11 +162,11 @@ export function setupSocketIO(io: RealtimeServer) {
         const roomId = socketToRoom.get(socketId);
         if (roomId) {
           deleteRoom(
-            roomId, 
-            'Ведущий завершил сессию', 
-            io, 
-            buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>, 
-            [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers], 
+            roomId,
+            'Ведущий завершил сессию',
+            io,
+            buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>,
+            [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers],
             participantDisconnectTimers
           );
         }
@@ -176,7 +176,7 @@ export function setupSocketIO(io: RealtimeServer) {
   });
 
   io.on('connection', (socket: RealtimeSocket) => {
-    
+
     // Time Sync
     socket.on('SYNC_TIME', withValidation(SyncTimeSchema, 'SYNC_TIME', (_clientTime, callback) => {
       if (callback) callback(Date.now());
@@ -204,7 +204,7 @@ export function setupSocketIO(io: RealtimeServer) {
 
       const sortedRtt = [...stats.rttWindow].sort((a, b) => a - b);
       const sortedOffset = [...stats.offsetWindow].sort((a, b) => a - b);
-      
+
       stats.medianRtt = sortedRtt[Math.floor(sortedRtt.length / 2)];
       stats.medianOffset = sortedOffset[Math.floor(sortedOffset.length / 2)];
       stats.jitter = sortedRtt[sortedRtt.length - 1] - sortedRtt[0];
@@ -260,8 +260,8 @@ export function setupSocketIO(io: RealtimeServer) {
         socket.data.userId = userId;
         socket.data.role = 'host';
         const room = createRoom(
-          userId, 
-          socket.id, 
+          userId,
+          socket.id,
           user.settings?.customLogoUrl,
           user.settings?.customBgUrl,
           user.settings?.bgTheme
@@ -289,7 +289,7 @@ export function setupSocketIO(io: RealtimeServer) {
         if (callback) return callback({ success: false, error: 'Комната недоступна' });
         return;
       }
-      
+
       const sessionRejection = await requireAuthenticatedHostSession(socket, 'HOST_REJOIN_ROOM');
       if (sessionRejection) {
         if (callback) callback({ success: false, error: 'Комната недоступна' });
@@ -319,9 +319,9 @@ export function setupSocketIO(io: RealtimeServer) {
       }
 
       reattachHostToRoom(socket, room, io);
-      
+
       emitRoomState(io, room);
-      
+
       if (callback) callback({ success: true, room: toPublicRoomData(room) });
     }));
 
@@ -382,7 +382,7 @@ export function setupSocketIO(io: RealtimeServer) {
 
       // Emit room state without hashes
       emitRoomState(io, room);
-      
+
       const { reconnectTokenHash: _hash, ...safeParticipant } = participant;
       if (callback) { const { socketId, reconnectTokenHash, ...pubParticipant } = participant; callback({ success: true, participant: pubParticipant, room: toPublicRoomData(room), reconnectToken }); }
     }));
@@ -441,7 +441,7 @@ export function setupSocketIO(io: RealtimeServer) {
       socket.data.participantId = participant.id;
 
       emitRoomState(io, room);
-      
+
       const { reconnectTokenHash: _hash, ...safeParticipant } = participant;
       if (callback) { const { socketId, reconnectTokenHash, ...pubParticipant } = participant; callback({ success: true, participant: pubParticipant, room: toPublicRoomData(room) }); }
     }));
@@ -450,12 +450,16 @@ export function setupSocketIO(io: RealtimeServer) {
     socket.on('ROUND_START', withValidation(RoundStartSchema, 'ROUND_START', async (_data, callback) => {
       const roomId = socketToRoom.get(socket.id);
       if (!roomId) return callback && callback({ success: false, error: 'Вы не в комнате' });
-      
+
       const room = rooms.get(roomId);
       if (!room) return callback && callback({ success: false, error: 'Комната не найдена' });
 
       const rejection = await requireHostSocket(socket, room, 'ROUND_START');
       if (rejection) return callback && callback(rejection);
+
+      if (room.roundState !== RoomState.WAITING) {
+        return callback && callback({ success: false, error: 'Раунд можно начать только из режима ожидания' });
+      }
 
       const existingBuffer = buzzBuffers.get(roomId);
       if (existingBuffer) {
@@ -467,7 +471,7 @@ export function setupSocketIO(io: RealtimeServer) {
       room.roundId = crypto.randomUUID();
       room.firstBuzzerId = null;
       room.unlockAt = Date.now() + 150; // Scheduled unlock buffer
-      
+
       emitRoomState(io, room);
       if (callback) callback({ success: true });
     }));
@@ -496,7 +500,7 @@ export function setupSocketIO(io: RealtimeServer) {
         }
         return actualCallback && actualCallback({ success: false, error: 'Вы не в комнате' });
       }
-      
+
       const room = rooms.get(roomId);
       if (!room) return actualCallback && actualCallback({ success: false, error: 'Комната не найдена' });
 
@@ -580,12 +584,16 @@ export function setupSocketIO(io: RealtimeServer) {
     socket.on('ROUND_RESET', withValidation(RoundResetSchema, 'ROUND_RESET', async (data, callback) => {
       const roomId = socketToRoom.get(socket.id);
       if (!roomId) return callback && callback({ success: false, error: 'Вы не в комнате' });
-      
+
       const room = rooms.get(roomId);
       if (!room) return callback && callback({ success: false, error: 'Комната не найдена' });
 
       const rejection = await requireHostSocket(socket, room, 'ROUND_RESET');
       if (rejection) return callback && callback(rejection);
+
+      if (room.roundState !== RoomState.REVEALED) {
+        return callback && callback({ success: false, error: 'Сброс возможен только после ответа' });
+      }
 
       if (data?.winnerId) {
         // Security: only the actual first buzzer can be declared winner
@@ -607,7 +615,7 @@ export function setupSocketIO(io: RealtimeServer) {
       room.unlockAt = null;
 
       emitRoomState(io, room);
-      
+
       if (callback) callback({ success: true });
     }));
 
@@ -621,6 +629,10 @@ export function setupSocketIO(io: RealtimeServer) {
       const rejection = await requireHostSocket(socket, room, 'HOST_CLEAR_SCORES');
       if (rejection) return callback && callback(rejection);
 
+      if (room.roundState === RoomState.FINISHED) {
+        return callback && callback({ success: false, error: 'Игра уже завершена' });
+      }
+
       for (const participant of room.participants) {
         participant.score = 0;
       }
@@ -633,7 +645,7 @@ export function setupSocketIO(io: RealtimeServer) {
     socket.on('ROOM_FINISH', withValidation(EmptyPayloadSchema, 'ROOM_FINISH', async (_data, callback) => {
       const roomId = socketToRoom.get(socket.id);
       if (!roomId) return callback && callback({ success: false, error: 'Вы не в комнате' });
-      
+
       const room = rooms.get(roomId);
       if (!room) return callback && callback({ success: false, error: 'Комната не найдена' });
 
@@ -646,17 +658,8 @@ export function setupSocketIO(io: RealtimeServer) {
 
       room.roundState = RoomState.FINISHED;
 
-      // Find winner
-      let winnerName: string | null = null;
-      let winnerScore = 0;
-
-      if (room.participants.length > 0) {
-        const sorted = [...room.participants].sort((a, b) => b.score - a.score);
-        winnerScore = sorted[0].score;
-        if (winnerScore > 0) {
-          winnerName = sorted[0].displayName;
-        }
-      }
+      const { calculateGameResult } = require('./room-lifecycle');
+      calculateGameResult(room);
 
       // Save to history (idempotent)
       await saveGameHistory(room, prisma);

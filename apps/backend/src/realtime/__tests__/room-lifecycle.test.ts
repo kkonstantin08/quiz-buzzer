@@ -15,6 +15,15 @@ import { Server } from 'socket.io';
 import { io as ioc } from 'socket.io-client';
 import type { AddressInfo } from 'net';
 
+const mockPrismaCreate = jest.fn().mockResolvedValue({});
+jest.mock('../../prisma', () => ({
+  prisma: {
+    gameHistory: {
+      create: mockPrismaCreate,
+    },
+  },
+}));
+
 import { rooms, socketToRoom, usedRoomCodes, createRoom, deleteRoom } from '../../rooms';
 import {
   hostDisconnectTimers,
@@ -73,7 +82,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  jest.restoreAllMocks();
+  jest.clearAllMocks();
 });
 
 // ── Test suite ────────────────────────────────────────────────────────────────
@@ -99,18 +108,29 @@ describe('Room Lifecycle', () => {
   });
 
   // ── 2. 24-hour max lifetime cleanup ───────────────────────────────────────
-  it('2. Room is deleted after 24 hours from creation', () => {
+  it('2. Room is deleted after 24 hours from creation and history is saved', async () => {
     jest.useFakeTimers();
     const io = makeMockIo();
     const buzzBuffers = new Map<string, any>();
     const room = createRoom('host-1', 'sock-1');
+    room.participants = [
+      { id: 'p1', displayName: 'Alice', socketId: 'sock-p1', joinedAt: Date.now(), isConnected: true, score: 10 }
+    ];
 
     scheduleMaxLifetimeCleanup(room.roomId, io, buzzBuffers, []);
 
     expect(rooms.has(room.roomId)).toBe(true);
+
+    // Fast-forward
     jest.advanceTimersByTime(24 * 60 * 60 * 1000);
 
+    // Flush promises so the async saveGameHistory gets executed and its internal await resolves
+    await Promise.resolve();
+    await Promise.resolve();
+
     expect(rooms.has(room.roomId)).toBe(false);
+    expect(mockPrismaCreate).toHaveBeenCalled();
+    expect(room.historySaved).toBe(true);
 
     io.close();
     jest.useRealTimers();

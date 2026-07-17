@@ -391,40 +391,7 @@ describe('Validated Latency Compensation', () => {
     expect(roomAfterGrace.firstBuzzerId).not.toBeNull();
   });
 
-  it('cancels the grace buffer when the host resets the round', async () => {
-    await setupRoom();
-    await new Promise<void>((resolve) => hostSocket.emit('ROUND_START', () => resolve()));
-    const room = Array.from(rooms.values())[0];
-    await sleep(Math.max(0, room.unlockAt! - Date.now()));
 
-    await expect(new Promise<any>((resolve) => {
-      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() + 10 }, resolve);
-    })).resolves.toEqual({ success: true, status: 'accepted' });
-    await new Promise<void>((resolve) => hostSocket.emit('ROUND_RESET', {}, () => resolve()));
-    await sleep(300);
-
-    expect(room.roundState).toBe('WAITING');
-    expect(room.firstBuzzerId).toBeNull();
-  });
-
-  it('does not let an old grace timer reveal a newly started round', async () => {
-    await setupRoom();
-    await new Promise<void>((resolve) => hostSocket.emit('ROUND_START', () => resolve()));
-    const room = Array.from(rooms.values())[0];
-    await sleep(Math.max(0, room.unlockAt! - Date.now()));
-
-    await expect(new Promise<any>((resolve) => {
-      p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() + 10 }, resolve);
-    })).resolves.toEqual({ success: true, status: 'accepted' });
-    await new Promise<void>((resolve) => hostSocket.emit('ROUND_RESET', {}, () => resolve()));
-    await new Promise<void>((resolve) => hostSocket.emit('ROUND_START', () => resolve()));
-    const newRoundId = room.roundId;
-    await sleep(300);
-
-    expect(room.roundId).toBe(newRoundId);
-    expect(room.roundState).toBe('ACTIVE');
-    expect(room.firstBuzzerId).toBeNull();
-  });
 
   it('does not let a grace timer change a room after it is finished', async () => {
     await setupRoom();

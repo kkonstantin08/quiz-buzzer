@@ -1,7 +1,8 @@
 import { Server } from 'socket.io';
 import { PrismaClient } from '@prisma/client';
-import { InternalRoomData, RoomState } from 'shared';
+import { InternalRoomData, RoomState, GameResult } from 'shared';
 import { rooms, deleteRoom } from '../rooms';
+import { prisma } from '../prisma';
 
 // ---------------------------------------------------------------------------
 // Timer registries
@@ -15,6 +16,27 @@ export const lifecycleTimerLoader = {
   clearTimeout: (t: NodeJS.Timeout) => clearTimeout(t),
 };
 
+export function calculateGameResult(room: InternalRoomData): void {
+  room.gameResult = GameResult.NO_WINNER;
+  room.winnerName = null;
+
+  if (room.participants.length > 0) {
+    const sorted = [...room.participants].sort((a, b) => b.score - a.score);
+    const topScore = sorted[0].score;
+
+    if (topScore > 0) {
+      // Check for draw
+      const topScorers = sorted.filter(p => p.score === topScore);
+      if (topScorers.length > 1) {
+        room.gameResult = GameResult.DRAW;
+      } else {
+        room.gameResult = GameResult.WINNER;
+        room.winnerName = topScorers[0].displayName;
+      }
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // History persistence (idempotent)
 // ---------------------------------------------------------------------------
@@ -27,13 +49,10 @@ export async function saveGameHistory(
 
   room.historySaved = true;
 
-  let winnerName: string | null = null;
   let winnerScore = 0;
-
-  const sorted = [...room.participants].sort((a, b) => b.score - a.score);
-  winnerScore = sorted[0].score;
-  if (winnerScore > 0) {
-    winnerName = sorted[0].displayName;
+  if (room.participants.length > 0) {
+    const sorted = [...room.participants].sort((a, b) => b.score - a.score);
+    winnerScore = sorted[0].score;
   }
 
   try {
@@ -41,7 +60,8 @@ export async function saveGameHistory(
       data: {
         hostUserId: room.hostUserId,
         roomCode: room.roomCode,
-        winnerName: winnerName || 'Ничья / Нет победителя',
+        result: room.gameResult || 'NO_WINNER',
+        winnerName: room.winnerName,
         winnerScore,
         participants: room.participants.length,
       },
@@ -107,7 +127,14 @@ export function scheduleMaxLifetimeCleanup(
     const r = rooms.get(roomId);
     if (r && r.roundState !== RoomState.FINISHED) {
       r.roundState = RoomState.FINISHED;
+      // We only compute game result if it wasn't already finished
+      calculateGameResult(r);
     }
+
+    if (r) {
+      saveGameHistory(r, prisma).catch(err => console.error('Error saving history on max lifetime cleanup:', err));
+    }
+
     const { participantDisconnectTimers } = require('./index');
     deleteRoom(roomId, 'время комнаты истекло', io, buzzBuffers, [
       ...extraTimers,
