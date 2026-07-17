@@ -27,7 +27,7 @@ export function ParticipantRoom() {
   const [isJoining, setIsJoining] = useState(false);
   const [error, setError] = useState("");
   const [amIFirst, setAmIFirst] = useState(false);
-  const [isBuzzedLocal, setIsBuzzedLocal] = useState(false);
+  const [buzzStatus, setBuzzStatus] = useState<"idle" | "pending" | "accepted">("idle");
   const [winnerInfo, setWinnerInfo] = useState<{
     winnerName: string | null;
     winnerScore: number;
@@ -39,7 +39,25 @@ export function ParticipantRoom() {
   const [myParticipantId, setMyParticipantId] = useState<string | null>(null);
   const announce = useAriaLive();
   const buzzTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const myParticipantIdRef = useRef<string | null>(null);
+  const joinListenersRef = useRef<{
+    connect?: () => void;
+    connect_error?: (e: Error) => void;
+  }>({});
+
+  useEffect(() => {
+    return () => {
+      if (ackTimeoutRef.current) clearTimeout(ackTimeoutRef.current);
+      if (buzzTimeoutRef.current) clearTimeout(buzzTimeoutRef.current);
+      if (joinListenersRef.current.connect) {
+        socket.off("connect", joinListenersRef.current.connect);
+      }
+      if (joinListenersRef.current.connect_error) {
+        socket.off("connect_error", joinListenersRef.current.connect_error);
+      }
+    };
+  }, []);
   const roomCodeRef = useRef(roomCode);
   const joinPendingRef = useRef(false);
   const shouldReduceMotion = useReducedMotion();
@@ -200,14 +218,39 @@ export function ParticipantRoom() {
       return;
     }
 
+    // Clean up any lingering listeners from a previous uncompleted join attempt
+    if (joinListenersRef.current.connect) {
+      socket.off("connect", joinListenersRef.current.connect);
+    }
+    if (joinListenersRef.current.connect_error) {
+      socket.off("connect_error", joinListenersRef.current.connect_error);
+    }
+
     const onConnectError = (error: Error) => {
       if (isSocketAuthError(error)) return;
-      socket.off("connect", emitJoin);
+      if (joinListenersRef.current.connect) {
+        socket.off("connect", joinListenersRef.current.connect);
+      }
+      joinListenersRef.current.connect = undefined;
+      joinListenersRef.current.connect_error = undefined;
       joinPendingRef.current = false;
       setIsJoining(false);
       setError("Не удалось подключиться к игре. Повторите попытку.");
     };
-    socket.once("connect", emitJoin);
+
+    const emitJoinWithCleanup = () => {
+      if (joinListenersRef.current.connect_error) {
+        socket.off("connect_error", joinListenersRef.current.connect_error);
+      }
+      joinListenersRef.current.connect = undefined;
+      joinListenersRef.current.connect_error = undefined;
+      emitJoin();
+    };
+
+    joinListenersRef.current.connect = emitJoinWithCleanup;
+    joinListenersRef.current.connect_error = onConnectError;
+
+    socket.once("connect", emitJoinWithCleanup);
     socket.once("connect_error", onConnectError);
     socket.connect();
   };
@@ -220,7 +263,11 @@ export function ParticipantRoom() {
           updatedRoom.roundState === RoomState.ACTIVE
         ) {
           setAmIFirst(false);
-          setIsBuzzedLocal(false);
+          setBuzzStatus("idle");
+          if (ackTimeoutRef.current) {
+            clearTimeout(ackTimeoutRef.current);
+            ackTimeoutRef.current = null;
+          }
         }
 
         if (
@@ -337,7 +384,7 @@ export function ParticipantRoom() {
 
     const isEffectivelyActive =
       room?.roundState === RoomState.ACTIVE && (!room.unlockAt || unlockReady);
-    if (!isEffectivelyActive || isBuzzedLocal) return;
+    if (!isEffectivelyActive || buzzStatus !== "idle") return;
 
     // Prevent double firing within a tiny window
     if (buzzTimeoutRef.current) return;
@@ -350,18 +397,33 @@ export function ParticipantRoom() {
       navigator.vibrate(50);
     }
 
-    setIsBuzzedLocal(true);
-    announce("Сигнал отправлен");
+    setBuzzStatus("pending");
+    announce("Отправляем сигнал…");
 
     const clientPressedAt = Date.now();
 
+    if (ackTimeoutRef.current) clearTimeout(ackTimeoutRef.current);
+    ackTimeoutRef.current = setTimeout(() => {
+      ackTimeoutRef.current = null;
+      announce("Ошибка сети. Попробуйте еще раз", "assertive");
+      setBuzzStatus("idle");
+    }, 5000);
+
     socket.emit("BUZZ_SUBMIT", { clientPressedAt }, (res) => {
+      if (ackTimeoutRef.current) {
+        clearTimeout(ackTimeoutRef.current);
+        ackTimeoutRef.current = null;
+      } else {
+        // If timeout was already cleared (e.g. by ROOM_STATE_UPDATED), ignore this callback
+        return;
+      }
+
       if (res && res.success) {
-        // Signal accepted into the grace buffer.
-        // We do NOT set amIFirst here! The winner is determined only by the ROOM_STATE_UPDATED broadcast.
-      } else if (res && !res.success) {
-        announce(res.error || "Ошибка", "assertive");
-        setIsBuzzedLocal(false); // allow retry if failed
+        announce("Сигнал принят. Ожидаем результат");
+        setBuzzStatus("accepted");
+      } else {
+        announce(res?.error || "Ошибка", "assertive");
+        setBuzzStatus("idle");
       }
     });
   };
@@ -507,7 +569,13 @@ export function ParticipantRoom() {
   } else if (isActive) {
     btnColor = "bg-red-500";
     shadowColor = "shadow-red-600/50";
-    statusText = isBuzzedLocal ? "" : "ЖМИТЕ!";
+    if (buzzStatus === "pending") {
+      statusText = "Отправляем сигнал…";
+    } else if (buzzStatus === "accepted") {
+      statusText = "Сигнал принят\nОжидаем результат";
+    } else {
+      statusText = "ЖМИТЕ!";
+    }
     glow = true;
   } else if (isLocked) {
     if (amIFirst) {
@@ -612,29 +680,29 @@ export function ParticipantRoom() {
                     : `0 20px 40px -10px rgba(0,0,0,0.3), inset 0 -10px 20px rgba(0,0,0,0.2), inset 0 10px 20px rgba(255,255,255,0.2)`,
               }}
               animate={
-                isBuzzedLocal && isActive && !shouldReduceMotion
+                buzzStatus !== "idle" && isActive && !shouldReduceMotion
                   ? { scale: 0.9 }
                   : { scale: 1 }
               }
               whileHover={
                 !shouldReduceMotion &&
-                ((isActive && !isBuzzedLocal) || (isLocked && amIFirst))
+                ((isActive && buzzStatus === "idle") || (isLocked && amIFirst))
                   ? { scale: 1.05 }
                   : {}
               }
               whileTap={
-                !shouldReduceMotion && isActive && !isBuzzedLocal
+                !shouldReduceMotion && isActive && buzzStatus === "idle"
                   ? { scale: 0.9, y: 10 }
                   : {}
               }
               transition={{ type: "spring", stiffness: 400, damping: 17 }}
               onPointerDown={handleBuzz}
               onKeyDown={handleBuzz}
-              disabled={!isActive || isBuzzedLocal}
+              disabled={!isActive || buzzStatus !== "idle"}
               aria-label="Игровой пульт (Buzzer)"
               aria-describedby="buzzer-status-text"
             >
-              {isActive && !isBuzzedLocal ? "ЖМИ!" : ""}
+              {isActive && buzzStatus === "idle" ? "ЖМИ!" : ""}
             </motion.button>
           </div>
 

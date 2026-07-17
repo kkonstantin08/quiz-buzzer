@@ -65,15 +65,50 @@ describe("ParticipantRoom interactions", () => {
     });
   });
 
-  it("keeps a successful buzz pending until a winner snapshot arrives", async () => {
+  it("shows pending states and keeps a successful buzz locked until a winner snapshot arrives", async () => {
+    let deferredCallback: ((result: unknown) => void) | null = null;
+    mockSocket.emit.mockImplementation((event: string, _data: unknown, callback?: (result: unknown) => void) => {
+      if (event === "PARTICIPANT_REJOIN") callback?.({ success: true, room: activeRoom, participant });
+      if (event === "BUZZ_SUBMIT") deferredCallback = callback || null;
+      return mockSocket;
+    });
+
     renderRoom();
     fireEvent.pointerDown(await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" }));
 
     expect(buzzer()).toBeDisabled();
-    expect(screen.queryByText("Вы нажали первым!")).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Отправляем сигнал/)[0]).toBeInTheDocument();
+
+    act(() => { deferredCallback?.(buzzResult); });
+
+    expect(screen.getAllByText(/Сигнал принят/)[0]).toBeInTheDocument();
+    expect(buzzer()).toBeDisabled();
 
     act(() => handlers.get("ROOM_STATE_UPDATED")?.({ ...activeRoom, roundState: RoomState.REVEALED, firstBuzzerId: participant.id }));
     expect(await screen.findByText("Вы нажали первым!")).toBeInTheDocument();
+  });
+
+  it("releases the button and shows error if the callback times out", async () => {
+    mockSocket.emit.mockImplementation((event: string, _data: unknown, callback?: (result: unknown) => void) => {
+      if (event === "PARTICIPANT_REJOIN") callback?.({ success: true, room: activeRoom, participant });
+      // intentionally do not call callback for BUZZ_SUBMIT
+      return mockSocket;
+    });
+
+    renderRoom();
+    const btn = await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" });
+
+    vi.useFakeTimers();
+    fireEvent.pointerDown(btn);
+
+    expect(buzzer()).toBeDisabled();
+    expect(screen.getAllByText(/Отправляем сигнал/)[0]).toBeInTheDocument();
+
+    act(() => { vi.advanceTimersByTime(5000); });
+
+    vi.useRealTimers();
+    expect(await screen.findByText(/Ошибка сети/)).toBeInTheDocument();
+    expect(buzzer()).toBeEnabled();
   });
 
   it("uses stable participantId to render a losing snapshot and clears local lock after reset", async () => {
