@@ -20,6 +20,12 @@ export interface InternalParticipant extends PublicParticipant {
   reconnectTokenHash?: string;
 }
 
+export enum GameResult {
+  WINNER = 'WINNER',
+  DRAW = 'DRAW',
+  NO_WINNER = 'NO_WINNER',
+}
+
 export interface PublicRoomData {
   roomId: string;
   roomCode: string;
@@ -32,6 +38,8 @@ export interface PublicRoomData {
   bgTheme?: string;
   unlockAt?: number | null;
   isHostConnected?: boolean;
+  gameResult?: GameResult;
+  winnerName?: string | null;
 }
 
 export interface InternalRoomData extends Omit<PublicRoomData, 'participants'> {

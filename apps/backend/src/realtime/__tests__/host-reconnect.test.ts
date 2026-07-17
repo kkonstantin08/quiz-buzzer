@@ -6,7 +6,15 @@ import { config } from '../../config';
 import { rooms } from '../../rooms';
 import { describe, it, expect, beforeAll, afterAll, afterEach, jest } from '@jest/globals';
 
-import { hostDisconnectTimers, reconnectTimeoutLoader } from '../host-reconnect';
+import {
+  hostDisconnectTimers,
+  reconnectTimeoutLoader,
+  startHostReconnectTimeout,
+} from '../host-reconnect';
+import {
+  postFinishTimers,
+  maxLifetimeTimers,
+} from '../room-lifecycle';
 
 jest.mock('../../prisma', () => ({
   prisma: {
@@ -65,10 +73,12 @@ describe('Host Reconnect and Revocation', () => {
     if (hostSocket && hostSocket.connected) hostSocket.disconnect();
     if (p1Socket && p1Socket.connected) p1Socket.disconnect();
     // Clear all pending timeouts to prevent Jest from hanging
-    for (const timer of hostDisconnectTimers.values()) {
-      clearTimeout(timer);
+    for (const timers of [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers]) {
+      for (const timer of timers.values()) {
+        clearTimeout(timer);
+      }
+      timers.clear();
     }
-    hostDisconnectTimers.clear();
     rooms.clear();
     jest.clearAllMocks();
     jest.restoreAllMocks();

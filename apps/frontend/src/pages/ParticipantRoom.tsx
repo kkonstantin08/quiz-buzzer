@@ -257,15 +257,16 @@ export function ParticipantRoom() {
           updatedRoom.roundState === RoomState.FINISHED &&
           previousRoom?.roundState !== RoomState.FINISHED
         ) {
-          let winnerName: string | null = null;
+          const result = updatedRoom.gameResult;
+          let winnerName = updatedRoom.winnerName || null;
           let winnerScore = 0;
-          if (updatedRoom.participants.length > 0) {
-            const sorted = [...updatedRoom.participants].sort(
-              (a, b) => b.score - a.score,
-            );
-            winnerScore = sorted[0].score;
-            if (winnerScore > 0) winnerName = sorted[0].displayName;
+
+          if (result === 'WINNER' || result === 'DRAW') {
+            const sorted = [...updatedRoom.participants].sort((a, b) => b.score - a.score);
+            winnerScore = sorted[0]?.score || 0;
+            if (result === 'DRAW') winnerName = 'Ничья';
           }
+
           setWinnerInfo({ winnerName, winnerScore });
           announce(
             `Игра завершена. Победитель: ${winnerName || "Нет победителя"}`,

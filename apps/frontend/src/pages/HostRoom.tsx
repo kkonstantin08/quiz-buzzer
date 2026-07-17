@@ -28,6 +28,7 @@ export function HostRoom() {
   const [finishOpen, setFinishOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [winnerInfo, setWinnerInfo] = useState<{winnerName: string | null, winnerScore: number} | null>(null);
   const soundSettingsRef = React.useRef({ enabled: true, theme: 'classic' });
   const announce = useAriaLive();
@@ -54,7 +55,7 @@ export function HostRoom() {
 
     const performRejoin = () => {
       setReconnectState('restoring');
-      
+
       if (!socket.connected) {
         socket.connect();
       }
@@ -121,13 +122,16 @@ export function HostRoom() {
         }
 
         if (updatedRoom.roundState === RoomState.FINISHED && previousRoom?.roundState !== RoomState.FINISHED) {
-          let winnerName: string | null = null;
+          const result = updatedRoom.gameResult;
+          let winnerName = updatedRoom.winnerName || null;
           let winnerScore = 0;
-          if (updatedRoom.participants.length > 0) {
+
+          if (result === 'WINNER' || result === 'DRAW') {
             const sorted = [...updatedRoom.participants].sort((a, b) => b.score - a.score);
-            winnerScore = sorted[0].score;
-            if (winnerScore > 0) winnerName = sorted[0].displayName;
+            winnerScore = sorted[0]?.score || 0;
+            if (result === 'DRAW') winnerName = 'Ничья';
           }
+
           setWinnerInfo({ winnerName, winnerScore });
 
           if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -220,29 +224,54 @@ export function HostRoom() {
   const publicUrl = window.location.origin;
   const joinUrl = `${publicUrl}/room/${room.roomCode}`;
 
-  const handleStartRound = () => socket.emit('ROUND_START');
-  const handleReset = (winnerId: string | null = null) => {
-    socket.emit('ROUND_RESET', { winnerId });
+  const handleStartRound = () => {
+    setPendingAction('ROUND_START');
+    socket.emit('ROUND_START', (res: any) => {
+      setPendingAction(null);
+      if (res && !res.success) {
+        setActionError(res.error);
+        announce(res.error, 'assertive');
+      } else {
+        setActionError(null);
+      }
+    });
   };
-  
+
+  const handleReset = (winnerId: string | null = null, isCorrect: boolean | null = null) => {
+    setPendingAction('ROUND_RESET');
+    socket.emit('ROUND_RESET', { winnerId }, (res: any) => {
+      setPendingAction(null);
+      if (res && !res.success) {
+        setActionError(res.error);
+        announce(res.error, 'assertive');
+      } else {
+        setActionError(null);
+        if (isCorrect === true) playSound('correct', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
+        else if (isCorrect === false) playSound('wrong', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
+      }
+    });
+  };
+
   const handleCorrect = () => {
-    playSound('correct', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
-    handleReset(room.firstBuzzerId);
+    handleReset(room.firstBuzzerId, true);
   };
-  
+
   const handleWrong = () => {
-    playSound('wrong', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
-    handleReset(null);
+    handleReset(null, false);
   };
 
   const handleClearScoreboard = () => {
-    socket.emit('HOST_CLEAR_SCORES', (result) => {
-      if (result.success) {
+    setPendingAction('HOST_CLEAR_SCORES');
+    socket.emit('HOST_CLEAR_SCORES', (result: any) => {
+      setPendingAction(null);
+      if (result && result.success) {
         setActionError(null);
         return;
       }
-      setActionError(result.error);
-      announce(result.error, 'assertive');
+      if (result) {
+        setActionError(result.error);
+        announce(result.error, 'assertive');
+      }
     });
   };
 
@@ -268,8 +297,16 @@ export function HostRoom() {
   };
 
   const handleFinishRoom = () => {
-    socket.emit('ROOM_FINISH');
-    setFinishOpen(false);
+    setPendingAction('ROOM_FINISH');
+    socket.emit('ROOM_FINISH', (res: any) => {
+      setPendingAction(null);
+      if (res && res.success) {
+        setFinishOpen(false);
+      } else if (res) {
+        setActionError(res.error);
+        announce(res.error, 'assertive');
+      }
+    });
   };
 
   if (room.roundState === RoomState.FINISHED && winnerInfo) {
@@ -305,7 +342,7 @@ export function HostRoom() {
               <h1 className="text-4xl font-black text-slate-800 tracking-tight">Игра завершена!</h1>
               <p className="text-lg text-slate-600">Спасибо за участие</p>
             </div>
-            
+
             <div className="bg-slate-50 border border-slate-100 rounded-2xl p-6 w-full mt-6 shadow-sm">
               <p className="text-sm font-semibold text-slate-600 tracking-wide mb-2">Победитель</p>
               <h2 className="text-3xl font-bold text-primary break-words">
@@ -374,43 +411,43 @@ export function HostRoom() {
           {actionError}
         </p>
       )}
-      
+
       {/* Mobile-optimized Header with Room Code and QR Button */}
       <div className={`flex flex-col sm:flex-row items-center justify-between gap-4 mb-6 p-4 rounded-2xl border ${
-        isDarkTheme 
-          ? "bg-slate-900/60 border-slate-800/80 text-white backdrop-blur-md shadow-lg" 
+        isDarkTheme
+          ? "bg-slate-900/60 border-slate-800/80 text-white backdrop-blur-md shadow-lg"
           : "bg-white border-slate-200 text-slate-900 shadow-sm"
       }`}>
         <div className="flex items-center gap-4 flex-col sm:flex-row text-center sm:text-left">
           {room.customLogoUrl && (
-            <img 
-              src={room.customLogoUrl.startsWith('http') ? room.customLogoUrl : `${BASE_URL.replace('/api', '')}${room.customLogoUrl}`} 
-              alt="Logo" 
-              className="max-h-12 object-contain" 
+            <img
+              src={room.customLogoUrl.startsWith('http') ? room.customLogoUrl : `${BASE_URL.replace('/api', '')}${room.customLogoUrl}`}
+              alt="Logo"
+              className="max-h-12 object-contain"
             />
           )}
           <div className="flex items-center h-full">
             <h1 className={`text-3xl font-bold tracking-wide leading-none ${
-              room.bgTheme === 'violet-fuchsia' 
-                ? "text-fuchsia-400" 
-                : isDarkTheme 
-                  ? "text-white" 
+              room.bgTheme === 'violet-fuchsia'
+                ? "text-fuchsia-400"
+                : isDarkTheme
+                  ? "text-white"
                   : "text-primary"
             }`}>
               Игра активна
             </h1>
           </div>
         </div>
-        
+
         <div className="flex gap-2 w-full sm:w-auto">
           <Dialog open={qrOpen} onOpenChange={setQrOpen}>
             <DialogTrigger asChild>
-              <Button 
-                variant="outline" 
-                size="lg" 
+              <Button
+                variant="outline"
+                size="lg"
                 className={`h-14 gap-2 flex-1 sm:flex-none px-3 sm:px-8 ${
-                  isDarkTheme 
-                    ? "!bg-transparent border-slate-700 hover:bg-slate-800 text-white hover:text-white" 
+                  isDarkTheme
+                    ? "!bg-transparent border-slate-700 hover:bg-slate-800 text-white hover:text-white"
                     : ""
                 }`}
               >
@@ -430,8 +467,8 @@ export function HostRoom() {
               </div>
               <div className="flex gap-2 w-full mt-2">
                 <Input value={joinUrl} readOnly className="bg-muted" />
-                <Button 
-                  onClick={handleCopy} 
+                <Button
+                  onClick={handleCopy}
                   variant={copied ? "default" : "secondary"}
                   className={copied ? "bg-green-600 hover:bg-green-700 text-white transition-colors" : ""}
                 >
@@ -466,11 +503,11 @@ export function HostRoom() {
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter className="flex-col sm:flex-row gap-2 mt-4 sm:gap-0">
-                <Button type="button" variant="outline" onClick={() => setFinishOpen(false)} className="w-full sm:w-auto">
+                <Button type="button" variant="outline" onClick={() => setFinishOpen(false)} className="w-full sm:w-auto" disabled={pendingAction !== null}>
                   Отмена
                 </Button>
-                <Button type="button" variant="destructive" onClick={handleFinishRoom} className="w-full sm:w-auto">
-                  Завершить
+                <Button type="button" variant="destructive" onClick={handleFinishRoom} className="w-full sm:w-auto" disabled={pendingAction !== null}>
+                  {pendingAction === 'ROOM_FINISH' ? 'Завершение...' : 'Завершить'}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -480,14 +517,14 @@ export function HostRoom() {
 
       {/* Main Content Grid (Mobile First: Controls on top) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-        
+
         {/* Primary Controls */}
         <Card className={`min-h-[300px] flex flex-col items-center justify-center shadow-lg border-t-4 border-t-primary order-1 ${
-          isDarkTheme 
-            ? "bg-slate-900/60 border-slate-800/80 text-white backdrop-blur-md" 
+          isDarkTheme
+            ? "bg-slate-900/60 border-slate-800/80 text-white backdrop-blur-md"
             : "bg-white/80 border-slate-200 text-slate-900 backdrop-blur"
         }`}>
-          
+
           {room.roundState === RoomState.WAITING && (
             <div className="text-center space-y-6 w-full px-6">
               {room.participants.length === 0 ? (
@@ -510,13 +547,13 @@ export function HostRoom() {
                   Ожидание запуска раунда
                 </h2>
               )}
-              <Button 
-                size="lg" 
+              <Button
+                size="lg"
                 className={startBtnClass}
                 onClick={handleStartRound}
-                disabled={isStartDisabled}
+                disabled={isStartDisabled || pendingAction !== null}
               >
-                СТАРТ РАУНДА
+                {pendingAction === 'ROUND_START' ? 'ЗАПУСК...' : 'СТАРТ РАУНДА'}
               </Button>
             </div>
           )}
@@ -543,27 +580,28 @@ export function HostRoom() {
                 Первым нажал:
               </h2>
               <div className={`text-4xl font-black py-2 break-words ${
-                room.bgTheme === 'violet-fuchsia' 
-                  ? "text-fuchsia-400" 
-                  : isDarkTheme 
-                    ? "text-violet-400" 
+                room.bgTheme === 'violet-fuchsia'
+                  ? "text-fuchsia-400"
+                  : isDarkTheme
+                    ? "text-violet-400"
                     : "text-primary"
               }`}>
                 {firstBuzzerName}
               </div>
               <div className="flex flex-col sm:flex-row gap-4 mt-4">
-                <Button size="lg" className="w-full bg-green-600 hover:bg-green-700 text-white h-16 text-lg shadow-lg shadow-green-600/20" onClick={handleCorrect}>
-                  Верно (+1)
+                <Button size="lg" className="w-full bg-green-600 hover:bg-green-700 text-white h-16 text-lg shadow-lg shadow-green-600/20" onClick={handleCorrect} disabled={pendingAction !== null}>
+                  {pendingAction === 'ROUND_RESET' ? 'Ожидание...' : 'Верно (+1)'}
                 </Button>
-                <Button 
-                  size="lg" 
-                  variant="outline" 
+                <Button
+                  size="lg"
+                  variant="outline"
                   className={`w-full h-16 text-lg ${
-                    isDarkTheme 
-                      ? "!bg-transparent border-slate-700 hover:bg-slate-800 text-white hover:text-white" 
+                    isDarkTheme
+                      ? "!bg-transparent border-slate-700 hover:bg-slate-800 text-white hover:text-white"
                       : ""
-                  }`} 
+                  }`}
                   onClick={handleWrong}
+                  disabled={pendingAction !== null}
                 >
                   Мимо
                 </Button>
@@ -575,14 +613,14 @@ export function HostRoom() {
 
         {/* Participants Table */}
         <Card className={`shadow-lg order-2 ${
-          isDarkTheme 
-            ? "bg-slate-900/60 border-slate-800/80 text-white backdrop-blur-md" 
+          isDarkTheme
+            ? "bg-slate-900/60 border-slate-800/80 text-white backdrop-blur-md"
           : "bg-white/80 border-slate-200 text-slate-900 backdrop-blur"
         }`}>
           <CardHeader className="flex flex-row items-center justify-between gap-3">
             <CardTitle className={isDarkTheme ? "text-white" : ""}>Участники ({room.participants.length})</CardTitle>
-            <Button variant="outline" size="sm" onClick={handleClearScoreboard}>
-              Очистить счёт
+            <Button variant="outline" size="sm" onClick={handleClearScoreboard} disabled={pendingAction !== null}>
+              {pendingAction === 'HOST_CLEAR_SCORES' ? 'Очистка...' : 'Очистить счёт'}
             </Button>
           </CardHeader>
           <CardContent>
@@ -606,11 +644,11 @@ export function HostRoom() {
                         <TableCell className={`font-medium ${isDarkTheme ? "text-slate-400" : "text-slate-600"}`}>{i + 1}</TableCell>
                         <TableCell className={`font-semibold ${isDarkTheme ? "text-slate-200" : "text-slate-900"}`}>{p.displayName}</TableCell>
                         <TableCell className="text-right">
-                          <Badge 
-                            variant={p.score > 0 ? "default" : "secondary"} 
+                          <Badge
+                            variant={p.score > 0 ? "default" : "secondary"}
                             className={`text-sm px-3 py-1 ${
-                              isDarkTheme && p.score <= 0 
-                                ? "bg-slate-800 text-slate-300 hover:bg-slate-700" 
+                              isDarkTheme && p.score <= 0
+                                ? "bg-slate-800 text-slate-300 hover:bg-slate-700"
                                 : ""
                             }`}
                           >

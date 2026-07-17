@@ -73,7 +73,8 @@ model GameHistory {
   hostUserId   String
   hostUser     HostUser @relation(fields: [hostUserId], references: [id], onDelete: Cascade)
   roomCode     String
-  winnerName   String
+  result       String   @default("WINNER") // WINNER, DRAW, NO_WINNER
+  winnerName   String?
   winnerScore  Int
   participants Int
   createdAt    DateTime @default(now())
