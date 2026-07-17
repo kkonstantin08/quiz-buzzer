@@ -29,14 +29,34 @@ export function HostRoom() {
   const [copied, setCopied] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
-  const [winnerInfo, setWinnerInfo] = useState<{winnerName: string | null, winnerScore: number} | null>(null);
+  const [winnerInfo, setWinnerInfo] = useState<{winnerName: string | null, winnerScore: number, result: string} | null>(null);
   const soundSettingsRef = React.useRef({ enabled: true, theme: 'classic' });
+  const currentActionIdRef = React.useRef<number>(0);
+  const actionTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   const announce = useAriaLive();
 
   useSocketAuthRecovery(
     () => { announce('Сессия ведущего недействительна. Войдите снова.', 'assertive'); navigate('/login', { replace: true }); },
     () => { announce('Не удалось восстановить подключение. Войдите снова.', 'assertive'); navigate('/login', { replace: true }); },
   );
+
+  useEffect(() => {
+    return () => {
+      if (actionTimeoutRef.current) clearTimeout(actionTimeoutRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onDisconnect = () => {
+      setPendingAction(null);
+      currentActionIdRef.current += 1;
+      if (actionTimeoutRef.current) clearTimeout(actionTimeoutRef.current);
+    };
+    socket.on('disconnect', onDisconnect);
+    return () => {
+      socket.off('disconnect', onDisconnect);
+    };
+  }, []);
 
   useEffect(() => {
     api.getSettings()
@@ -60,7 +80,7 @@ export function HostRoom() {
         socket.connect();
       }
 
-      socket.emit('HOST_REJOIN_ROOM', { roomId }, (res) => {
+      socket.emit('HOST_REJOIN_ROOM', { roomId }, (res: any) => {
         if (res.success) {
           setRoom(res.room);
           setReconnectState('connected');
@@ -129,10 +149,9 @@ export function HostRoom() {
           if (result === 'WINNER' || result === 'DRAW') {
             const sorted = [...updatedRoom.participants].sort((a, b) => b.score - a.score);
             winnerScore = sorted[0]?.score || 0;
-            if (result === 'DRAW') winnerName = 'Ничья';
           }
 
-          setWinnerInfo({ winnerName, winnerScore });
+          setWinnerInfo({ winnerName, winnerScore, result: result || 'NO_WINNER' });
 
           if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
             confetti({
@@ -224,56 +243,58 @@ export function HostRoom() {
   const publicUrl = window.location.origin;
   const joinUrl = `${publicUrl}/room/${room.roomCode}`;
 
-  const handleStartRound = () => {
-    setPendingAction('ROUND_START');
-    socket.emit('ROUND_START', (res: any) => {
+  const emitWithTimeout = (action: string, payload?: any, onSuccess?: (res: any) => void) => {
+    if (pendingAction !== null) return;
+
+    const actionId = ++currentActionIdRef.current;
+    setPendingAction(action);
+    setActionError(null);
+
+    if (actionTimeoutRef.current) clearTimeout(actionTimeoutRef.current);
+
+    actionTimeoutRef.current = setTimeout(() => {
+      if (currentActionIdRef.current === actionId) {
+        setPendingAction(null);
+        setActionError('Превышено время ожидания ответа от сервера. Проверьте соединение.');
+        announce('Превышено время ожидания ответа от сервера. Проверьте соединение.', 'assertive');
+      }
+    }, 5000);
+
+    const cb = (res: any) => {
+      if (currentActionIdRef.current !== actionId) return;
+
+      if (actionTimeoutRef.current) clearTimeout(actionTimeoutRef.current);
       setPendingAction(null);
+
       if (res && !res.success) {
-        setActionError(res.error);
-        announce(res.error, 'assertive');
+        setActionError(res.error || 'Ошибка выполнения действия');
+        announce(res.error || 'Ошибка выполнения действия', 'assertive');
       } else {
         setActionError(null);
+        if (onSuccess) onSuccess(res);
       }
-    });
+    };
+
+    if (payload !== undefined) {
+      socket.emit(action, payload, cb);
+    } else {
+      socket.emit(action, cb);
+    }
   };
+
+  const handleStartRound = () => emitWithTimeout('ROUND_START');
 
   const handleReset = (winnerId: string | null = null, isCorrect: boolean | null = null) => {
-    setPendingAction('ROUND_RESET');
-    socket.emit('ROUND_RESET', { winnerId }, (res: any) => {
-      setPendingAction(null);
-      if (res && !res.success) {
-        setActionError(res.error);
-        announce(res.error, 'assertive');
-      } else {
-        setActionError(null);
-        if (isCorrect === true) playSound('correct', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
-        else if (isCorrect === false) playSound('wrong', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
-      }
+    emitWithTimeout('ROUND_RESET', { winnerId }, () => {
+      if (isCorrect === true) playSound('correct', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
+      else if (isCorrect === false) playSound('wrong', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
     });
   };
 
-  const handleCorrect = () => {
-    handleReset(room.firstBuzzerId, true);
-  };
+  const handleCorrect = () => handleReset(room.firstBuzzerId, true);
+  const handleWrong = () => handleReset(null, false);
 
-  const handleWrong = () => {
-    handleReset(null, false);
-  };
-
-  const handleClearScoreboard = () => {
-    setPendingAction('HOST_CLEAR_SCORES');
-    socket.emit('HOST_CLEAR_SCORES', (result: any) => {
-      setPendingAction(null);
-      if (result && result.success) {
-        setActionError(null);
-        return;
-      }
-      if (result) {
-        setActionError(result.error);
-        announce(result.error, 'assertive');
-      }
-    });
-  };
+  const handleClearScoreboard = () => emitWithTimeout('HOST_CLEAR_SCORES');
 
   const handleCopy = () => {
     if (navigator.clipboard && window.isSecureContext) {
@@ -297,15 +318,8 @@ export function HostRoom() {
   };
 
   const handleFinishRoom = () => {
-    setPendingAction('ROOM_FINISH');
-    socket.emit('ROOM_FINISH', (res: any) => {
-      setPendingAction(null);
-      if (res && res.success) {
-        setFinishOpen(false);
-      } else if (res) {
-        setActionError(res.error);
-        announce(res.error, 'assertive');
-      }
+    emitWithTimeout('ROOM_FINISH', undefined, () => {
+      setFinishOpen(false);
     });
   };
 
@@ -320,7 +334,7 @@ export function HostRoom() {
               </div>
               <div className="space-y-2">
                 <h1 className="text-3xl font-black text-slate-800 tracking-tight">Игра завершена</h1>
-                <p className="text-lg text-slate-600">В игре так и не появилось участников. Эта игра не будет сохранена в статистике.</p>
+                <p className="text-lg text-slate-600">В игре так и не появилось участников. Игра завершена без победителя.</p>
               </div>
               <Button size="lg" className="mt-8 w-full h-14 text-lg font-bold" onClick={() => navigate('/dashboard')}>
                 На главную
@@ -344,13 +358,34 @@ export function HostRoom() {
             </div>
 
             <div className="bg-slate-50 border border-slate-100 rounded-2xl p-6 w-full mt-6 shadow-sm">
-              <p className="text-sm font-semibold text-slate-600 tracking-wide mb-2">Победитель</p>
-              <h2 className="text-3xl font-bold text-primary break-words">
-                {winnerInfo.winnerName}
-              </h2>
-              <div className="mt-4 inline-flex items-center justify-center px-4 py-1.5 rounded-full bg-yellow-100 text-yellow-700 font-bold text-lg">
-                {winnerInfo.winnerScore} {winnerInfo.winnerScore === 1 ? 'балл' : winnerInfo.winnerScore > 1 && winnerInfo.winnerScore < 5 ? 'балла' : 'баллов'}
-              </div>
+              {winnerInfo.result === 'NO_WINNER' ? (
+                <>
+                  <p className="text-sm font-semibold text-slate-600 tracking-wide mb-2">Результат</p>
+                  <h2 className="text-3xl font-bold text-slate-700 break-words">
+                    Нет победителя
+                  </h2>
+                </>
+              ) : winnerInfo.result === 'DRAW' ? (
+                <>
+                  <p className="text-sm font-semibold text-slate-600 tracking-wide mb-2">Результат</p>
+                  <h2 className="text-3xl font-bold text-primary break-words">
+                    Ничья
+                  </h2>
+                  <div className="mt-4 inline-flex items-center justify-center px-4 py-1.5 rounded-full bg-yellow-100 text-yellow-700 font-bold text-lg">
+                    {winnerInfo.winnerScore} {winnerInfo.winnerScore === 1 ? 'балл' : winnerInfo.winnerScore > 1 && winnerInfo.winnerScore < 5 ? 'балла' : 'баллов'} у лидеров
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-semibold text-slate-600 tracking-wide mb-2">Победитель</p>
+                  <h2 className="text-3xl font-bold text-primary break-words">
+                    {winnerInfo.winnerName}
+                  </h2>
+                  <div className="mt-4 inline-flex items-center justify-center px-4 py-1.5 rounded-full bg-yellow-100 text-yellow-700 font-bold text-lg">
+                    {winnerInfo.winnerScore} {winnerInfo.winnerScore === 1 ? 'балл' : winnerInfo.winnerScore > 1 && winnerInfo.winnerScore < 5 ? 'балла' : 'баллов'}
+                  </div>
+                </>
+              )}
             </div>
 
             <Button size="lg" className="mt-8 w-full h-14 text-lg font-bold" onClick={() => navigate('/dashboard')}>

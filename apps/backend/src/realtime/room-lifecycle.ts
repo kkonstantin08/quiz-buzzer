@@ -12,7 +12,11 @@ export const maxLifetimeTimers = new Map<string, NodeJS.Timeout>();
 
 // Mockable timer loader (allows fake timers in tests without freezing Socket.io)
 export const lifecycleTimerLoader = {
-  setTimeout: (cb: () => void, ms: number): NodeJS.Timeout => setTimeout(cb, ms),
+  setTimeout: (cb: () => void, ms: number): NodeJS.Timeout => {
+    const timer = setTimeout(cb, ms);
+    if (timer.unref) timer.unref();
+    return timer;
+  },
   clearTimeout: (t: NodeJS.Timeout) => clearTimeout(t),
 };
 
@@ -45,7 +49,6 @@ export async function saveGameHistory(
   prisma: PrismaClient
 ): Promise<void> {
   if (room.historySaved) return; // Already saved — skip
-  if (room.participants.length === 0) return; // No participants — do not record
 
   room.historySaved = true;
 
@@ -70,6 +73,7 @@ export async function saveGameHistory(
     console.error('Failed to save game history:', err);
     // Reset flag so a retry is possible on transient DB errors
     room.historySaved = false;
+    throw err;
   }
 }
 
@@ -123,23 +127,27 @@ export function scheduleMaxLifetimeCleanup(
 
   const timer = lifecycleTimerLoader.setTimeout(() => {
     maxLifetimeTimers.delete(roomId);
-    // Mark finished if not already, then save history before deletion
-    const r = rooms.get(roomId);
-    if (r && r.roundState !== RoomState.FINISHED) {
-      r.roundState = RoomState.FINISHED;
-      // We only compute game result if it wasn't already finished
-      calculateGameResult(r);
-    }
 
-    if (r) {
-      saveGameHistory(r, prisma).catch(err => console.error('Error saving history on max lifetime cleanup:', err));
-    }
-
-    const { participantDisconnectTimers } = require('./index');
-    deleteRoom(roomId, 'время комнаты истекло', io, buzzBuffers, [
-      ...extraTimers,
-      postFinishTimers,
-    ], participantDisconnectTimers);
+    (async () => {
+      const r = rooms.get(roomId);
+      try {
+        if (r && r.roundState !== RoomState.FINISHED) {
+          r.roundState = RoomState.FINISHED;
+          calculateGameResult(r);
+        }
+        if (r) {
+          await saveGameHistory(r, prisma);
+        }
+      } catch (err) {
+        console.error('Error saving history on max lifetime cleanup:', err);
+      } finally {
+        const { participantDisconnectTimers } = require('./index');
+        deleteRoom(roomId, 'время комнаты истекло', io, buzzBuffers, [
+          ...extraTimers,
+          postFinishTimers,
+        ], participantDisconnectTimers);
+      }
+    })();
   }, delay);
 
   maxLifetimeTimers.set(roomId, timer);

@@ -8,8 +8,10 @@ import { withValidation } from '../validation';
 
 const backendRoot = process.cwd();
 const readSource = (...parts: string[]) => readFileSync(resolve(backendRoot, ...parts), 'utf8');
-const eventNames = (source: string, method: 'on' | 'emit') =>
-  new Set([...source.matchAll(new RegExp(`\\.${method}\\(\\s*['\"]([A-Z_]+)['\"]`, 'g'))].map((match) => match[1]));
+const eventNames = (source: string, method: 'on' | 'emit') => {
+  const methodRegex = method === 'emit' ? `(?:\\.${method}|emitWithTimeout)` : `\\.${method}`;
+  return new Set([...source.matchAll(new RegExp(`${methodRegex}\\(\\s*['\"]([A-Z_]+)['\"]`, 'g'))].map((match) => match[1]));
+};
 
 const clientToServerEvents = new Set([
   'ROOM_CREATE', 'ROOM_JOIN', 'PARTICIPANT_REJOIN', 'ROUND_START', 'BUZZ_SUBMIT',

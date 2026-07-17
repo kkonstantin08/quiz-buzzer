@@ -14,6 +14,7 @@
     "build": "npm run build -w shared && npm run build -w backend && npm run build -w frontend",
     "typecheck": "npm run build -w shared && npm run typecheck -w backend && npm run typecheck -w frontend",
     "test": "npm run build -w shared && npm run test -w backend && npm run test -w frontend",
+    "test:scripts": "vitest run scripts/",
     "lint": "npm run lint -w frontend",
     "ci": "npm run lint && npm run typecheck && npm run test && npm run build",
     "legal:check": "node scripts/legal-check.mjs",

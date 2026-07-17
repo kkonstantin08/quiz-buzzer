@@ -99,7 +99,7 @@ describe('State Machine Transitions', () => {
       hostSocket.emit('ROUND_START', (res1: any) => {
         if (!res1.success) console.error('ROUND_START failed:', res1.error);
         expect(res1.success).toBe(true);
-        
+
         // 2. Invalid transition (already ACTIVE)
         hostSocket.emit('ROUND_START', (res2: any) => {
           expect(res2.success).toBe(false);
@@ -114,10 +114,38 @@ describe('State Machine Transitions', () => {
     setupRoom(() => {
       // Invalid transition from WAITING
       hostSocket.emit('ROUND_RESET', {}, (res: any) => {
-        if (res.success) console.error('ROUND_RESET succeeded unexpectedly!');
         expect(res.success).toBe(false);
         expect(res.error).toBe('Сброс возможен только после ответа');
         done();
+      });
+    });
+  });
+
+  it('should validate winnerId during ROUND_RESET and apply score', (done) => {
+    setupRoom(() => {
+      // Manually set internal state for this test
+      const room = Array.from(rooms.values()).find(r => r.roomCode === createdRoomCode);
+      if (!room) return done(new Error('Room not found'));
+
+      // Simulate participant
+      room.participants.push({
+        id: 'p1', displayName: 'Player 1', socketId: 's1', joinedAt: 1, isConnected: true, score: 0, reconnectTokenHash: 'h'
+      });
+      room.roundState = RoomState.REVEALED;
+      room.firstBuzzerId = 'p1';
+
+      // 1. Invalid winner
+      hostSocket.emit('ROUND_RESET', { winnerId: 'wrong_id' }, (res1: any) => {
+        expect(res1.success).toBe(false);
+        expect(res1.error).toBe('Неверный победитель');
+
+        // 2. Valid winner
+        hostSocket.emit('ROUND_RESET', { winnerId: 'p1' }, (res2: any) => {
+          expect(res2.success).toBe(true);
+          expect(room.roundState).toBe(RoomState.WAITING);
+          expect(room.participants[0].score).toBe(1);
+          done();
+        });
       });
     });
   });

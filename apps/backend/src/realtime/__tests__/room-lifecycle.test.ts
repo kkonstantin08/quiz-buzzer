@@ -154,6 +154,75 @@ describe('Room Lifecycle', () => {
     expect(room.historySaved).toBe(true);
   });
 
+  // ── 3b. Empty game is saved as NO_WINNER ─────────────────────────────────
+  it('3b. Empty game is saved as NO_WINNER', async () => {
+    const prisma = makeMockPrisma();
+    const room = createRoom('host-1', 'sock-1');
+    room.participants = [];
+    room.gameResult = undefined as any;
+
+    await saveGameHistory(room, prisma);
+
+    expect(prisma.gameHistory.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        result: 'NO_WINNER',
+        winnerScore: 0,
+        participants: 0,
+      }),
+    }));
+  });
+
+  // ── 3c. DB error is caught and does not cause unhandled rejection ────────
+  it('3c. DB error does not cause unhandled rejection and deletes room in maxLifetime cleanup', async () => {
+    jest.useFakeTimers();
+    const io = makeMockIo();
+    const mockCreate = jest.fn().mockRejectedValue(new Error('DB Error'));
+    jest.mocked(require('../../prisma').prisma.gameHistory.create).mockImplementation(mockCreate);
+
+    const room = createRoom('host-error', 'sock-err');
+    scheduleMaxLifetimeCleanup(room.roomId, io, new Map(), []);
+
+    jest.advanceTimersByTime(24 * 60 * 60 * 1000);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve(); // Flush microtasks
+
+    // Error was thrown inside, caught, and finally deleteRoom was executed
+    expect(rooms.has(room.roomId)).toBe(false);
+    expect(mockCreate).toHaveBeenCalled();
+
+    io.close();
+    jest.useRealTimers();
+  });
+
+  // ── 3d. calculateGameResult mappings ─────────────────────────────────────
+  it('3d. calculateGameResult maps 0 score, 1 winner, and draw correctly', () => {
+    const room = createRoom('host', 'sock');
+
+    // 0 participants
+    room.participants = [];
+    require('../room-lifecycle').calculateGameResult(room);
+    expect(room.gameResult).toBe(RoomState.NO_WINNER || 'NO_WINNER');
+
+    // Participants but all 0 score
+    room.participants = [
+      { id: '1', displayName: 'A', socketId: 's', joinedAt: 1, isConnected: true, score: 0 },
+    ];
+    require('../room-lifecycle').calculateGameResult(room);
+    expect(room.gameResult).toBe('NO_WINNER');
+
+    // One leader
+    room.participants[0].score = 10;
+    require('../room-lifecycle').calculateGameResult(room);
+    expect(room.gameResult).toBe('WINNER');
+    expect(room.winnerName).toBe('A');
+
+    // Draw
+    room.participants.push({ id: '2', displayName: 'B', socketId: 's', joinedAt: 1, isConnected: true, score: 10 });
+    require('../room-lifecycle').calculateGameResult(room);
+    expect(room.gameResult).toBe('DRAW');
+  });
+
   // ── 4. ROOM_JOIN blocked for FINISHED room ────────────────────────────────
   it('4. Cannot join a FINISHED room', () => {
     const room = createRoom('host-1', 'sock-1');

@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { RoomState, type PublicRoomData } from "shared";
@@ -13,6 +13,7 @@ vi.mock("../../realtime/socket", () => ({
     emit: vi.fn(),
     on: vi.fn(),
     off: vi.fn(),
+    once: vi.fn(),
   },
 }));
 
@@ -31,6 +32,7 @@ type MockSocket = {
   emit: ReturnType<typeof vi.fn>;
   on: ReturnType<typeof vi.fn>;
   off: ReturnType<typeof vi.fn>;
+  once: ReturnType<typeof vi.fn>;
 };
 
 const mockSocket = socket as unknown as MockSocket;
@@ -124,5 +126,50 @@ describe("ParticipantRoom state listener", () => {
         mockSocket.on.mock.calls.filter(([event]) => event === "ROOM_STATE_UPDATED"),
       ).toHaveLength(1);
     });
+  });
+
+  it("cleans up both connect and connect_error listeners regardless of which fires first", async () => {
+    // Start disconnected
+    mockSocket.connected = false;
+
+    // Capture the `once` handlers registered during join attempt
+    const onceHandlers: Record<string, Function> = {};
+    mockSocket.once.mockImplementation((event: string, handler: Function) => {
+      onceHandlers[event] = handler;
+      return mockSocket;
+    });
+
+    render(
+      <AriaLiveProvider>
+        <MemoryRouter initialEntries={["/room/ABC123"]}>
+          <Routes>
+            <Route path="/room/:roomCode" element={<ParticipantRoom />} />
+          </Routes>
+        </MemoryRouter>
+      </AriaLiveProvider>,
+    );
+
+    // Enter name and try to join
+    const input = await screen.findByPlaceholderText("Имя или игровой псевдоним");
+    const joinButton = screen.getByRole("button", { name: "Войти в игру" });
+
+    act(() => {
+      fireEvent.change(input, { target: { value: "ТестИгрок" } });
+      fireEvent.click(joinButton);
+    });
+
+    await waitFor(() => {
+      expect(onceHandlers.connect).toBeDefined();
+      expect(onceHandlers.connect_error).toBeDefined();
+    });
+
+    // Simulate connect_error
+    act(() => {
+      onceHandlers.connect_error!(new Error("test error"));
+    });
+
+    // Verify both were removed
+    expect(mockSocket.off).toHaveBeenCalledWith("connect_error", onceHandlers.connect_error);
+    expect(mockSocket.off).toHaveBeenCalledWith("connect", onceHandlers.connect);
   });
 });

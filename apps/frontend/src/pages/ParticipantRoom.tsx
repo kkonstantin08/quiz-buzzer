@@ -31,6 +31,7 @@ export function ParticipantRoom() {
   const [winnerInfo, setWinnerInfo] = useState<{
     winnerName: string | null;
     winnerScore: number;
+    result: string;
   } | null>(null);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [unlockReady, setUnlockReady] = useState(false);
@@ -45,6 +46,11 @@ export function ParticipantRoom() {
     connect?: () => void;
     connect_error?: (e: Error) => void;
   }>({});
+  const roomStateRef = useRef<RoomState | undefined>(undefined);
+
+  useEffect(() => {
+    roomStateRef.current = room?.roundState;
+  }, [room?.roundState]);
 
   useEffect(() => {
     return () => {
@@ -231,6 +237,9 @@ export function ParticipantRoom() {
       if (joinListenersRef.current.connect) {
         socket.off("connect", joinListenersRef.current.connect);
       }
+      if (joinListenersRef.current.connect_error) {
+        socket.off("connect_error", joinListenersRef.current.connect_error);
+      }
       joinListenersRef.current.connect = undefined;
       joinListenersRef.current.connect_error = undefined;
       joinPendingRef.current = false;
@@ -241,6 +250,9 @@ export function ParticipantRoom() {
     const emitJoinWithCleanup = () => {
       if (joinListenersRef.current.connect_error) {
         socket.off("connect_error", joinListenersRef.current.connect_error);
+      }
+      if (joinListenersRef.current.connect) {
+        socket.off("connect", joinListenersRef.current.connect);
       }
       joinListenersRef.current.connect = undefined;
       joinListenersRef.current.connect_error = undefined;
@@ -260,7 +272,7 @@ export function ParticipantRoom() {
       setRoom((previousRoom) => {
         if (
           updatedRoom.roundState === RoomState.WAITING ||
-          updatedRoom.roundState === RoomState.ACTIVE
+          (updatedRoom.roundState === RoomState.ACTIVE && previousRoom?.roundState !== RoomState.ACTIVE)
         ) {
           setAmIFirst(false);
           setBuzzStatus("idle");
@@ -311,12 +323,11 @@ export function ParticipantRoom() {
           if (result === 'WINNER' || result === 'DRAW') {
             const sorted = [...updatedRoom.participants].sort((a, b) => b.score - a.score);
             winnerScore = sorted[0]?.score || 0;
-            if (result === 'DRAW') winnerName = 'Ничья';
           }
 
-          setWinnerInfo({ winnerName, winnerScore });
+          setWinnerInfo({ winnerName, winnerScore, result: result || 'NO_WINNER' });
           announce(
-            `Игра завершена. Победитель: ${winnerName || "Нет победителя"}`,
+            `Игра завершена. ${result === 'DRAW' ? 'Ничья' : result === 'WINNER' ? `Победитель: ${winnerName}` : 'Нет победителя'}`,
           );
         }
 
@@ -406,7 +417,9 @@ export function ParticipantRoom() {
     ackTimeoutRef.current = setTimeout(() => {
       ackTimeoutRef.current = null;
       announce("Ошибка сети. Попробуйте еще раз", "assertive");
-      setBuzzStatus("idle");
+      if (roomStateRef.current === RoomState.ACTIVE) {
+        setBuzzStatus("idle");
+      }
     }, 5000);
 
     socket.emit("BUZZ_SUBMIT", { clientPressedAt }, (res) => {
@@ -423,7 +436,9 @@ export function ParticipantRoom() {
         setBuzzStatus("accepted");
       } else {
         announce(res?.error || "Ошибка", "assertive");
-        setBuzzStatus("idle");
+        if (roomStateRef.current === RoomState.ACTIVE) {
+          setBuzzStatus("idle");
+        }
       }
     });
   };
@@ -468,12 +483,22 @@ export function ParticipantRoom() {
         </h2>
         <p className="text-slate-600 mb-6">Ведущий завершил эту игру.</p>
         <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 w-full max-w-sm">
-          <p className="text-xs font-semibold text-slate-600 tracking-wide mb-1">
-            Победитель
-          </p>
-          <p className="text-2xl font-bold text-primary break-words">
-            {winnerInfo.winnerName}
-          </p>
+          {winnerInfo.result === 'NO_WINNER' ? (
+            <>
+              <p className="text-xs font-semibold text-slate-600 tracking-wide mb-1">Результат</p>
+              <p className="text-2xl font-bold text-slate-700 break-words">Нет победителя</p>
+            </>
+          ) : winnerInfo.result === 'DRAW' ? (
+            <>
+              <p className="text-xs font-semibold text-slate-600 tracking-wide mb-1">Результат</p>
+              <p className="text-2xl font-bold text-primary break-words">Ничья</p>
+            </>
+          ) : (
+            <>
+              <p className="text-xs font-semibold text-slate-600 tracking-wide mb-1">Победитель</p>
+              <p className="text-2xl font-bold text-primary break-words">{winnerInfo.winnerName}</p>
+            </>
+          )}
         </div>
       </main>
     );
