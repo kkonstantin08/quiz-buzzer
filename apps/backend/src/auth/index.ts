@@ -2,40 +2,20 @@ import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
-import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
+import { uploadMiddleware, validateFileSignature, deleteUploadedFile } from '../utils/upload';
 import { prisma } from '../prisma';
 import { config } from '../config';
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = path.join(__dirname, '../../uploads/avatars');
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`);
-  }
-});
-
-const upload = multer({ 
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-  fileFilter: (req, file, cb) => {
-    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
-    if (allowedMimeTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(null, false);
-    }
-  }
-});
-
+import { requireAuth, AuthRequest } from './middleware';
+import { appEvents } from '../events';
+import { LegalDocumentType, LegalAcceptanceSource, legalBackendConfig } from '../legal/config';
 export const authRouter = Router();
+
+const hostCookieOptions = {
+  httpOnly: true,
+  secure: process.env.USE_HTTPS === 'true',
+  sameSite: 'lax' as const,
+  path: '/',
+};
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -43,6 +23,7 @@ const loginLimiter = rateLimit({
   message: { error: 'Слишком много попыток входа, пожалуйста, подождите 15 минут' },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { trustProxy: false },
 });
 
 const registerLimiter = rateLimit({
@@ -51,6 +32,7 @@ const registerLimiter = rateLimit({
   message: { error: 'Слишком много регистраций с этого IP, пожалуйста, подождите час' },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { trustProxy: false },
 });
 
 authRouter.post('/login', loginLimiter, async (req, res) => {
@@ -75,14 +57,21 @@ authRouter.post('/login', loginLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = jwt.sign({ userId: user.id }, config.jwtSecret, { expiresIn: '7d' });
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    const session = await prisma.session.create({
+      data: {
+        userId: user.id,
+        expiresAt,
+      }
+    });
+
+    const token = jwt.sign({ userId: user.id, sessionId: session.id }, config.jwtSecret, { expiresIn: '7d' });
     
     // Set JWT in httpOnly cookie (inaccessible to JavaScript)
-    const isHttps = process.env.USE_HTTPS === 'true';
     res.cookie('hostToken', token, {
-      httpOnly: true,
-      secure: isHttps,
-      sameSite: 'lax',
+      ...hostCookieOptions,
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
     });
     
@@ -104,22 +93,10 @@ authRouter.post('/login', loginLimiter, async (req, res) => {
   }
 });
 
-authRouter.get('/me', async (req: any, res) => {
+authRouter.get('/me', requireAuth, async (req: AuthRequest, res) => {
   try {
-    // Accept token from httpOnly cookie first, then Authorization header as fallback
-    let token = req.cookies?.hostToken;
-    if (!token) {
-      const authHeader = req.headers.authorization;
-      if (!authHeader) {
-        return res.status(401).json({ error: 'No token provided' });
-      }
-      token = authHeader.split(' ')[1];
-    }
-    
-    const decoded = jwt.verify(token, config.jwtSecret) as { userId: string };
-    
     const user = await prisma.hostUser.findUnique({
-      where: { id: decoded.userId },
+      where: { id: req.userId! },
       include: { subscription: true, settings: true },
     });
     
@@ -143,41 +120,39 @@ authRouter.get('/me', async (req: any, res) => {
       } : null
     });
   } catch (error) {
-    return res.status(401).json({ error: 'Invalid token' });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-authRouter.post('/logout', (req, res) => {
-  res.clearCookie('hostToken', { httpOnly: true, sameSite: 'strict' });
+authRouter.post('/logout', requireAuth, async (req: AuthRequest, res) => {
+  await prisma.session.update({
+    where: { id: req.sessionId! },
+    data: { revokedAt: new Date() }
+  });
+  appEvents.emit('host_logout', req.sessionId!);
+  res.clearCookie('hostToken', hostCookieOptions);
   return res.json({ success: true });
 });
 
-authRouter.put('/me', async (req: any, res) => {
+authRouter.post('/clear-session', (_req, res) => {
+  res.clearCookie('hostToken', hostCookieOptions);
+  return res.json({ success: true });
+});
+
+authRouter.put('/me', requireAuth, async (req: AuthRequest, res) => {
   try {
-    // Accept token from httpOnly cookie first, then Authorization header as fallback
-    let token = req.cookies?.hostToken;
-    if (!token) {
-      const authHeader = req.headers.authorization;
-      if (!authHeader) {
-        return res.status(401).json({ error: 'No token provided' });
-      }
-      token = authHeader.split(' ')[1];
-    }
-    
-    const decoded = jwt.verify(token, config.jwtSecret) as { userId: string };
-    
     const { name, email } = req.body;
     
     // Check if email is being changed and is already taken
     if (email) {
       const existingUser = await prisma.hostUser.findUnique({ where: { email } });
-      if (existingUser && existingUser.id !== decoded.userId) {
+      if (existingUser && existingUser.id !== req.userId!) {
         return res.status(400).json({ error: 'Email already in use' });
       }
     }
 
     const updatedUser = await prisma.hostUser.update({
-      where: { id: decoded.userId },
+      where: { id: req.userId! },
       data: { 
         name: name !== undefined ? name : undefined,
         email: email !== undefined ? email : undefined 
@@ -201,58 +176,76 @@ authRouter.put('/me', async (req: any, res) => {
       } : null
     });
   } catch (error) {
-    return res.status(401).json({ error: 'Invalid token or update failed' });
+    return res.status(500).json({ error: 'Update failed' });
   }
 });
 
-authRouter.post('/avatar', upload.single('avatar'), async (req: any, res) => {
-  try {
-    // Accept token from httpOnly cookie first, then Authorization header as fallback
-    let token = req.cookies?.hostToken;
-    if (!token) {
-      const authHeader = req.headers.authorization;
-      if (!authHeader) {
-        return res.status(401).json({ error: 'No token provided' });
-      }
-      token = authHeader.split(' ')[1];
+authRouter.post('/avatar', requireAuth, (req: AuthRequest, res: any, next: any) => {
+  uploadMiddleware.single('avatar')(req, res, (err: any) => {
+    if (err) {
+      return res.status(400).json({ error: 'Upload failed or invalid file' });
     }
-    
-    const decoded = jwt.verify(token, config.jwtSecret) as { userId: string };
-    
+    next();
+  });
+}, async (req: AuthRequest, res: any) => {
+  try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded or invalid file type' });
     }
 
     const filePath = req.file.path;
-    // file-type v22 is ESM-only: use dynamic import
-    const { fileTypeFromFile } = await import('file-type');
-    const fileType = await fileTypeFromFile(filePath);
+    const isValid = await validateFileSignature(filePath);
     
-    if (!fileType || !['image/jpeg', 'image/png', 'image/webp'].includes(fileType.mime)) {
-      fs.unlinkSync(filePath);
+    if (!isValid) {
+      import('fs').then(fs => fs.unlinkSync(filePath));
       return res.status(400).json({ error: 'Invalid file signature. File rejected.' });
     }
 
-    const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+    const avatarUrl = `/uploads/${req.file.filename}`;
+
+    const user = await prisma.hostUser.findUnique({ where: { id: req.userId! } });
+    if (user?.avatarUrl) {
+      deleteUploadedFile(user.avatarUrl);
+    }
 
     const updatedUser = await prisma.hostUser.update({
-      where: { id: decoded.userId },
+      where: { id: req.userId! },
       data: { avatarUrl },
     });
 
     return res.json({ avatarUrl: updatedUser.avatarUrl });
   } catch (error) {
     console.error('Avatar upload error:', error);
-    return res.status(401).json({ error: 'Upload failed' });
+    return res.status(500).json({ error: 'Upload failed' });
   }
 });
 
 authRouter.post('/register', registerLimiter, async (req, res) => {
+  if (process.env.REGISTRATION_ENABLED === 'false') {
+    return res.status(503).json({
+      code: 'REGISTRATION_DISABLED',
+      message: 'Регистрация временно недоступна'
+    });
+  }
+
   try {
-    const { email, password } = req.body;
+    const { email, password, termsAccepted, displayedTermsVersion } = req.body;
     
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    if (!termsAccepted) {
+      return res.status(400).json({ error: 'Необходимо принять Пользовательское соглашение' });
+    }
+
+    const serverTermsVersion = legalBackendConfig.versions[LegalDocumentType.TERMS];
+    if (displayedTermsVersion !== serverTermsVersion) {
+      return res.status(409).json({
+        code: 'DOCUMENT_VERSION_MISMATCH',
+        message: 'Версия документа изменилась. Обновите страницу и повторите действие.',
+        currentVersion: serverTermsVersion
+      });
     }
 
     const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -270,21 +263,51 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const user = await prisma.hostUser.create({
-      data: {
-        email,
-        passwordHash,
-      },
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    // Get client IP and User-Agent
+    const ipAddress = req.ip || req.socket.remoteAddress || null;
+    const userAgent = req.headers['user-agent'] || null;
+
+    // Use transaction for atomic creation
+    const { user, session } = await prisma.$transaction(async (tx) => {
+      const createdUser = await tx.hostUser.create({
+        data: {
+          email,
+          passwordHash,
+        },
+      });
+
+      const createdSession = await tx.session.create({
+        data: {
+          userId: createdUser.id,
+          expiresAt,
+        }
+      });
+
+      // Explicitly use server version instead of client version
+      const serverVersion = legalBackendConfig.versions[LegalDocumentType.TERMS];
+
+      await tx.legalAcceptance.create({
+        data: {
+          hostUserId: createdUser.id,
+          documentType: LegalDocumentType.TERMS,
+          documentVersion: serverVersion,
+          acceptanceSource: LegalAcceptanceSource.REGISTRATION,
+          ipAddress,
+          userAgent,
+        }
+      });
+
+      return { user: createdUser, session: createdSession };
     });
 
-    const token = jwt.sign({ userId: user.id }, config.jwtSecret, { expiresIn: '7d' });
+    const token = jwt.sign({ userId: user.id, sessionId: session.id }, config.jwtSecret, { expiresIn: '7d' });
 
     // Set JWT in httpOnly cookie (inaccessible to JavaScript)
-    const isHttps = process.env.USE_HTTPS === 'true';
     res.cookie('hostToken', token, {
-      httpOnly: true,
-      secure: isHttps,
-      sameSite: 'lax',
+      ...hostCookieOptions,
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
     });
 
