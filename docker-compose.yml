@@ -12,10 +12,15 @@ services:
       - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:5173}
       - PORT=3001
       - NODE_ENV=production
+      - TRUST_PROXY=172.30.0.10
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      - PAYMENTS_ENABLED=${PAYMENTS_ENABLED:-false}
     # ports are intentionally NOT exposed — access only through nginx
     volumes:
       - backend_data:/app/prisma
       - backend_uploads:/app/uploads
+    networks:
+      proxy_network:
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/api/health"]
       interval: 10s
@@ -33,17 +38,22 @@ services:
     # ports are intentionally NOT exposed — access only through nginx
     depends_on:
       - backend
+    networks:
+      proxy_network:
 
   nginx:
     image: nginx:alpine
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "${NGINX_PORT:-80}:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - frontend
       - backend
+    networks:
+      proxy_network:
+        ipv4_address: 172.30.0.10
 
   cloudflared:
     image: cloudflare/cloudflared:latest
@@ -53,7 +63,16 @@ services:
     restart: unless-stopped
     depends_on:
       - nginx
+    networks:
+      proxy_network:
+        ipv4_address: 172.30.0.11
 
 volumes:
   backend_data:
   backend_uploads:
+
+networks:
+  proxy_network:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24

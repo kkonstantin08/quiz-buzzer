@@ -98,6 +98,20 @@ docker compose --profile tunnel up --build -d
 
 Если миграция завершится с ошибкой, контейнер не запустится (`set -e`).
 
+### Reverse proxy и cookie
+
+По умолчанию `.env` использует безопасные локальные значения:
+
+```env
+TRUST_PROXY=false
+COOKIE_SECURE=false
+PAYMENTS_ENABLED=false
+```
+
+Без `TRUST_PROXY` backend игнорирует клиентский `X-Forwarded-For`. Docker Compose запускает nginx и backend в выделенной внутренней сети: backend доверяет только фиксированному IP nginx (`172.30.0.10`). Nginx принимает `CF-Connecting-IP` и `X-Forwarded-Proto` только от фиксированного контейнера `cloudflared` (`172.30.0.11`); для protocol допускаются только `http` и `https`, иначе используется локальный `$scheme`. Для API, Socket.IO и uploads nginx перезаписывает `Host`, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto` и `X-Forwarded-Host`, поэтому произвольный forwarded-заголовок клиента не передаётся дальше.
+
+`COOKIE_SECURE=false` сохраняет локальное HTTP-тестирование. Для внешнего HTTPS задайте `COOKIE_SECURE=true` явно после настройки домена и TLS: приложение не включает HTTPS автоматически и не выводит этот флаг из request headers. При отсутствии `COOKIE_SECURE` временно поддерживается `USE_HTTPS=true`; `COOKIE_SECURE` всегда имеет приоритет.
+
 ### Проверка healthcheck
 
 Healthcheck проверяет не только доступность порта, но и соединение с базой данных:
@@ -198,7 +212,7 @@ npm run ci
 ```bash
 docker compose build && docker compose up -d
 curl http://localhost/api/health
-docker compose down -v --remove-orphans
+docker compose down --remove-orphans
 ```
 
 ### Настройка Branch Protection
