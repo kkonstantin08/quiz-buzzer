@@ -196,4 +196,33 @@ describe('State Machine Transitions', () => {
       });
     });
   });
+
+  it('should handle ROOM_FINISH DB errors by reverting state and allowing retry', (done) => {
+    setupRoom(() => {
+      const room = Array.from(rooms.values()).find(r => r.roomCode === createdRoomCode);
+      if (!room) return done(new Error('Room not found'));
+
+      // 1. Mock DB failure
+      (prisma.gameHistory.create as jest.Mock).mockRejectedValueOnce(new Error('DB Timeout'));
+
+      hostSocket.emit('ROOM_FINISH', (res1: any) => {
+        // Assert failure
+        expect(res1.success).toBe(false);
+        expect(res1.error).toBe('Не удалось сохранить результаты игры');
+
+        // Assert state is reverted to WAITING (default)
+        expect(room.roundState).toBe(RoomState.WAITING);
+        expect(room.gameResult).toBeUndefined();
+
+        // 2. Mock DB success on retry
+        (prisma.gameHistory.create as jest.Mock).mockResolvedValueOnce({});
+
+        hostSocket.emit('ROOM_FINISH', (res2: any) => {
+          expect(res2.success).toBe(true);
+          expect(room.roundState).toBe(RoomState.FINISHED);
+          done();
+        });
+      });
+    });
+  });
 });

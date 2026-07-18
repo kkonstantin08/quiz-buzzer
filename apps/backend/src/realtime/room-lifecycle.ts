@@ -84,7 +84,8 @@ export function schedulePostFinishCleanup(
   roomId: string,
   io: Server,
   buzzBuffers: Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>,
-  extraTimers: Map<string, NodeJS.Timeout>[]
+  extraTimers: Map<string, NodeJS.Timeout>[],
+  participantDisconnectTimers?: Map<string, NodeJS.Timeout>
 ): void {
   // Cancel any existing post-finish timer
   const existing = postFinishTimers.get(roomId);
@@ -95,7 +96,7 @@ export function schedulePostFinishCleanup(
 
   const timer = lifecycleTimerLoader.setTimeout(() => {
     postFinishTimers.delete(roomId);
-    deleteRoom(roomId, 'игра завершена', io, buzzBuffers, extraTimers);
+    deleteRoom(roomId, 'игра завершена', io, buzzBuffers, extraTimers, participantDisconnectTimers);
   }, 5 * 60 * 1000); // 5 minutes
 
   postFinishTimers.set(roomId, timer);
@@ -108,7 +109,8 @@ export function scheduleMaxLifetimeCleanup(
   roomId: string,
   io: Server,
   buzzBuffers: Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>,
-  extraTimers: Map<string, NodeJS.Timeout>[]
+  extraTimers: Map<string, NodeJS.Timeout>[],
+  participantDisconnectTimers?: Map<string, NodeJS.Timeout>
 ): void {
   // Cancel any existing max-lifetime timer
   const existing = maxLifetimeTimers.get(roomId);
@@ -137,7 +139,6 @@ export function scheduleMaxLifetimeCleanup(
       } catch (err) {
         console.error('Error saving history on max lifetime cleanup:', err);
       } finally {
-        const { participantDisconnectTimers } = require('./index');
         deleteRoom(roomId, 'время комнаты истекло', io, buzzBuffers, [
           ...extraTimers,
           postFinishTimers,

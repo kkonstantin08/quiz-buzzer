@@ -13,7 +13,6 @@ vi.mock("../../realtime/socket", () => ({
     emit: vi.fn(),
     on: vi.fn(),
     off: vi.fn(),
-    once: vi.fn(),
   },
 }));
 
@@ -32,7 +31,6 @@ type MockSocket = {
   emit: ReturnType<typeof vi.fn>;
   on: ReturnType<typeof vi.fn>;
   off: ReturnType<typeof vi.fn>;
-  once: ReturnType<typeof vi.fn>;
 };
 
 const mockSocket = socket as unknown as MockSocket;
@@ -132,14 +130,14 @@ describe("ParticipantRoom state listener", () => {
     // Start disconnected
     mockSocket.connected = false;
 
-    // Capture the `once` handlers registered during join attempt
-    const onceHandlers: Record<string, Function> = {};
-    mockSocket.once.mockImplementation((event: string, handler: Function) => {
-      onceHandlers[event] = handler;
+    // Capture the `on` handlers registered during join attempt
+    const onHandlers: Record<string, Function> = {};
+    mockSocket.on.mockImplementation((event: string, handler: Function) => {
+      onHandlers[event] = handler;
       return mockSocket;
     });
 
-    render(
+    const { unmount } = render(
       <AriaLiveProvider>
         <MemoryRouter initialEntries={["/room/ABC123"]}>
           <Routes>
@@ -159,17 +157,123 @@ describe("ParticipantRoom state listener", () => {
     });
 
     await waitFor(() => {
-      expect(onceHandlers.connect).toBeDefined();
-      expect(onceHandlers.connect_error).toBeDefined();
+      expect(onHandlers.connect).toBeDefined();
+      expect(onHandlers.connect_error).toBeDefined();
     });
 
     // Simulate connect_error
     act(() => {
-      onceHandlers.connect_error!(new Error("test error"));
+      onHandlers.connect_error!(new Error("test error"));
     });
 
     // Verify both were removed
-    expect(mockSocket.off).toHaveBeenCalledWith("connect_error", onceHandlers.connect_error);
-    expect(mockSocket.off).toHaveBeenCalledWith("connect", onceHandlers.connect);
+    expect(mockSocket.off).toHaveBeenCalledWith("connect_error", onHandlers.connect_error);
+    expect(mockSocket.off).toHaveBeenCalledWith("connect", onHandlers.connect);
+
+    // clear mocks
+    mockSocket.off.mockClear();
+    
+    // Simulate another join to test unmount
+    act(() => {
+      fireEvent.click(joinButton);
+    });
+
+    // simulate unmount
+    unmount();
+    
+    // Should remove both on unmount
+    expect(mockSocket.off).toHaveBeenCalledWith("connect_error", expect.any(Function));
+    expect(mockSocket.off).toHaveBeenCalledWith("connect", expect.any(Function));
+  });
+
+  it("auth error does not remove listeners and is handled distinctly", async () => {
+    mockSocket.connected = false;
+    const onHandlers: Record<string, Function> = {};
+    mockSocket.on.mockImplementation((event: string, handler: Function) => {
+      onHandlers[event] = handler;
+      return mockSocket;
+    });
+
+    render(
+      <AriaLiveProvider>
+        <MemoryRouter initialEntries={["/room/ABC123"]}>
+          <Routes>
+            <Route path="/room/:roomCode" element={<ParticipantRoom />} />
+          </Routes>
+        </MemoryRouter>
+      </AriaLiveProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText("Имя или игровой псевдоним");
+    const joinButton = screen.getByRole("button", { name: "Войти в игру" });
+
+    act(() => {
+      fireEvent.change(input, { target: { value: "ТестИгрок" } });
+      fireEvent.click(joinButton);
+    });
+
+    const error = new Error("auth");
+    (error as any).data = { code: "AUTH_SESSION_INVALID" };
+
+    act(() => {
+      onHandlers.connect_error!(error);
+    });
+
+    // Verify they are NOT removed
+    expect(mockSocket.off).not.toHaveBeenCalledWith("connect_error", onHandlers.connect_error);
+    expect(mockSocket.off).not.toHaveBeenCalledWith("connect", onHandlers.connect);
+  });
+  
+  it("ignores stale ROOM_JOIN callbacks", async () => {
+    mockSocket.connected = true;
+    let cb1: Function;
+    let cb2: Function;
+
+    mockSocket.emit.mockImplementation((event: string, data: any, callback: Function) => {
+      if (event === "ROOM_JOIN") {
+        if (!cb1) cb1 = callback;
+        else cb2 = callback;
+      }
+      return mockSocket;
+    });
+
+    render(
+      <AriaLiveProvider>
+        <MemoryRouter initialEntries={["/room/ABC123"]}>
+          <Routes>
+            <Route path="/room/:roomCode" element={<ParticipantRoom />} />
+          </Routes>
+        </MemoryRouter>
+      </AriaLiveProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText("Имя или игровой псевдоним");
+    const joinButton = screen.getByRole("button", { name: "Войти в игру" });
+
+    act(() => {
+      fireEvent.change(input, { target: { value: "ТестИгрок" } });
+      fireEvent.click(joinButton);
+    });
+    
+    act(() => {
+      // Simulate multiple clicks. We can't click the button if it's disabled, 
+      // but we can submit the form directly to simulate an aggressive retry.
+      fireEvent.submit(joinButton.closest("form")!);
+    });
+
+    act(() => {
+      // Resolve first (stale) callback with success
+      cb1!({ success: true, room: activeRoom, participant: activeRoom.participants[0] });
+    });
+
+    // Should still show joining as cb1 is ignored
+    expect(screen.queryByText("ЖМИТЕ!")).toBeNull();
+    
+    act(() => {
+      // Resolve second (latest) callback
+      if (cb2) cb2({ success: true, room: activeRoom, participant: activeRoom.participants[0] });
+    });
+    
+    await screen.findByText("ЖМИТЕ!");
   });
 });

@@ -15,6 +15,11 @@ jest.mock('../../prisma', () => ({
     },
     session: {
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
+      update: jest.fn(),
+    },
+    gameHistory: {
+      create: jest.fn().mockResolvedValue({}),
     },
   },
 }));

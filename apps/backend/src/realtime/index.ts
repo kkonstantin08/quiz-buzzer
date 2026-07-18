@@ -161,14 +161,31 @@ export function setupSocketIO(io: RealtimeServer) {
         socket.data.intentionalLogout = true;
         const roomId = socketToRoom.get(socketId);
         if (roomId) {
-          deleteRoom(
-            roomId,
-            'Ведущий завершил сессию',
-            io,
-            buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>,
-            [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers],
-            participantDisconnectTimers
-          );
+          const room = rooms.get(roomId);
+          if (room) {
+            (async () => {
+              try {
+                if (room.roundState !== RoomState.FINISHED) {
+                  room.roundState = RoomState.FINISHED;
+                  const { calculateGameResult } = require('./room-lifecycle');
+                  calculateGameResult(room);
+                }
+                const { saveGameHistory } = require('./room-lifecycle');
+                await saveGameHistory(room, prisma);
+              } catch (err) {
+                console.error('Error saving history on host logout:', err);
+              } finally {
+                deleteRoom(
+                  roomId,
+                  'Ведущий завершил сессию',
+                  io,
+                  buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>,
+                  [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers],
+                  participantDisconnectTimers
+                );
+              }
+            })();
+          }
         }
         socket.disconnect(true);
       }
@@ -266,7 +283,8 @@ export function setupSocketIO(io: RealtimeServer) {
           room.roomId,
           io,
           buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>,
-          [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers]
+          [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers],
+          participantDisconnectTimers
         );
 
         if (callback) callback({ success: true, room: toPublicRoomData(room) });
@@ -674,7 +692,8 @@ export function setupSocketIO(io: RealtimeServer) {
         roomId,
         io,
         buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>,
-        [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers]
+        [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers],
+        participantDisconnectTimers
       );
 
       if (callback) callback({ success: true });

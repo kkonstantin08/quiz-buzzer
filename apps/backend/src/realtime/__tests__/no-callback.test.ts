@@ -99,23 +99,79 @@ describe('Socket Actions without callbacks', () => {
     p1Socket.connect();
     await new Promise<void>((resolve) => p1Socket.on('connect', resolve));
 
+    const roomUpdates: any[] = [];
+    p1Socket.on('ROOM_STATE_UPDATED', (state) => {
+      roomUpdates.push(state.roundState);
+    });
+
     p1Socket.emit('ROOM_CREATE'); 
     p1Socket.emit('ROOM_JOIN', { roomCode: 'BADCODE', displayName: 'Player 1' });
     hostSocket.emit('ROOM_JOIN', { roomCode: code, displayName: 'Player 1' });
 
+    // Wait for p1 to actually join so they receive state updates
     await new Promise((resolve) => p1Socket.emit('ROOM_JOIN', { roomCode: code, displayName: 'Player 1' }, resolve));
     
-    p1Socket.emit('ROOM_JOIN', { roomCode: code, displayName: 'Player 1' });
+    // Clear initial join update
+    roomUpdates.length = 0;
+
+    // Invalid: participant trying to start round
     p1Socket.emit('ROUND_START'); 
+    await sleep(50);
+    expect(roomUpdates).toHaveLength(0); // No update should happen
+
+    // Valid: host starting round without callback
     hostSocket.emit('ROUND_START'); 
+    await sleep(200);
+    expect(roomUpdates).toHaveLength(1);
+    expect(roomUpdates[0]).toBe('ACTIVE');
+    roomUpdates.length = 0;
+
+    // Invalid: host trying to buzz
     hostSocket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() }); 
+    await sleep(50);
+    expect(roomUpdates).toHaveLength(0);
+
+    // Valid: participant buzzes
     p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() }); 
+    await sleep(350); // wait for 250ms grace period buffer to resolve
+    expect(roomUpdates.length).toBeGreaterThanOrEqual(1);
+    expect(roomUpdates[roomUpdates.length - 1]).toBe('REVEALED');
+    roomUpdates.length = 0;
+
+    // Invalid: participant trying to reset
     p1Socket.emit('ROUND_RESET'); 
+    await sleep(50);
+    expect(roomUpdates).toHaveLength(0);
+
+    // Valid: host resetting
     hostSocket.emit('ROUND_RESET'); 
+    await sleep(50);
+    expect(roomUpdates).toHaveLength(1);
+    expect(roomUpdates[0]).toBe('WAITING');
+    roomUpdates.length = 0;
+
+    // Invalid: participant trying to clear scores
     p1Socket.emit('HOST_CLEAR_SCORES'); 
+    await sleep(50);
+    expect(roomUpdates).toHaveLength(0);
+
+    // Valid: host clearing scores
     hostSocket.emit('HOST_CLEAR_SCORES'); 
+    await sleep(50);
+    expect(roomUpdates).toHaveLength(1);
+    roomUpdates.length = 0;
+
+    // Invalid: participant trying to finish room
     p1Socket.emit('ROOM_FINISH'); 
+    await sleep(50);
+    expect(roomUpdates).toHaveLength(0);
+
+    // Valid: host finishing room
     hostSocket.emit('ROOM_FINISH'); 
+    await sleep(50);
+    expect(roomUpdates).toHaveLength(1);
+    expect(roomUpdates[0]).toBe('FINISHED');
+
     p1Socket.emit('PARTICIPANT_REJOIN', { roomCode: code, participantId: 'fake', reconnectToken: 'fake' });
     
     const roomArr = Array.from(rooms.values());
@@ -125,7 +181,5 @@ describe('Socket Actions without callbacks', () => {
     hostSocket.emit('ROOM_LEAVE');
 
     await sleep(200); 
-
-    expect(true).toBe(true);
   });
 });

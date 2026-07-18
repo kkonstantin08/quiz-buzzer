@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { socket } from '../realtime/socket';
-import { RoomState, GameResult, type PublicRoomData, type SocketActionResult, type RoundResetPayload } from 'shared';
+import { RoomState, GameResult, type PublicRoomData, type SocketActionResult, type RoundResetPayload, type HostRejoinRoomResult } from 'shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -89,7 +89,7 @@ export function HostRoom() {
         socket.connect();
       }
 
-      socket.emit('HOST_REJOIN_ROOM', { roomId }, (res: any) => {
+      socket.emit('HOST_REJOIN_ROOM', { roomId }, (res: HostRejoinRoomResult) => {
         if (res.success) {
           setRoom(res.room);
           setReconnectState('connected');
@@ -259,12 +259,18 @@ export function HostRoom() {
   const publicUrl = window.location.origin;
   const joinUrl = `${publicUrl}/room/${room.roomCode}`;
 
-  // Overloads for type-safe emitWithTimeout
-  function emitWithTimeout(action: 'ROUND_START', payload: undefined, onSuccess?: (res: SocketActionResult) => void): void;
-  function emitWithTimeout(action: 'ROUND_RESET', payload: RoundResetPayload, onSuccess?: (res: SocketActionResult) => void): void;
-  function emitWithTimeout(action: 'HOST_CLEAR_SCORES', payload: undefined, onSuccess?: (res: SocketActionResult) => void): void;
-  function emitWithTimeout(action: 'ROOM_FINISH', payload: undefined, onSuccess?: (res: SocketActionResult) => void): void;
-  function emitWithTimeout(action: string, payload?: any, onSuccess?: (res: SocketActionResult) => void) {
+  type HostActionMap = {
+    'ROUND_START': undefined;
+    'ROUND_RESET': RoundResetPayload;
+    'HOST_CLEAR_SCORES': undefined;
+    'ROOM_FINISH': undefined;
+  };
+
+  function emitWithTimeout<K extends keyof HostActionMap>(
+    action: K,
+    payload: HostActionMap[K],
+    onSuccess?: (res: SocketActionResult) => void
+  ) {
     if (pendingAction !== null) return;
 
     const actionId = ++currentActionIdRef.current;
@@ -347,9 +353,7 @@ export function HostRoom() {
   };
 
   const handleFinishRoom = () => {
-    console.log('handleFinishRoom called!');
     emitWithTimeout('ROOM_FINISH', undefined, () => {
-      console.log('ROOM_FINISH onSuccess called!');
       setFinishOpen(false);
     });
   };
@@ -389,14 +393,14 @@ export function HostRoom() {
             </div>
 
             <div className="bg-slate-50 border border-slate-100 rounded-2xl p-6 w-full mt-6 shadow-sm">
-              {winnerInfo.result === 'NO_WINNER' ? (
+              {winnerInfo.result === GameResult.NO_WINNER ? (
                 <>
                   <p className="text-sm font-semibold text-slate-600 tracking-wide mb-2">Результат</p>
                   <h2 className="text-3xl font-bold text-slate-700 break-words">
                     Нет победителя
                   </h2>
                 </>
-              ) : winnerInfo.result === 'DRAW' ? (
+              ) : winnerInfo.result === GameResult.DRAW ? (
                 <>
                   <p className="text-sm font-semibold text-slate-600 tracking-wide mb-2">Результат</p>
                   <h2 className="text-3xl font-bold text-primary break-words">

@@ -201,15 +201,28 @@ describe('HostRoom interactions & pending states', () => {
     expect(clearBtn).toBeDisabled();
     expect(clearBtn).toHaveTextContent(/Очистка/i);
     
+    // Dupe click should be ignored
+    await act(async () => { fireEvent.click(clearBtn); });
+    expect(socket.emit).toHaveBeenCalledTimes(2); // REJOIN + 1 CLEAR
+    
+    // Success
     await act(async () => { eventCallbackMap['HOST_CLEAR_SCORES']({ success: true }); });
     expect(clearBtn).not.toBeDisabled();
     expect(clearBtn).toHaveTextContent(/Очистить счёт/i);
+    
+    // Rejection
+    await act(async () => { fireEvent.click(clearBtn); });
+    expect(clearBtn).toBeDisabled();
+    await act(async () => { eventCallbackMap['HOST_CLEAR_SCORES']({ success: false, error: 'Cannot clear' }); });
+    expect(clearBtn).not.toBeDisabled();
+    expect(screen.getByText('Cannot clear')).toBeInTheDocument();
     
     // Timeout
     await act(async () => { fireEvent.click(clearBtn); });
     expect(clearBtn).toBeDisabled();
     await act(async () => { vi.advanceTimersByTime(5000); });
     expect(clearBtn).not.toBeDisabled();
+    expect(screen.getByText('Превышено время ожидания ответа от сервера. Проверьте соединение.')).toBeInTheDocument();
   });
 
   it('4. ROOM_FINISH logic', async () => {
@@ -223,6 +236,15 @@ describe('HostRoom interactions & pending states', () => {
     // Success
     await act(async () => { fireEvent.click(confirmFinishBtn); });
     expect(confirmFinishBtn).toBeDisabled();
+    
+    // unmount should not crash when callback resolves
+    const { unmount } = render(
+      <MemoryRouter initialEntries={[`/host/room/room-123`]}>
+        <Routes><Route path="/host/room/:roomId" element={<HostRoom />} /></Routes>
+      </MemoryRouter>
+    );
+    unmount(); // Unmount second instance to test cleanup safety
+    
     await act(async () => { eventCallbackMap['ROOM_FINISH']({ success: true }); });
     
     // Check if dialog closes (button should be re-enabled at least while unmounting)
@@ -233,11 +255,19 @@ describe('HostRoom interactions & pending states', () => {
     const reopenConfirmBtns = screen.getAllByRole('button', { name: /^Завершить$/i });
     const reopenConfirmBtn = reopenConfirmBtns[reopenConfirmBtns.length - 1];
     
+    // Rejection
+    await act(async () => { fireEvent.click(reopenConfirmBtn); });
+    expect(reopenConfirmBtn).toBeDisabled();
+    await act(async () => { eventCallbackMap['ROOM_FINISH']({ success: false, error: 'Finish Error' }); });
+    expect(reopenConfirmBtn).not.toBeDisabled();
+    expect(screen.getByText('Finish Error')).toBeInTheDocument();
+    
     // Timeout
     await act(async () => { fireEvent.click(reopenConfirmBtn); });
     expect(reopenConfirmBtn).toBeDisabled();
-    await act(async () => { vi.runAllTimers(); });
+    await act(async () => { vi.advanceTimersByTime(5000); });
     expect(reopenConfirmBtn).not.toBeDisabled();
+    expect(screen.getByText('Превышено время ожидания ответа от сервера. Проверьте соединение.')).toBeInTheDocument();
     
     // Late callback
     await act(async () => { eventCallbackMap['ROOM_FINISH']({ success: true }); });
