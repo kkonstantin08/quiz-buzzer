@@ -212,7 +212,7 @@ export function ParticipantRoom() {
           if (res.participant?.id && res.reconnectToken) {
             myParticipantIdRef.current = res.participant.id;
             setMyParticipantId(res.participant.id);
-            saveParticipantSession(roomCode, res.participant.id, res.reconnectToken);
+            saveParticipantSession(roomCode, res.participant.id, res.reconnectToken, res.room.createdAt);
           }
         } else {
           setError(

@@ -35,7 +35,13 @@ export function readParticipantSession(roomCode: string | undefined): Participan
 
   try {
     const session = JSON.parse(stored);
-    if (!isSession(session) || Date.parse(session.expiresAt) <= Date.now()) {
+    const now = Date.now();
+    const createdAt = isSession(session) ? Date.parse(session.createdAt) : 0;
+    const expiresAt = isSession(session) ? Date.parse(session.expiresAt) : 0;
+    if (!isSession(session)
+      || createdAt > now
+      || expiresAt <= now
+      || expiresAt - createdAt > PARTICIPANT_SESSION_TTL_MS) {
       localStorage.removeItem(key);
       return null;
     }
@@ -46,14 +52,19 @@ export function readParticipantSession(roomCode: string | undefined): Participan
   }
 }
 
-export function saveParticipantSession(roomCode: string | undefined, participantId: string, reconnectToken: string): void {
+export function saveParticipantSession(roomCode: string | undefined, participantId: string, reconnectToken: string, roomCreatedAt?: number): void {
   if (!roomCode) return;
   const createdAt = new Date();
+  const roomExpiresAt = typeof roomCreatedAt === "number" && Number.isFinite(roomCreatedAt) && roomCreatedAt <= createdAt.getTime()
+    ? roomCreatedAt + PARTICIPANT_SESSION_TTL_MS
+    : Number.POSITIVE_INFINITY;
+  const expiresAt = Math.min(createdAt.getTime() + PARTICIPANT_SESSION_TTL_MS, roomExpiresAt);
+  if (expiresAt <= createdAt.getTime()) return;
   localStorage.setItem(storageKey(roomCode), JSON.stringify({
     participantId,
     reconnectToken,
     createdAt: createdAt.toISOString(),
-    expiresAt: new Date(createdAt.getTime() + PARTICIPANT_SESSION_TTL_MS).toISOString(),
+    expiresAt: new Date(expiresAt).toISOString(),
   }));
 }
 
