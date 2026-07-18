@@ -255,6 +255,10 @@ export function setupSocketIO(io: RealtimeServer) {
         }
 
         const userId = socket.data.userId;
+        if (!userId) {
+          if (callback) callback({ success: false, error: 'Ошибка авторизации' });
+          return;
+        }
 
         const user = await prisma.hostUser.findUnique({
           where: { id: userId },
@@ -733,7 +737,13 @@ export function setupSocketIO(io: RealtimeServer) {
 
       } else if (room.hostSocketId === socket.id) {
         if (!socket.data.intentionalLogout) {
-          startHostReconnectTimeout(roomId, io, buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>, [participantDisconnectTimers]);
+          startHostReconnectTimeout(
+            roomId,
+            io,
+            buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>,
+            undefined,
+            participantDisconnectTimers,
+          );
           emitRoomState(io, room);
         }
       }

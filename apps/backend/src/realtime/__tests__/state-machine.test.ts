@@ -181,7 +181,7 @@ describe('State Machine Transitions', () => {
   it('should not mark room as FINISHED and should return error if saveGameHistory fails', (done) => {
     setupRoom(() => {
       // Mock prisma create to fail
-      const mockCreate = jest.fn().mockRejectedValueOnce(new Error('DB failure'));
+      const mockCreate = jest.fn().mockRejectedValueOnce(new Error('DB failure') as never);
       jest.mocked(require('../../prisma').prisma.gameHistory.create).mockImplementation(mockCreate);
 
       hostSocket.emit('ROOM_FINISH', (res: any) => {
@@ -203,7 +203,7 @@ describe('State Machine Transitions', () => {
       if (!room) return done(new Error('Room not found'));
 
       // 1. Mock DB failure
-      (prisma.gameHistory.create as jest.Mock).mockRejectedValueOnce(new Error('DB Timeout'));
+      (prisma.gameHistory.create as jest.Mock).mockRejectedValueOnce(new Error('DB Timeout') as never);
 
       hostSocket.emit('ROOM_FINISH', (res1: any) => {
         // Assert failure
@@ -215,7 +215,7 @@ describe('State Machine Transitions', () => {
         expect(room.gameResult).toBeUndefined();
 
         // 2. Mock DB success on retry
-        (prisma.gameHistory.create as jest.Mock).mockResolvedValueOnce({});
+        (prisma.gameHistory.create as jest.Mock).mockResolvedValueOnce({} as never);
 
         hostSocket.emit('ROOM_FINISH', (res2: any) => {
           expect(res2.success).toBe(true);
@@ -224,5 +224,52 @@ describe('State Machine Transitions', () => {
         });
       });
     });
+  });
+
+  it('retries ROOM_FINISH after one failed history write without broadcasting or duplicating history', async () => {
+    await new Promise<void>((resolve, reject) => setupRoom(error => error ? reject(error) : resolve()));
+    const room = Array.from(rooms.values()).find(r => r.roomCode === createdRoomCode);
+    if (!room) throw new Error('Room not found');
+
+    (prisma.gameHistory.create as jest.Mock).mockReset();
+    const snapshots: RoomState[] = [];
+    hostSocket.on('ROOM_STATE_UPDATED', snapshot => snapshots.push(snapshot.roundState));
+    const unhandledRejection = jest.fn();
+    process.on('unhandledRejection', unhandledRejection);
+    let successfulHistoryWrites = 0;
+    (prisma.gameHistory.create as jest.Mock)
+      .mockRejectedValueOnce(new Error('DB unavailable') as never)
+      .mockImplementationOnce(async () => {
+        successfulHistoryWrites += 1;
+        return {} as never;
+      });
+
+    try {
+      const first = await new Promise<{ success: boolean; error?: string }>(resolve => {
+        hostSocket.emit('ROOM_FINISH', resolve);
+      });
+      await new Promise<void>(resolve => setImmediate(resolve));
+
+      expect(first).toEqual({ success: false, error: 'Не удалось сохранить результаты игры' });
+      expect(snapshots).not.toContain(RoomState.FINISHED);
+
+      const finishedSnapshot = new Promise<void>(resolve => {
+        hostSocket.once('ROOM_STATE_UPDATED', snapshot => {
+          if (snapshot.roundState === RoomState.FINISHED) resolve();
+        });
+      });
+      const second = await new Promise<{ success: boolean }>(resolve => {
+        hostSocket.emit('ROOM_FINISH', resolve);
+      });
+      await finishedSnapshot;
+      await new Promise<void>(resolve => setImmediate(resolve));
+
+      expect(second).toEqual({ success: true });
+      expect(successfulHistoryWrites).toBe(1);
+      expect(prisma.gameHistory.create).toHaveBeenCalledTimes(2);
+      expect(unhandledRejection).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandledRejection);
+    }
   });
 });

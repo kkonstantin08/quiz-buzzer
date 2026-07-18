@@ -40,7 +40,6 @@ import {
   cancelRoomLifecycleTimers,
 } from '../room-lifecycle';
 import { RoomState, GameResult } from 'shared';
-import { buzzBuffers } from '../index';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -209,8 +208,33 @@ describe('Room Lifecycle', () => {
     jest.useRealTimers();
   });
 
-  // ── 3d. calculateGameResult mappings ─────────────────────────────────────
-  it('3d. calculateGameResult maps 0 score, 1 winner, and draw correctly', () => {
+  it('3d. 24-hour cleanup waits for a successful history save before deleting the room', async () => {
+    jest.useFakeTimers();
+    const io = makeMockIo();
+    let resolveSave: (() => void) | undefined;
+    mockPrismaCreate.mockImplementationOnce(() => new Promise<void>(resolve => {
+      resolveSave = resolve;
+    }));
+
+    const room = createRoom('host-deferred', 'sock-deferred');
+    scheduleMaxLifetimeCleanup(room.roomId, io, new Map(), []);
+    jest.advanceTimersByTime(24 * 60 * 60 * 1000);
+    await Promise.resolve();
+
+    expect(rooms.has(room.roomId)).toBe(true);
+    resolveSave?.();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(rooms.has(room.roomId)).toBe(false);
+    expect(room.historySaved).toBe(true);
+
+    io.close();
+    jest.useRealTimers();
+  });
+
+  // ── 3e. calculateGameResult mappings ─────────────────────────────────────
+  it('3e. calculateGameResult maps 0 score, 1 winner, and draw correctly', () => {
     const room = createRoom('host', 'sock');
 
     // 0 participants
@@ -345,8 +369,9 @@ describe('Room Lifecycle', () => {
     expect(callCount).toBe(2); // Two attempts were made
   });
 
-  // ── 9. 10-minute host timeout still fires and deletes the room ────────────
-  it('9. 10-minute host reconnect timeout closes the room via deleteRoom', () => {
+  // ── 9. 10-minute host timeout clears participant disconnect timers ────────
+  it('9. 10-minute host reconnect timeout closes the room and participant disconnect timers', () => {
+    jest.useFakeTimers();
     const capturedTimers: { cb: () => void; ms: number }[] = [];
     jest.spyOn(reconnectTimeoutLoader, 'setTimeout').mockImplementation((cb, ms) => {
       capturedTimers.push({ cb, ms });
@@ -356,8 +381,13 @@ describe('Room Lifecycle', () => {
     const io = makeMockIo();
     const room = createRoom('host-1', 'sock-1');
     const roomId = room.roomId;
+    room.participants.push({
+      id: 'participant-1', displayName: 'Alice', socketId: 'sock-p1', joinedAt: 1, isConnected: false, score: 0,
+    });
+    const participantDisconnectTimers = new Map<string, NodeJS.Timeout>();
+    participantDisconnectTimers.set(`${roomId}_participant-1`, setTimeout(() => {}, 99999));
 
-    startHostReconnectTimeout(roomId, io);
+    startHostReconnectTimeout(roomId, io, undefined, undefined, participantDisconnectTimers);
 
     const tenMin = capturedTimers.find(t => t.ms === 10 * 60 * 1000);
     expect(tenMin).toBeDefined();
@@ -366,7 +396,9 @@ describe('Room Lifecycle', () => {
     tenMin!.cb();
 
     expect(rooms.has(roomId)).toBe(false);
+    expect(participantDisconnectTimers.has(`${roomId}_participant-1`)).toBe(false);
 
     io.close();
+    jest.useRealTimers();
   });
 });

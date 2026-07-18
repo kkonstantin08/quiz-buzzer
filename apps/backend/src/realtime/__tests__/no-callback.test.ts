@@ -5,6 +5,8 @@ import jwt from 'jsonwebtoken';
 import { config } from '../../config';
 import { rooms } from '../../rooms';
 import { postFinishTimers, maxLifetimeTimers } from '../room-lifecycle';
+import { hostDisconnectTimers } from '../host-reconnect';
+import { participantDisconnectTimers } from '../index';
 import { describe, it, expect, beforeAll, afterAll, afterEach, jest } from '@jest/globals';
 
 jest.mock('../../prisma', () => ({
@@ -20,8 +22,6 @@ jest.mock('../../prisma', () => ({
     },
   },
 }));
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe('Socket Actions without callbacks', () => {
   let hostSocket: ClientSocket;
@@ -45,15 +45,19 @@ describe('Socket Actions without callbacks', () => {
   });
 
   afterEach(async () => {
-    if (hostSocket && hostSocket.connected) hostSocket.disconnect();
-    if (p1Socket && p1Socket.connected) p1Socket.disconnect();
+    const disconnect = (socket: ClientSocket) => new Promise<void>(resolve => {
+      if (!socket?.connected) return resolve();
+      const serverSocket = io.sockets.sockets.get(socket.id!);
+      if (serverSocket) serverSocket.once('disconnect', () => resolve());
+      else resolve();
+      socket.disconnect();
+    });
+    await Promise.all([disconnect(hostSocket), disconnect(p1Socket)]);
     jest.clearAllMocks();
-    
-    await new Promise(resolve => setTimeout(resolve, 50));
-    for (const timer of postFinishTimers.values()) clearTimeout(timer);
-    for (const timer of maxLifetimeTimers.values()) clearTimeout(timer);
-    postFinishTimers.clear();
-    maxLifetimeTimers.clear();
+    for (const timers of [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers, participantDisconnectTimers]) {
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+    }
     rooms.clear();
   });
 
@@ -103,10 +107,20 @@ describe('Socket Actions without callbacks', () => {
     p1Socket.on('ROOM_STATE_UPDATED', (state) => {
       roomUpdates.push(state.roundState);
     });
+    const synchronize = (socket: ClientSocket) => new Promise<number>(resolve => {
+      socket.emit('SYNC_TIME', Date.now(), resolve);
+    });
+    const waitForState = (state: string) => new Promise<{ roundState: string; unlockAt?: number | null }>(resolve => {
+      p1Socket.once('ROOM_STATE_UPDATED', snapshot => {
+        if (snapshot.roundState === state) resolve(snapshot);
+      });
+    });
 
     p1Socket.emit('ROOM_CREATE'); 
     p1Socket.emit('ROOM_JOIN', { roomCode: 'BADCODE', displayName: 'Player 1' });
     hostSocket.emit('ROOM_JOIN', { roomCode: code, displayName: 'Player 1' });
+    await synchronize(p1Socket);
+    await synchronize(hostSocket);
 
     // Wait for p1 to actually join so they receive state updates
     await new Promise((resolve) => p1Socket.emit('ROOM_JOIN', { roomCode: code, displayName: 'Player 1' }, resolve));
@@ -116,70 +130,69 @@ describe('Socket Actions without callbacks', () => {
 
     // Invalid: participant trying to start round
     p1Socket.emit('ROUND_START'); 
-    await sleep(50);
+    await synchronize(p1Socket);
     expect(roomUpdates).toHaveLength(0); // No update should happen
 
     // Valid: host starting round without callback
+    const active = waitForState('ACTIVE');
     hostSocket.emit('ROUND_START'); 
-    await sleep(200);
+    const activeSnapshot = await active;
     expect(roomUpdates).toHaveLength(1);
     expect(roomUpdates[0]).toBe('ACTIVE');
     roomUpdates.length = 0;
 
     // Invalid: host trying to buzz
     hostSocket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() }); 
-    await sleep(50);
+    await synchronize(hostSocket);
     expect(roomUpdates).toHaveLength(0);
 
     // Valid: participant buzzes
+    await new Promise<void>(resolve => setTimeout(
+      resolve,
+      Math.max(0, (activeSnapshot.unlockAt ?? Date.now()) - Date.now()),
+    ));
+    const revealed = waitForState('REVEALED');
     p1Socket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() }); 
-    await sleep(350); // wait for 250ms grace period buffer to resolve
+    await revealed;
     expect(roomUpdates.length).toBeGreaterThanOrEqual(1);
     expect(roomUpdates[roomUpdates.length - 1]).toBe('REVEALED');
     roomUpdates.length = 0;
 
     // Invalid: participant trying to reset
     p1Socket.emit('ROUND_RESET'); 
-    await sleep(50);
+    await synchronize(p1Socket);
     expect(roomUpdates).toHaveLength(0);
 
     // Valid: host resetting
+    const waiting = waitForState('WAITING');
     hostSocket.emit('ROUND_RESET'); 
-    await sleep(50);
+    await waiting;
     expect(roomUpdates).toHaveLength(1);
     expect(roomUpdates[0]).toBe('WAITING');
     roomUpdates.length = 0;
 
     // Invalid: participant trying to clear scores
     p1Socket.emit('HOST_CLEAR_SCORES'); 
-    await sleep(50);
+    await synchronize(p1Socket);
     expect(roomUpdates).toHaveLength(0);
 
     // Valid: host clearing scores
+    const scoresCleared = waitForState('WAITING');
     hostSocket.emit('HOST_CLEAR_SCORES'); 
-    await sleep(50);
+    await scoresCleared;
     expect(roomUpdates).toHaveLength(1);
     roomUpdates.length = 0;
 
     // Invalid: participant trying to finish room
     p1Socket.emit('ROOM_FINISH'); 
-    await sleep(50);
+    await synchronize(p1Socket);
     expect(roomUpdates).toHaveLength(0);
 
     // Valid: host finishing room
+    const finished = waitForState('FINISHED');
     hostSocket.emit('ROOM_FINISH'); 
-    await sleep(50);
+    await finished;
     expect(roomUpdates).toHaveLength(1);
     expect(roomUpdates[0]).toBe('FINISHED');
-
-    p1Socket.emit('PARTICIPANT_REJOIN', { roomCode: code, participantId: 'fake', reconnectToken: 'fake' });
-    
-    const roomArr = Array.from(rooms.values());
-    if (roomArr.length > 0) {
-      p1Socket.emit('HOST_REJOIN_ROOM', { roomId: roomArr[0].roomId }); 
-    }
-    hostSocket.emit('ROOM_LEAVE');
-
-    await sleep(200); 
   });
 });

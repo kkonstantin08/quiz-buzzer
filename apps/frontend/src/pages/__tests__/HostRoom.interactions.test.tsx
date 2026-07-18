@@ -34,11 +34,13 @@ vi.mock('../../services/api', () => ({
 describe('HostRoom interactions & pending states', () => {
   let hostRejoinCallback: any;
   let eventCallbackMap: Record<string, any> = {};
+  let eventCallbacks: Record<string, any[]> = {};
 
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     eventCallbackMap = {};
+    eventCallbacks = {};
     socket.connected = false;
     
     // @ts-ignore
@@ -55,6 +57,7 @@ describe('HostRoom interactions & pending states', () => {
       const cb = args.find(a => typeof a === 'function');
       if (event === 'HOST_REJOIN_ROOM') hostRejoinCallback = cb;
       eventCallbackMap[event] = cb;
+      if (cb) (eventCallbacks[event] ??= []).push(cb);
     });
   });
 
@@ -74,7 +77,7 @@ describe('HostRoom interactions & pending states', () => {
   });
 
   const renderComponent = async (state: RoomState = RoomState.WAITING) => {
-    render(
+    const rendered = render(
       <MemoryRouter initialEntries={[`/host/room/room-123`]}>
         <Routes>
           <Route path="/host/room/:roomId" element={<HostRoom />} />
@@ -100,6 +103,8 @@ describe('HostRoom interactions & pending states', () => {
         }));
       });
     }
+
+    return rendered;
   };
 
   it('1. ROUND_START logic', async () => {
@@ -226,52 +231,50 @@ describe('HostRoom interactions & pending states', () => {
   });
 
   it('4. ROOM_FINISH logic', async () => {
-    await renderComponent();
-    const finishTrigger = screen.getByRole('button', { name: /Завершить/i, exact: false });
+    const rendered = await renderComponent();
+    const finishTrigger = screen.getByRole('button', { name: /Завершить/i });
     await act(async () => { fireEvent.click(finishTrigger); });
-    
-    const confirmFinishBtns = screen.getAllByRole('button', { name: /^Завершить$/i });
-    const confirmFinishBtn = confirmFinishBtns[confirmFinishBtns.length - 1]; // last one is in dialog
-    
-    // Success
+    const confirmFinishBtn = screen.getByRole('button', { name: /^Завершить$/i });
     await act(async () => { fireEvent.click(confirmFinishBtn); });
     expect(confirmFinishBtn).toBeDisabled();
-    
-    // unmount should not crash when callback resolves
-    const { unmount } = render(
-      <MemoryRouter initialEntries={[`/host/room/room-123`]}>
-        <Routes><Route path="/host/room/:roomId" element={<HostRoom />} /></Routes>
-      </MemoryRouter>
-    );
-    unmount(); // Unmount second instance to test cleanup safety
-    
-    await act(async () => { eventCallbackMap['ROOM_FINISH']({ success: true }); });
-    
-    // Check if dialog closes (button should be re-enabled at least while unmounting)
-    expect(confirmFinishBtn).not.toBeDisabled();
-    
-    // Reopen
+    await act(async () => { eventCallbacks.ROOM_FINISH[0]({ success: true }); });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
     await act(async () => { fireEvent.click(finishTrigger); });
-    const reopenConfirmBtns = screen.getAllByRole('button', { name: /^Завершить$/i });
-    const reopenConfirmBtn = reopenConfirmBtns[reopenConfirmBtns.length - 1];
-    
-    // Rejection
+    const reopenConfirmBtn = screen.getByRole('button', { name: /^Завершить$/i });
     await act(async () => { fireEvent.click(reopenConfirmBtn); });
     expect(reopenConfirmBtn).toBeDisabled();
-    await act(async () => { eventCallbackMap['ROOM_FINISH']({ success: false, error: 'Finish Error' }); });
+    await act(async () => { eventCallbacks.ROOM_FINISH[1]({ success: false, error: 'Finish Error' }); });
     expect(reopenConfirmBtn).not.toBeDisabled();
     expect(screen.getByText('Finish Error')).toBeInTheDocument();
-    
-    // Timeout
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
     await act(async () => { fireEvent.click(reopenConfirmBtn); });
     expect(reopenConfirmBtn).toBeDisabled();
     await act(async () => { vi.advanceTimersByTime(5000); });
     expect(reopenConfirmBtn).not.toBeDisabled();
     expect(screen.getByText('Превышено время ожидания ответа от сервера. Проверьте соединение.')).toBeInTheDocument();
-    
-    // Late callback
-    await act(async () => { eventCallbackMap['ROOM_FINISH']({ success: true }); });
-    expect(reopenConfirmBtn).not.toBeDisabled();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    await act(async () => { fireEvent.click(reopenConfirmBtn); });
+    expect(reopenConfirmBtn).toBeDisabled();
+    await act(async () => { eventCallbacks.ROOM_FINISH[2]({ success: true }); });
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await act(async () => { eventCallbacks.ROOM_FINISH[3]({ success: true }); });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    rendered.unmount();
+  });
+
+  it('invalidates a pending ROOM_FINISH callback when its component unmounts', async () => {
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+    const rendered = await renderComponent();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Завершить/i })); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^Завершить$/i })); });
+
+    rendered.unmount();
+    expect(clearTimeoutSpy).toHaveBeenCalled();
+    expect(() => eventCallbacks.ROOM_FINISH[0]({ success: true })).not.toThrow();
   });
 
   it('5. Lifecycle disconnect', async () => {

@@ -5,6 +5,7 @@ import { timeSync } from "../realtime/timeSync";
 import { api, BASE_URL } from "../services/api";
 import { RoomState, GameResult, type PublicRoomData } from "shared";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import confetti from "canvas-confetti";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -54,6 +55,8 @@ export function ParticipantRoom() {
 
   useEffect(() => {
     return () => {
+      joinAttemptIdRef.current += 1;
+      joinPendingRef.current = false;
       if (ackTimeoutRef.current) clearTimeout(ackTimeoutRef.current);
       if (buzzTimeoutRef.current) clearTimeout(buzzTimeoutRef.current);
       if (joinListenersRef.current.connect) {
@@ -193,7 +196,7 @@ export function ParticipantRoom() {
 
   const handleJoin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || joinPendingRef.current) return;
 
     const attemptId = ++joinAttemptIdRef.current;
     joinPendingRef.current = true;

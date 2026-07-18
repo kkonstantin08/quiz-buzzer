@@ -56,7 +56,8 @@ export function startHostReconnectTimeout(
   roomId: string,
   io: Server,
   buzzBuffers?: Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>,
-  extraTimers?: Map<string, NodeJS.Timeout>[]
+  extraTimers?: Map<string, NodeJS.Timeout>[],
+  participantDisconnectTimers?: Map<string, NodeJS.Timeout>
 ) {
   // Cancel any existing timer to avoid duplicate schedules
   cancelHostReconnectTimeout(roomId);
@@ -69,7 +70,7 @@ export function startHostReconnectTimeout(
   const timeoutMs = 10 * 60 * 1000; // 10 minutes
 
   const timer = reconnectTimeoutLoader.setTimeout(() => {
-    closeRoomAfterHostTimeout(roomId, io, buzzBuffers, extraTimers);
+    closeRoomAfterHostTimeout(roomId, io, buzzBuffers, extraTimers, participantDisconnectTimers);
   }, timeoutMs);
 
   hostDisconnectTimers.set(roomId, timer);
@@ -87,7 +88,8 @@ export function closeRoomAfterHostTimeout(
   roomId: string,
   io: Server,
   buzzBuffers?: Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>,
-  extraTimers?: Map<string, NodeJS.Timeout>[]
+  extraTimers?: Map<string, NodeJS.Timeout>[],
+  participantDisconnectTimers?: Map<string, NodeJS.Timeout>
 ) {
   cancelRoomLifecycleTimers(roomId);
   
@@ -101,6 +103,7 @@ export function closeRoomAfterHostTimeout(
     'ведущий не вернулся',
     io,
     buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }> | undefined,
-    allTimers
+    allTimers,
+    participantDisconnectTimers
   );
 }

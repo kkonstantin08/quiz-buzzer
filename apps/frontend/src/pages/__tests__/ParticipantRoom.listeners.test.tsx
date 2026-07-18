@@ -224,15 +224,13 @@ describe("ParticipantRoom state listener", () => {
     expect(mockSocket.off).not.toHaveBeenCalledWith("connect", onHandlers.connect);
   });
   
-  it("ignores stale ROOM_JOIN callbacks", async () => {
+  it("sends one ROOM_JOIN while a join attempt is pending", async () => {
     mockSocket.connected = true;
-    let cb1: Function;
-    let cb2: Function;
+    let joinCallback: Function | undefined;
 
     mockSocket.emit.mockImplementation((event: string, data: any, callback: Function) => {
       if (event === "ROOM_JOIN") {
-        if (!cb1) cb1 = callback;
-        else cb2 = callback;
+        joinCallback = callback;
       }
       return mockSocket;
     });
@@ -255,25 +253,47 @@ describe("ParticipantRoom state listener", () => {
       fireEvent.click(joinButton);
     });
     
-    act(() => {
-      // Simulate multiple clicks. We can't click the button if it's disabled, 
-      // but we can submit the form directly to simulate an aggressive retry.
-      fireEvent.submit(joinButton.closest("form")!);
-    });
+    fireEvent.submit(joinButton.closest("form")!);
+
+    expect(mockSocket.emit.mock.calls.filter(([event]) => event === "ROOM_JOIN")).toHaveLength(1);
 
     act(() => {
-      // Resolve first (stale) callback with success
-      cb1!({ success: true, room: activeRoom, participant: activeRoom.participants[0] });
+      joinCallback?.({ success: true, room: activeRoom, participant: activeRoom.participants[0], reconnectToken: "token" });
     });
 
-    // Should still show joining as cb1 is ignored
-    expect(screen.queryByText("ЖМИТЕ!")).toBeNull();
-    
-    act(() => {
-      // Resolve second (latest) callback
-      if (cb2) cb2({ success: true, room: activeRoom, participant: activeRoom.participants[0] });
-    });
-    
     await screen.findByText("ЖМИТЕ!");
+  });
+
+  it("ignores a pending ROOM_JOIN callback after unmount", async () => {
+    mockSocket.connected = true;
+    let joinCallback: Function | undefined;
+
+    mockSocket.emit.mockImplementation((event: string, data: any, callback: Function) => {
+      if (event === "ROOM_JOIN") joinCallback = callback;
+      return mockSocket;
+    });
+
+    const { unmount } = render(
+      <AriaLiveProvider>
+        <MemoryRouter initialEntries={["/room/ABC123"]}>
+          <Routes>
+            <Route path="/room/:roomCode" element={<ParticipantRoom />} />
+          </Routes>
+        </MemoryRouter>
+      </AriaLiveProvider>,
+    );
+
+    fireEvent.change(await screen.findByPlaceholderText("Имя или игровой псевдоним"), { target: { value: "ТестИгрок" } });
+    fireEvent.click(screen.getByRole("button", { name: "Войти в игру" }));
+    unmount();
+
+    act(() => {
+      joinCallback?.({ success: true, room: activeRoom, participant: activeRoom.participants[0], reconnectToken: "late-token" });
+    });
+
+    expect(localStorage.setItem).not.toHaveBeenCalledWith(
+      "quiz_participant_ABC123",
+      expect.stringContaining("late-token"),
+    );
   });
 });

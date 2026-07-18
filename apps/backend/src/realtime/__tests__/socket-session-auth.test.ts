@@ -19,7 +19,7 @@ jest.mock('../../prisma', () => ({
       update: jest.fn(),
     },
     gameHistory: {
-      create: jest.fn().mockResolvedValue({}),
+      create: jest.fn().mockResolvedValue({} as never),
     },
   },
 }));
@@ -188,7 +188,7 @@ describe('Socket.IO host session authentication', () => {
   });
 
   it('disconnects sockets when host_logout event is emitted', async () => {
-    const { appEvents } = await import('../../events');
+    const { appEvents } = require('../../events');
     const token = jwt.sign({ userId, sessionId }, config.jwtSecret);
     const client = createClient(token);
 

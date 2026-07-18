@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { socket } from '../realtime/socket';
-import { RoomState, GameResult, type PublicRoomData, type SocketActionResult, type RoundResetPayload, type HostRejoinRoomResult } from 'shared';
+import { RoomState, GameResult, type PublicRoomData, type SocketActionResult, type HostRejoinRoomResult } from 'shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -259,16 +259,9 @@ export function HostRoom() {
   const publicUrl = window.location.origin;
   const joinUrl = `${publicUrl}/room/${room.roomCode}`;
 
-  type HostActionMap = {
-    'ROUND_START': undefined;
-    'ROUND_RESET': RoundResetPayload;
-    'HOST_CLEAR_SCORES': undefined;
-    'ROOM_FINISH': undefined;
-  };
-
-  function emitWithTimeout<K extends keyof HostActionMap>(
-    action: K,
-    payload: HostActionMap[K],
+  function emitWithTimeout(
+    action: 'ROUND_START' | 'ROUND_RESET' | 'HOST_CLEAR_SCORES' | 'ROOM_FINISH',
+    emit: (callback: (res: SocketActionResult) => void) => void,
     onSuccess?: (res: SocketActionResult) => void
   ) {
     if (pendingAction !== null) return;
@@ -310,17 +303,13 @@ export function HostRoom() {
       }
     };
 
-    if (payload !== undefined) {
-      socket.emit(action as any, payload, cb);
-    } else {
-      socket.emit(action as any, cb);
-    }
+    emit(cb);
   }
 
-  const handleStartRound = () => emitWithTimeout('ROUND_START', undefined);
+  const handleStartRound = () => emitWithTimeout('ROUND_START', callback => socket.emit('ROUND_START', callback));
 
   const handleReset = (winnerId: string | null = null, isCorrect: boolean | null = null) => {
-    emitWithTimeout('ROUND_RESET', { winnerId }, () => {
+    emitWithTimeout('ROUND_RESET', callback => socket.emit('ROUND_RESET', { winnerId }, callback), () => {
       if (isCorrect === true) playSound('correct', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
       else if (isCorrect === false) playSound('wrong', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
     });
@@ -329,7 +318,7 @@ export function HostRoom() {
   const handleCorrect = () => handleReset(room.firstBuzzerId, true);
   const handleWrong = () => handleReset(null, false);
 
-  const handleClearScoreboard = () => emitWithTimeout('HOST_CLEAR_SCORES', undefined);
+  const handleClearScoreboard = () => emitWithTimeout('HOST_CLEAR_SCORES', callback => socket.emit('HOST_CLEAR_SCORES', callback));
 
   const handleCopy = () => {
     if (navigator.clipboard && window.isSecureContext) {
@@ -353,7 +342,7 @@ export function HostRoom() {
   };
 
   const handleFinishRoom = () => {
-    emitWithTimeout('ROOM_FINISH', undefined, () => {
+    emitWithTimeout('ROOM_FINISH', callback => socket.emit('ROOM_FINISH', callback), () => {
       setFinishOpen(false);
     });
   };

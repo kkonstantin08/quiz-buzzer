@@ -33,7 +33,6 @@ describe("ParticipantRoom results", () => {
       removeItem: vi.fn((key: string) => storage.delete(key)),
     });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ json: async () => ({}) }));
-    vi.stubGlobal("confetti", vi.fn());
     localStorage.setItem("quiz_participant_ABC123", JSON.stringify({ participantId: "p1", reconnectToken: "token" }));
     mockSocket.connected = true;
     mockSocket.on.mockImplementation((event: string, handler: (payload?: unknown) => void) => {
@@ -84,6 +83,7 @@ describe("ParticipantRoom results", () => {
     expect(await screen.findByText("Победитель!")).toBeInTheDocument();
     expect(screen.getByText("Игрок 2")).toBeInTheDocument();
     expect(screen.getByText("Счёт: 5")).toBeInTheDocument();
+    expect(screen.getByText("Игра завершена. Победитель: Игрок 2.")).toBeInTheDocument();
   });
 
   it("renders DRAW state correctly", async () => {
@@ -99,13 +99,14 @@ describe("ParticipantRoom results", () => {
         ], 
         roundState: RoomState.FINISHED,
         gameResult: GameResult.DRAW,
-        winnerName: "Ничья"
+        winnerName: null
       });
     });
 
     expect(await screen.findByText("Ничья!")).toBeInTheDocument();
     expect(screen.getByText("Победила дружба")).toBeInTheDocument();
     expect(screen.getByText("Счёт: 5")).toBeInTheDocument();
+    expect(screen.getByText("Игра завершена. Ничья.")).toBeInTheDocument();
   });
 
   it("renders NO_WINNER state correctly", async () => {
@@ -127,5 +128,6 @@ describe("ParticipantRoom results", () => {
 
     expect(await screen.findByText("Игра завершена")).toBeInTheDocument();
     expect(screen.getByText("Нет победителя")).toBeInTheDocument();
+    expect(screen.getByText("Игра завершена без победителя.")).toBeInTheDocument();
   });
 });
