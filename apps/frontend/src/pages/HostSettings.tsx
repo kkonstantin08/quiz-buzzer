@@ -13,6 +13,7 @@ import { DashboardLayout } from '../components/DashboardLayout';
 import { Volume2, Image as ImageIcon, Crown, ExternalLink, Loader2, Check, AlertTriangle, Upload } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
+import { resolveAssetUrl } from '../lib/assets';
 
 export function HostSettings() {
   const navigate = useNavigate();
@@ -364,7 +365,7 @@ export function HostSettings() {
               {customLogoUrl && (
                 <div className="mt-4 p-4 border rounded-lg bg-slate-50 flex items-center justify-center relative">
                   <img 
-                    src={customLogoUrl} 
+                    src={resolveAssetUrl(customLogoUrl) ?? undefined}
                     alt="Предпросмотр логотипа" 
                     className="max-h-16 object-contain"
                   />
@@ -461,7 +462,7 @@ export function HostSettings() {
                     <span className="text-xs font-semibold text-slate-500 self-start">Предпросмотр фона:</span>
                     <div 
                       className="w-full h-32 rounded-md bg-cover bg-center border shadow-sm relative overflow-hidden"
-                      style={{ backgroundImage: `url(${customBgUrl})` }}
+                      style={{ backgroundImage: `url(${resolveAssetUrl(customBgUrl)})` }}
                     >
                       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center">
                         <span className="text-white text-xs font-bold px-3 py-1.5 bg-black/40 rounded-full">

@@ -14,8 +14,10 @@ const { app } = require('../server');
 describe('public uploads', () => {
   beforeAll(() => {
     fs.mkdirSync(uploadDir, { recursive: true });
+    fs.mkdirSync(path.join(uploadDir, '.staging'), { recursive: true });
     fs.writeFileSync(path.join(uploadDir, filename), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL9pQAAAABJRU5ErkJggg==', 'base64'));
     fs.writeFileSync(path.join(uploadDir, 'legacy.html'), '<script>alert(1)</script>');
+    fs.writeFileSync(path.join(uploadDir, '.staging', 'temporary'), 'untrusted');
   });
 
   afterAll(() => {
@@ -32,5 +34,6 @@ describe('public uploads', () => {
 
   it('does not expose non-image upload filenames', async () => {
     await request(app).get('/uploads/legacy.html').expect(404);
+    await request(app).get('/uploads/.staging/temporary').expect(404);
   });
 });

@@ -4,6 +4,7 @@ import { promises as fsPromises } from 'node:fs';
 import path from 'node:path';
 import multer from 'multer';
 import type { RequestHandler } from 'express';
+import type { Prisma } from '@prisma/client';
 import { config } from '../config';
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
@@ -14,12 +15,14 @@ const extensions = {
 } as const;
 
 type UploadUrl = `/uploads/${string}`;
-type PersistResult<T> = { previousUrl: string | null | undefined; result: T };
+type PersistResult<T> = { previousUrl: string | null | undefined; deletePrevious: boolean; result: T };
+type UploadTransaction = Pick<Prisma.TransactionClient, 'hostUser' | 'hostSettings'>;
+const uploadLocks = new Map<string, Promise<void>>();
 
 export class InvalidUploadError extends Error {}
 
 function temporaryUploadDir() {
-  return path.join(path.dirname(path.resolve(config.uploadDir)), '.upload-tmp');
+  return path.join(path.resolve(config.uploadDir), '.staging');
 }
 
 function isDirectFile(filePath: string, directory: string) {
@@ -54,6 +57,7 @@ async function unlinkFile(filePath: string | null | undefined) {
 
 export function ensureUploadDirExists() {
   fs.mkdirSync(config.uploadDir, { recursive: true });
+  fs.mkdirSync(temporaryUploadDir(), { recursive: true });
   fs.accessSync(config.uploadDir, fs.constants.W_OK);
 }
 
@@ -94,6 +98,33 @@ export async function deleteUploadedFile(fileUrl: string | null | undefined) {
   return unlinkFile(uploadPathFromUrl(fileUrl));
 }
 
+export async function countUploadReferences(tx: UploadTransaction, url: string | null | undefined) {
+  if (!uploadPathFromUrl(url)) return 0;
+  const [avatars, logos, backgrounds] = await Promise.all([
+    tx.hostUser.count({ where: { avatarUrl: url } }),
+    tx.hostSettings.count({ where: { customLogoUrl: url } }),
+    tx.hostSettings.count({ where: { customBgUrl: url } }),
+  ]);
+  return avatars + logos + backgrounds;
+}
+
+// ponytail: in-memory lock is for this single backend instance; use a distributed lock if deployment scales out.
+export async function withUploadLock<T>(key: string, task: () => Promise<T>) {
+  const previous = uploadLocks.get(key) ?? Promise.resolve();
+  let release: () => void;
+  const current = new Promise<void>((resolve) => { release = resolve; });
+  const tail = previous.then(() => current);
+  uploadLocks.set(key, tail);
+
+  await previous;
+  try {
+    return await task();
+  } finally {
+    release!();
+    if (uploadLocks.get(key) === tail) uploadLocks.delete(key);
+  }
+}
+
 async function publishTemporaryUpload(filePath: string): Promise<UploadUrl> {
   const temporaryPath = isDirectFile(filePath, temporaryUploadDir());
   if (!temporaryPath) throw new InvalidUploadError('Invalid temporary upload path');
@@ -117,10 +148,12 @@ export async function saveUploadedFile<T>(
   try {
     url = await publishTemporaryUpload(file.path);
     const persisted = await persist(url);
-    try {
-      await deleteUploadedFile(persisted.previousUrl);
-    } catch (error) {
-      console.error('Failed to delete replaced upload:', error);
+    if (persisted.deletePrevious) {
+      try {
+        await deleteUploadedFile(persisted.previousUrl);
+      } catch (error) {
+        console.error('Failed to delete replaced upload:', error);
+      }
     }
     return { url, result: persisted.result };
   } catch (error) {

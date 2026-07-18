@@ -2,7 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
-import { InvalidUploadError, receiveUpload, saveUploadedFile, deleteUploadedFile } from '../utils/upload';
+import { countUploadReferences, InvalidUploadError, receiveUpload, saveUploadedFile, deleteUploadedFile, withUploadLock } from '../utils/upload';
 import { prisma } from '../prisma';
 import { config } from '../config';
 import { requireAuth, AuthRequest } from './middleware';
@@ -187,14 +187,22 @@ authRouter.post('/avatar', requireAuth, receiveUpload('avatar'), async (req: Aut
       return res.status(400).json({ error: 'No file uploaded or invalid file type' });
     }
 
-    const uploaded = await saveUploadedFile(req.file, async (avatarUrl) => {
-      const user = await prisma.hostUser.findUnique({ where: { id: req.userId! } });
-      const updatedUser = await prisma.hostUser.update({
-        where: { id: req.userId! },
-        data: { avatarUrl },
+    const uploaded = await withUploadLock(`${req.userId}:avatar`, () => saveUploadedFile(req.file!, async (avatarUrl) => {
+      const persisted = await prisma.$transaction(async (tx) => {
+        const user = await tx.hostUser.findUnique({ where: { id: req.userId! } });
+        const updatedUser = await tx.hostUser.update({
+          where: { id: req.userId! },
+          data: { avatarUrl },
+        });
+        const references = await countUploadReferences(tx, user?.avatarUrl);
+        return { user, updatedUser, references };
       });
-      return { previousUrl: user?.avatarUrl, result: updatedUser };
-    });
+      return {
+        previousUrl: persisted.user?.avatarUrl,
+        deletePrevious: persisted.references === 0,
+        result: persisted.updatedUser,
+      };
+    }));
 
     return res.json({ avatarUrl: uploaded.result.avatarUrl });
   } catch (error) {
@@ -208,16 +216,25 @@ authRouter.post('/avatar', requireAuth, receiveUpload('avatar'), async (req: Aut
 
 authRouter.delete('/avatar', requireAuth, async (req: AuthRequest, res) => {
   try {
-    const user = await prisma.hostUser.findUnique({ where: { id: req.userId! } });
-    const updatedUser = await prisma.hostUser.update({
-      where: { id: req.userId! },
-      data: { avatarUrl: null },
+    const updatedUser = await withUploadLock(`${req.userId}:avatar`, async () => {
+      const persisted = await prisma.$transaction(async (tx) => {
+        const user = await tx.hostUser.findUnique({ where: { id: req.userId! } });
+        const updatedUser = await tx.hostUser.update({
+          where: { id: req.userId! },
+          data: { avatarUrl: null },
+        });
+        const references = await countUploadReferences(tx, user?.avatarUrl);
+        return { user, updatedUser, references };
+      });
+      if (persisted.references === 0) {
+        try {
+          await deleteUploadedFile(persisted.user?.avatarUrl);
+        } catch (error) {
+          console.error('Failed to delete avatar:', error);
+        }
+      }
+      return persisted.updatedUser;
     });
-    try {
-      await deleteUploadedFile(user?.avatarUrl);
-    } catch (error) {
-      console.error('Failed to delete avatar:', error);
-    }
     return res.json({ avatarUrl: updatedUser.avatarUrl });
   } catch (error) {
     console.error('Avatar delete error:', error);

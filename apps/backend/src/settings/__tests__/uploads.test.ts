@@ -15,6 +15,7 @@ jest.mock('../../prisma', () => ({
   prisma: {
     hostUser: {
       findUnique: jest.fn(({ where: { id } }) => Promise.resolve(mockUsers.get(id) ?? null)),
+      count: jest.fn(({ where: { avatarUrl } }) => Promise.resolve([...mockUsers.values()].filter((user) => user.avatarUrl === avatarUrl).length)),
       update: jest.fn(({ where: { id }, data }) => {
         if (failNextUserUpdate) {
           failNextUserUpdate = false;
@@ -28,6 +29,9 @@ jest.mock('../../prisma', () => ({
     },
     hostSettings: {
       findUnique: jest.fn(({ where: { hostUserId } }) => Promise.resolve(mockSettings.get(hostUserId) ?? null)),
+      count: jest.fn(({ where }) => Promise.resolve([...mockSettings.values()].filter((settings) => (
+        settings.customLogoUrl === where.customLogoUrl || settings.customBgUrl === where.customBgUrl
+      )).length)),
       create: jest.fn(({ data }) => {
         const settings = {
           hostUserId: data.hostUserId,
@@ -50,6 +54,7 @@ jest.mock('../../prisma', () => ({
         return Promise.resolve(settings);
       }),
     },
+    $transaction: jest.fn(async (callback) => callback(require('../../prisma').prisma)),
   },
 }));
 
@@ -84,6 +89,10 @@ describe('secure image uploads', () => {
     }
   }
 
+  async function publicFiles() {
+    return (await files(uploadDir)).filter((name) => name !== '.staging');
+  }
+
   async function writePublic(name: string) {
     await fs.writeFile(path.join(uploadDir, name), png);
     return `/uploads/${name}`;
@@ -92,7 +101,7 @@ describe('secure image uploads', () => {
   beforeEach(async () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), 'quiz-buzzer-upload-'));
     uploadDir = path.join(root, 'public');
-    stagingDir = path.join(root, '.upload-tmp');
+    stagingDir = path.join(uploadDir, '.staging');
     config.uploadDir = uploadDir;
     await fs.mkdir(uploadDir, { recursive: true });
     mockUsers.clear();
@@ -120,8 +129,9 @@ describe('secure image uploads', () => {
     expect(response.status).toBe(200);
     const url = response.body[property];
     expect(url).toMatch(/^\/uploads\/[a-f0-9]{32}\.png$/);
-    expect(await files(uploadDir)).toEqual([path.basename(url)]);
+    expect(await publicFiles()).toEqual([path.basename(url)]);
     expect(await files(stagingDir)).toEqual([]);
+    expect((await fs.stat(stagingDir)).isDirectory()).toBe(true);
   });
 
   it('derives JPEG extension from content instead of the submitted PNG filename', async () => {
@@ -146,7 +156,7 @@ describe('secure image uploads', () => {
       .attach('logo', body, { filename: 'claimed-image.png', contentType });
 
     expect(response.status).toBe(400);
-    expect(await files(uploadDir)).toEqual([]);
+    expect(await publicFiles()).toEqual([]);
     expect(await files(stagingDir)).toEqual([]);
   });
 
@@ -157,7 +167,7 @@ describe('secure image uploads', () => {
       .attach('background', Buffer.alloc(5 * 1024 * 1024 + 1), { filename: 'large.png', contentType: 'image/png' });
 
     expect(response.status).toBe(400);
-    expect(await files(uploadDir)).toEqual([]);
+    expect(await publicFiles()).toEqual([]);
     expect(await files(stagingDir)).toEqual([]);
   });
 
@@ -253,7 +263,7 @@ describe('secure image uploads', () => {
       .attach('avatar', png, { filename: 'new.png', contentType: 'image/png' })
       .expect(500);
 
-    expect(await files(uploadDir)).toEqual([path.basename(previous)]);
+    expect(await publicFiles()).toEqual([path.basename(previous)]);
     expect(mockUsers.get('owner')!.avatarUrl).toBe(previous);
     expect(await files(stagingDir)).toEqual([]);
   });
@@ -263,8 +273,7 @@ describe('secure image uploads', () => {
     mockSettings.set('owner', {
       hostUserId: 'owner', customLogoUrl: previous, customBgUrl: null, soundEnabled: true, soundTheme: 'classic', bgTheme: 'light',
     });
-    await fs.rm(uploadDir, { recursive: true, force: true });
-    await fs.writeFile(uploadDir, 'not a directory');
+    const rename = jest.spyOn(fs, 'rename').mockRejectedValueOnce(Object.assign(new Error('publish failed'), { code: 'EIO' }));
 
     await request(app)
       .post('/settings/upload-logo')
@@ -274,6 +283,7 @@ describe('secure image uploads', () => {
 
     expect(mockSettings.get('owner')!.customLogoUrl).toBe(previous);
     expect(await files(stagingDir)).toEqual([]);
+    rename.mockRestore();
   });
 
   it('rejects external, nested, and traversal URLs while deleting only a direct internal upload URL', async () => {
@@ -308,5 +318,94 @@ describe('secure image uploads', () => {
     expect(await fs.stat(path.join(uploadDir, path.basename(previous)))).toBeDefined();
     unlink.mockRestore();
     log.mockRestore();
+  });
+
+  it('updates images inside a Prisma transaction', async () => {
+    const response = await request(app)
+      .post('/settings/upload-logo')
+      .set('x-user-id', 'owner')
+      .attach('logo', png, { filename: 'new.png', contentType: 'image/png' });
+
+    expect(response.status).toBe(200);
+    expect(require('../../prisma').prisma.$transaction).toHaveBeenCalled();
+  });
+
+  it('keeps a shared avatar and logo file until the last reference is cleared', async () => {
+    const shared = await writePublic('4'.repeat(32) + '.png');
+    mockUsers.set('owner', { id: 'owner', avatarUrl: shared });
+    mockSettings.set('owner', {
+      hostUserId: 'owner', customLogoUrl: shared, customBgUrl: null, soundEnabled: true, soundTheme: 'classic', bgTheme: 'light',
+    });
+
+    await request(app).delete('/auth/avatar').set('x-user-id', 'owner').expect(200);
+    expect(await fs.stat(path.join(uploadDir, path.basename(shared)))).toBeDefined();
+
+    await request(app).delete('/settings/logo').set('x-user-id', 'owner').expect(200);
+    await expect(fs.stat(path.join(uploadDir, path.basename(shared)))).rejects.toThrow();
+  });
+
+  it('keeps a shared legacy URL while another user still references it', async () => {
+    const shared = await writePublic('5'.repeat(32) + '.png');
+    mockSettings.set('owner', {
+      hostUserId: 'owner', customLogoUrl: shared, customBgUrl: null, soundEnabled: true, soundTheme: 'classic', bgTheme: 'light',
+    });
+    mockSettings.set('other', {
+      hostUserId: 'other', customLogoUrl: shared, customBgUrl: null, soundEnabled: true, soundTheme: 'classic', bgTheme: 'light',
+    });
+
+    await request(app).delete('/settings/logo').set('x-user-id', 'owner').expect(200);
+    expect(await fs.stat(path.join(uploadDir, path.basename(shared)))).toBeDefined();
+  });
+
+  it('leaves no orphan when two logo uploads race for the same field', async () => {
+    const [first, second] = await Promise.all([
+      request(app).post('/settings/upload-logo').set('x-user-id', 'owner')
+        .attach('logo', png, { filename: 'first.png', contentType: 'image/png' }),
+      request(app).post('/settings/upload-logo').set('x-user-id', 'owner')
+        .attach('logo', jpeg, { filename: 'second.jpg', contentType: 'image/jpeg' }),
+    ]);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    const finalUrl = mockSettings.get('owner')!.customLogoUrl!;
+    expect(await publicFiles()).toEqual([path.basename(finalUrl)]);
+    expect(await files(stagingDir)).toEqual([]);
+  });
+
+  it.each([
+    ['avatar', '/auth/avatar', 'avatar', 'avatarUrl'],
+    ['background', '/settings/upload-bg', 'background', 'customBgUrl'],
+  ])('leaves no orphan when two %s uploads race for the same field', async (_kind, endpoint, field, property) => {
+    const [first, second] = await Promise.all([
+      request(app).post(endpoint).set('x-user-id', 'owner')
+        .attach(field, png, { filename: 'first.png', contentType: 'image/png' }),
+      request(app).post(endpoint).set('x-user-id', 'owner')
+        .attach(field, jpeg, { filename: 'second.jpg', contentType: 'image/jpeg' }),
+    ]);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    const finalUrl = property === 'avatarUrl'
+      ? mockUsers.get('owner')!.avatarUrl!
+      : mockSettings.get('owner')!.customBgUrl!;
+    expect(await publicFiles()).toEqual([path.basename(finalUrl)]);
+    expect(await files(stagingDir)).toEqual([]);
+  });
+
+  it('leaves either the winning avatar or no file when upload races with delete', async () => {
+    const previous = await writePublic('6'.repeat(32) + '.png');
+    mockUsers.set('owner', { id: 'owner', avatarUrl: previous });
+
+    const [upload, remove] = await Promise.all([
+      request(app).post('/auth/avatar').set('x-user-id', 'owner')
+        .attach('avatar', png, { filename: 'new.png', contentType: 'image/png' }),
+      request(app).delete('/auth/avatar').set('x-user-id', 'owner'),
+    ]);
+
+    expect(upload.status).toBe(200);
+    expect(remove.status).toBe(200);
+    const finalUrl = mockUsers.get('owner')!.avatarUrl;
+    expect(await publicFiles()).toEqual(finalUrl ? [path.basename(finalUrl)] : []);
+    expect(await files(stagingDir)).toEqual([]);
   });
 });

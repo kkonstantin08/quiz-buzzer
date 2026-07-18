@@ -11,6 +11,7 @@ services:
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET environment variable is required}
       - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:5173}
       - PORT=3001
+      - UPLOAD_DIR=/app/uploads
       - NODE_ENV=production
       - TRUST_PROXY=172.30.0.10
       - COOKIE_SECURE=${COOKIE_SECURE:-false}

@@ -142,6 +142,21 @@ jobs:
           exit 1
       - name: Verify frontend via nginx
         run: curl -f "$NGINX_URL"
+      - name: Upload and retrieve an image via nginx
+        run: |
+          image_file=$(mktemp)
+          cookie_jar=$(mktemp)
+          base64 -d > "$image_file" <<'PNG'
+          iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL9pQAAAABJRU5ErkJggg==
+          PNG
+          curl -f -sS -c "$cookie_jar" \
+            -H 'Content-Type: application/json' \
+            --data '{"email":"docker-upload-smoke@example.test","password":"password123","termsAccepted":true,"displayedTermsVersion":"1.0"}' \
+            "$NGINX_URL/api/auth/register" > /dev/null
+          upload=$(curl -f -sS -b "$cookie_jar" -F "avatar=@$image_file;type=image/png;filename=image.html" "$NGINX_URL/api/auth/avatar")
+          upload_path=$(node -e 'const value = JSON.parse(process.argv[1]).avatarUrl; if (!/^\/uploads\/[a-f0-9]{32}\.png$/.test(value || "")) process.exit(1); process.stdout.write(value)' "$upload")
+          curl -f -sSI "$NGINX_URL$upload_path" | grep -qi '^content-type: image/png'
+          curl -f -sSI "$NGINX_URL$upload_path" | grep -qi '^x-content-type-options: nosniff'
       - name: Check migrations and seed
         run: |
           logs=$(docker compose logs backend)

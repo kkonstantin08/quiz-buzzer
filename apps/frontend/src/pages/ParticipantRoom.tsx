@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { socket } from "../realtime/socket";
 import { timeSync } from "../realtime/timeSync";
 import { api, BASE_URL } from "../services/api";
+import { resolveAssetUrl } from "../lib/assets";
 import { RoomState, GameResult, type PublicRoomData } from "shared";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import confetti from "canvas-confetti";
@@ -117,13 +118,7 @@ export function ParticipantRoom() {
         .then((res) => res.json())
         .then((data) => {
           if (data.customLogoUrl) {
-            const cleanBaseUrl = BASE_URL.endsWith("/")
-              ? BASE_URL.slice(0, -1)
-              : BASE_URL;
-            const fullUrl = data.customLogoUrl.startsWith("http")
-              ? data.customLogoUrl
-              : `${cleanBaseUrl.replace("/api", "")}${data.customLogoUrl}`;
-            setLogoUrl(fullUrl);
+            setLogoUrl(resolveAssetUrl(data.customLogoUrl) || "");
           }
         })
         .catch(console.error);
@@ -673,7 +668,7 @@ export function ParticipantRoom() {
     bgClass =
       "flex flex-col items-center min-h-[100dvh] bg-cover bg-center bg-no-repeat p-4 overflow-hidden touch-none relative";
     bgStyle = {
-      backgroundImage: `url(${room.customBgUrl.startsWith("http") ? room.customBgUrl : `${BASE_URL.replace("/api", "")}${room.customBgUrl}`})`,
+      backgroundImage: `url(${resolveAssetUrl(room.customBgUrl)})`,
     };
     showOverlay = true;
   } else if (room?.bgTheme === "dark") {
@@ -703,11 +698,7 @@ export function ParticipantRoom() {
             <img
               src={
                 logoUrl ||
-                (room?.customLogoUrl
-                  ? room.customLogoUrl.startsWith("http")
-                    ? room.customLogoUrl
-                    : `${BASE_URL.replace("/api", "")}${room.customLogoUrl}`
-                  : "")
+                (resolveAssetUrl(room?.customLogoUrl) || "")
               }
               alt="Логотип игры"
               className="max-h-12 object-contain"
