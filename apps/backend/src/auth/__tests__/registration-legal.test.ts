@@ -14,16 +14,20 @@ describe('Registration with Legal Acceptance', () => {
   const testEmail = 'legaltest@example.com';
   const testPassword = 'password123';
 
+  async function cleanupTestUser() {
+    const user = await prisma.hostUser.findUnique({ where: { email: testEmail } });
+    if (!user) return;
+    await prisma.legalAcceptance.deleteMany({ where: { hostUserId: user.id } });
+    await prisma.session.deleteMany({ where: { userId: user.id } });
+    await prisma.hostUser.delete({ where: { id: user.id } });
+  }
+
   beforeEach(async () => {
-    await prisma.legalAcceptance.deleteMany();
-    await prisma.session.deleteMany();
-    await prisma.hostUser.deleteMany({ where: { email: testEmail } });
+    await cleanupTestUser();
   });
 
   afterAll(async () => {
-    await prisma.legalAcceptance.deleteMany();
-    await prisma.session.deleteMany();
-    await prisma.hostUser.deleteMany({ where: { email: testEmail } });
+    await cleanupTestUser();
     await prisma.$disconnect();
   });
 

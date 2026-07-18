@@ -18,10 +18,16 @@ describe('Session Revocation & Auth', () => {
   const testEmail = 'sessiontest@example.com';
   const testPassword = 'password123';
 
+  async function cleanupTestUser() {
+    const user = await prisma.hostUser.findUnique({ where: { email: testEmail } });
+    if (!user) return;
+    await prisma.legalAcceptance.deleteMany({ where: { hostUserId: user.id } });
+    await prisma.session.deleteMany({ where: { userId: user.id } });
+    await prisma.hostUser.delete({ where: { id: user.id } });
+  }
+
   beforeAll(async () => {
-    // Clean up
-    await prisma.session.deleteMany();
-    await prisma.hostUser.deleteMany({ where: { email: testEmail } });
+    await cleanupTestUser();
 
     // Create user
     const passwordHash = await bcrypt.hash(testPassword, 10);
@@ -35,8 +41,7 @@ describe('Session Revocation & Auth', () => {
   });
 
   afterAll(async () => {
-    await prisma.session.deleteMany();
-    await prisma.hostUser.deleteMany({ where: { email: testEmail } });
+    await cleanupTestUser();
     await prisma.$disconnect();
   });
 

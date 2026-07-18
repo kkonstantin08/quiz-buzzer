@@ -23,7 +23,6 @@ export const createLoginLimiter = () => rateLimit({
   message: { error: 'Слишком много попыток входа, пожалуйста, подождите 15 минут' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: config.trustProxy !== false },
 });
 
 export const createRegisterLimiter = () => rateLimit({
@@ -32,7 +31,6 @@ export const createRegisterLimiter = () => rateLimit({
   message: { error: 'Слишком много регистраций с этого IP, пожалуйста, подождите час' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: config.trustProxy !== false },
 });
 
 const loginLimiter = createLoginLimiter();

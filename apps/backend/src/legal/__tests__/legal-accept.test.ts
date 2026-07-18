@@ -14,14 +14,24 @@ app.use(cookieParser());
 app.use('/legal', requireAuth, legalRouter);
 
 describe('Legal Acceptance API', () => {
+  const testEmail = 'legalaccept@example.com';
   let testUserId: string;
   let testSessionId: string;
   let authToken: string;
 
+  async function cleanupTestUser() {
+    const user = await prisma.hostUser.findUnique({ where: { email: testEmail } });
+    if (!user) return;
+    await prisma.legalAcceptance.deleteMany({ where: { hostUserId: user.id } });
+    await prisma.session.deleteMany({ where: { userId: user.id } });
+    await prisma.hostUser.delete({ where: { id: user.id } });
+  }
+
   beforeAll(async () => {
+    await cleanupTestUser();
     const user = await prisma.hostUser.create({
       data: {
-        email: 'legalaccept@example.com',
+        email: testEmail,
         passwordHash: 'dummy',
       },
     });
@@ -39,14 +49,12 @@ describe('Legal Acceptance API', () => {
   });
 
   afterAll(async () => {
-    await prisma.legalAcceptance.deleteMany();
-    await prisma.session.deleteMany();
-    await prisma.hostUser.deleteMany({ where: { email: 'legalaccept@example.com' } });
+    await cleanupTestUser();
     await prisma.$disconnect();
   });
 
   beforeEach(async () => {
-    await prisma.legalAcceptance.deleteMany();
+    await prisma.legalAcceptance.deleteMany({ where: { hostUserId: testUserId } });
   });
 
   it('requires authentication', async () => {

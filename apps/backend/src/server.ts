@@ -41,7 +41,6 @@ const apiLimiter = rateLimit({
   message: { error: 'Too many requests from this IP, please try again after 15 minutes' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: config.trustProxy !== false },
 });
 app.use('/api/', apiLimiter);
 
