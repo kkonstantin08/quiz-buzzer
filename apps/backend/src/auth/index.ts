@@ -1,13 +1,14 @@
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { countUploadReferences, InvalidUploadError, receiveUpload, saveUploadedFile, deleteUploadedFile, withUploadLock } from '../utils/upload';
 import { prisma } from '../prisma';
 import { config } from '../config';
 import { requireAuth, AuthRequest } from './middleware';
 import { appEvents } from '../events';
 import { LegalDocumentType, LegalAcceptanceSource, legalBackendConfig } from '../legal/config';
+import { normalizeEmail, normalizeName } from './validation';
 export const authRouter = Router();
 
 const hostCookieOptions = () => ({
@@ -33,21 +34,55 @@ export const createRegisterLimiter = () => rateLimit({
   legacyHeaders: false,
 });
 
+export const createPasswordVerificationLimiter = () => rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  skipSuccessfulRequests: true,
+  skip: (req) => typeof req.body?.currentPassword !== 'string',
+  keyGenerator: (req) => {
+    const authRequest = req as AuthRequest;
+    return `${authRequest.userId ?? 'anonymous'}:${authRequest.sessionId ?? 'no-session'}:${ipKeyGenerator(req.ip ?? '0.0.0.0')}`;
+  },
+  message: { error: 'Too many password attempts, please try again after 15 minutes' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 const loginLimiter = createLoginLimiter();
 const registerLimiter = createRegisterLimiter();
+const passwordVerificationLimiter = createPasswordVerificationLimiter();
+
+function isUniqueConstraintError(error: unknown) {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002';
+}
+
+async function findUserIdByNormalizedEmail(email: string) {
+  const matches = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT "id" FROM "HostUser" WHERE lower("email") = ${email} LIMIT 1
+  `;
+  return matches[0]?.id;
+}
+
+async function findUserByNormalizedEmail(email: string) {
+  const userId = await findUserIdByNormalizedEmail(email);
+  if (!userId) return null;
+
+  return prisma.hostUser.findUnique({
+    where: { id: userId },
+    include: { subscription: true, settings: true },
+  });
+}
 
 authRouter.post('/login', loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
-    
-    if (!email || !password) {
+
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail.ok || typeof password !== 'string' || password.length === 0) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    const user = await prisma.hostUser.findUnique({
-      where: { email },
-      include: { subscription: true, settings: true },
-    });
+    const user = await findUserByNormalizedEmail(normalizedEmail.value);
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
@@ -140,26 +175,68 @@ authRouter.post('/clear-session', (_req, res) => {
   return res.json({ success: true });
 });
 
-authRouter.put('/me', requireAuth, async (req: AuthRequest, res) => {
+authRouter.put('/me', requireAuth, passwordVerificationLimiter, async (req: AuthRequest, res) => {
   try {
-    const { name, email } = req.body;
-    
-    // Check if email is being changed and is already taken
-    if (email) {
-      const existingUser = await prisma.hostUser.findUnique({ where: { email } });
-      if (existingUser && existingUser.id !== req.userId!) {
+    const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const hasName = Object.hasOwn(payload, 'name');
+    const hasEmail = Object.hasOwn(payload, 'email');
+    const name = hasName ? normalizeName(payload.name) : undefined;
+    const email = hasEmail ? normalizeEmail(payload.email) : undefined;
+
+    if ((name && !name.ok) || (email && !email.ok)) {
+      return res.status(400).json({ error: 'Invalid profile data' });
+    }
+
+    const currentUser = await prisma.hostUser.findUnique({ where: { id: req.userId! } });
+    if (!currentUser) return res.status(401).json({ error: 'User not found' });
+
+    const emailChanged = email?.ok && email.value !== currentUser.email;
+    if (emailChanged) {
+      if (typeof payload.currentPassword !== 'string' || !await bcrypt.compare(payload.currentPassword, currentUser.passwordHash)) {
+        return res.status(400).json({ error: 'Unable to update email' });
+      }
+
+      const existingUserId = await findUserIdByNormalizedEmail(email.value);
+      if (existingUserId && existingUserId !== req.userId) {
         return res.status(400).json({ error: 'Email already in use' });
       }
     }
 
-    const updatedUser = await prisma.hostUser.update({
-      where: { id: req.userId! },
-      data: { 
-        name: name !== undefined ? name : undefined,
-        email: email !== undefined ? email : undefined 
-      },
-      include: { subscription: true, settings: true }
-    });
+    let updatedUser;
+    let revokedSessionIds: string[] = [];
+    try {
+      if (emailChanged) {
+        const changed = await prisma.$transaction(async (tx) => {
+          const user = await tx.hostUser.update({
+            where: { id: req.userId! },
+            data: { name: name?.ok ? name.value : undefined, email: email.value },
+            include: { subscription: true, settings: true },
+          });
+          const sessions = await tx.session.findMany({
+            where: { userId: req.userId!, id: { not: req.sessionId! }, revokedAt: null },
+            select: { id: true },
+          });
+          await tx.session.updateMany({
+            where: { id: { in: sessions.map((session) => session.id) }, revokedAt: null },
+            data: { revokedAt: new Date() },
+          });
+          return { user, revokedSessionIds: sessions.map((session) => session.id) };
+        });
+        updatedUser = changed.user;
+        revokedSessionIds = changed.revokedSessionIds;
+      } else {
+        updatedUser = await prisma.hostUser.update({
+          where: { id: req.userId! },
+          data: { name: name?.ok ? name.value : undefined },
+          include: { subscription: true, settings: true },
+        });
+      }
+    } catch (error) {
+      if (isUniqueConstraintError(error)) return res.status(400).json({ error: 'Email already in use' });
+      throw error;
+    }
+
+    if (revokedSessionIds.length > 0) appEvents.emit('host_sessions_revoked', revokedSessionIds);
 
     const hasActiveSubscription = updatedUser.subscription && 
       updatedUser.subscription.status === 'active' && 
@@ -178,6 +255,39 @@ authRouter.put('/me', requireAuth, async (req: AuthRequest, res) => {
     });
   } catch (error) {
     return res.status(500).json({ error: 'Update failed' });
+  }
+});
+
+authRouter.post('/change-password', requireAuth, passwordVerificationLimiter, async (req: AuthRequest, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (typeof currentPassword !== 'string' || typeof newPassword !== 'string' || newPassword.length < 8 || newPassword.length > 128) {
+      return res.status(400).json({ error: 'Invalid password change' });
+    }
+
+    const user = await prisma.hostUser.findUnique({ where: { id: req.userId! } });
+    if (!user || !await bcrypt.compare(currentPassword, user.passwordHash) || await bcrypt.compare(newPassword, user.passwordHash)) {
+      return res.status(400).json({ error: 'Invalid password change' });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    const revokedSessionIds = await prisma.$transaction(async (tx) => {
+      await tx.hostUser.update({ where: { id: req.userId! }, data: { passwordHash } });
+      const sessions = await tx.session.findMany({
+        where: { userId: req.userId!, id: { not: req.sessionId! }, revokedAt: null },
+        select: { id: true },
+      });
+      await tx.session.updateMany({
+        where: { id: { in: sessions.map((session) => session.id) }, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      return sessions.map((session) => session.id);
+    });
+
+    if (revokedSessionIds.length > 0) appEvents.emit('host_sessions_revoked', revokedSessionIds);
+    return res.json({ success: true });
+  } catch {
+    return res.status(500).json({ error: 'Password change failed' });
   }
 });
 
@@ -252,8 +362,9 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
 
   try {
     const { email, password, termsAccepted, displayedTermsVersion } = req.body;
-    
-    if (!email || !password) {
+    const normalizedEmail = normalizeEmail(email);
+
+    if (!normalizedEmail.ok || typeof password !== 'string' || password.length === 0) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
@@ -270,8 +381,7 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
       });
     }
 
-    const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!EMAIL_REGEX.test(email)) {
+    if (!normalizedEmail.ok) {
       return res.status(400).json({ error: 'Неверный формат email' });
     }
 
@@ -279,8 +389,7 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Пароль должен содержать минимум 8 символов' });
     }
 
-    const existingUser = await prisma.hostUser.findUnique({ where: { email } });
-    if (existingUser) {
+    if (await findUserIdByNormalizedEmail(normalizedEmail.value)) {
       return res.status(400).json({ error: 'Пользователь с таким email уже существует' });
     }
 
@@ -296,7 +405,7 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
     const { user, session } = await prisma.$transaction(async (tx) => {
       const createdUser = await tx.hostUser.create({
         data: {
-          email,
+          email: normalizedEmail.value,
           passwordHash,
         },
       });
@@ -341,6 +450,9 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
       customLogoUrl: null,
     });
   } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      return res.status(400).json({ error: 'Пользователь с таким email уже существует' });
+    }
     console.error('Register error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }

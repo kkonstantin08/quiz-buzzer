@@ -52,7 +52,12 @@ export function DashboardLayout({
   const [isProfileOpen, setIsProfileOpen] = React.useState(false);
   const [editName, setEditName] = React.useState(name || '');
   const [editEmail, setEditEmail] = React.useState(email || '');
+  const [emailCurrentPassword, setEmailCurrentPassword] = React.useState('');
+  const [currentPassword, setCurrentPassword] = React.useState('');
+  const [newPassword, setNewPassword] = React.useState('');
+  const [confirmPassword, setConfirmPassword] = React.useState('');
   const [isSaving, setIsSaving] = React.useState(false);
+  const [isChangingPassword, setIsChangingPassword] = React.useState(false);
   const [isUploading, setIsUploading] = React.useState(false);
   const [showLogoutDialog, setShowLogoutDialog] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -63,15 +68,32 @@ export function DashboardLayout({
     setEditEmail(email || '');
   }, [name, email]);
 
+  const emailChanged = editEmail.trim().toLowerCase() !== email.trim().toLowerCase();
+  const nameChanged = editName !== (name || '');
+
+  const clearPasswords = () => {
+    setEmailCurrentPassword('');
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+  };
+
   const handleSaveProfile = async () => {
+    if (!nameChanged && !emailChanged) return;
+    if (emailChanged && !emailCurrentPassword) {
+      toast.error('Введите текущий пароль для смены email');
+      return;
+    }
+
     try {
       setIsSaving(true);
-      const res = await api.updateProfile({ 
-        name: editName, 
-        email: editEmail 
+      const res = await api.updateProfile({
+        ...(nameChanged ? { name: editName } : {}),
+        ...(emailChanged ? { email: editEmail, currentPassword: emailCurrentPassword } : {}),
       });
       
       toast.success('Профиль успешно обновлен!');
+      clearPasswords();
       setIsProfileOpen(false);
       if (onProfileUpdated) {
         onProfileUpdated(res.name, res.email);
@@ -80,6 +102,24 @@ export function DashboardLayout({
       toast.error('Ошибка сохранения', { description: err.message });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (newPassword !== confirmPassword) {
+      toast.error('Новые пароли не совпадают');
+      return;
+    }
+
+    try {
+      setIsChangingPassword(true);
+      await api.changePassword({ currentPassword, newPassword });
+      clearPasswords();
+      toast.success('Пароль успешно изменен!');
+    } catch (err: any) {
+      toast.error('Ошибка смены пароля', { description: err.message });
+    } finally {
+      setIsChangingPassword(false);
     }
   };
 
@@ -167,7 +207,7 @@ export function DashboardLayout({
         </nav>
 
         <div className="p-4 border-t border-slate-100 shrink-0 bg-slate-50/50">
-          <Dialog open={isProfileOpen} onOpenChange={setIsProfileOpen}>
+          <Dialog open={isProfileOpen} onOpenChange={(open) => { setIsProfileOpen(open); if (!open) clearPasswords(); }}>
             <DialogTrigger asChild>
               <div className="flex items-center gap-3 mb-4 px-2 cursor-pointer hover:bg-slate-100 p-2 rounded-lg transition-colors -mx-2">
                 <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center shrink-0 border border-slate-300 overflow-hidden">
@@ -279,13 +319,28 @@ export function DashboardLayout({
                       type="email"
                       placeholder="email@example.com"
                       value={editEmail}
-                      onChange={(e) => setEditEmail(e.target.value)}
+                      onChange={(e) => {
+                        setEditEmail(e.target.value);
+                        if (e.target.value.trim().toLowerCase() === email.trim().toLowerCase()) setEmailCurrentPassword('');
+                      }}
                     />
                   </div>
+                  {emailChanged && (
+                    <div className="grid gap-2">
+                      <Label htmlFor="email-current-password">Текущий пароль для смены email</Label>
+                      <Input
+                        id="email-current-password"
+                        type="password"
+                        autoComplete="current-password"
+                        value={emailCurrentPassword}
+                        onChange={(e) => setEmailCurrentPassword(e.target.value)}
+                      />
+                    </div>
+                  )}
                   <Button 
                     className="w-full mt-2" 
                     onClick={handleSaveProfile} 
-                    disabled={isSaving || (!editName && !name && editEmail === email)}
+                    disabled={isSaving || (!nameChanged && !emailChanged)}
                   >
                     {isSaving ? 'Сохранение...' : (
                       <>
@@ -293,6 +348,24 @@ export function DashboardLayout({
                       </>
                     )}
                   </Button>
+                  <div className="border-t border-slate-100 pt-4 space-y-3">
+                    <p className="text-sm font-medium text-slate-900">Смена пароля</p>
+                    <div className="grid gap-2">
+                      <Label htmlFor="password-current">Текущий пароль</Label>
+                      <Input id="password-current" type="password" autoComplete="current-password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="password-new">Новый пароль</Label>
+                      <Input id="password-new" type="password" autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="password-confirmation">Повторите новый пароль</Label>
+                      <Input id="password-confirmation" type="password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
+                    </div>
+                    <Button className="w-full" onClick={handleChangePassword} disabled={isChangingPassword || !currentPassword || !newPassword || !confirmPassword}>
+                      {isChangingPassword ? 'Изменение пароля...' : 'Изменить пароль'}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </DialogContent>

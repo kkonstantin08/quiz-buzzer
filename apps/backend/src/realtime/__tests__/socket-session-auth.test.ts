@@ -210,4 +210,23 @@ describe('Socket.IO host session authentication', () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(rooms.size).toBe(0);
   });
+
+  it('disconnects revoked sessions without disconnecting the current session or deleting its room', async () => {
+    const { appEvents } = require('../../events');
+    const currentSessionId = 'current-session';
+    const revokedSessionId = 'revoked-session';
+    const current = createClient(jwt.sign({ userId, sessionId: currentSessionId }, config.jwtSecret));
+    const revoked = createClient(jwt.sign({ userId, sessionId: revokedSessionId }, config.jwtSecret));
+
+    await expect(waitForConnection(current)).resolves.toBe('connected');
+    await expect(waitForConnection(revoked)).resolves.toBe('connected');
+    await expect(createRoom(current)).resolves.toMatchObject({ success: true });
+
+    appEvents.emit('host_sessions_revoked', [revokedSessionId]);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(revoked.connected).toBe(false);
+    expect(current.connected).toBe(true);
+    expect(rooms.size).toBe(1);
+  });
 });
