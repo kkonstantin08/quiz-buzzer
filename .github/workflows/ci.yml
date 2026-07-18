@@ -104,7 +104,7 @@ jobs:
     name: CI / Docker smoke
     runs-on: ubuntu-latest
     env:
-      NGINX_PORT: 8080
+      NGINX_PORT: "0"
     steps:
       - uses: actions/checkout@v4
       - name: Create safe CI .env
@@ -123,12 +123,14 @@ jobs:
             exit 1
           fi
       - name: Start Docker compose
-        run: docker compose up -d
+        run: |
+          docker compose up -d
+          echo "NGINX_URL=http://localhost:$(docker compose port nginx 80 | awk -F: '{print $NF}')" >> "$GITHUB_ENV"
       - name: Wait for backend healthy
         run: |
           echo "Waiting for backend healthcheck..."
           for i in {1..30}; do
-            if curl -s -f http://localhost:8080/api/health > /dev/null; then
+            if curl -s -f "$NGINX_URL/api/health" > /dev/null; then
               echo "Backend is healthy!"
               exit 0
             fi
@@ -139,7 +141,7 @@ jobs:
           docker compose logs backend
           exit 1
       - name: Verify frontend via nginx
-        run: curl -f http://localhost:8080
+        run: curl -f "$NGINX_URL"
       - name: Check migrations and seed
         run: |
           logs=$(docker compose logs backend)
