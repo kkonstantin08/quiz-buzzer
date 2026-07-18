@@ -212,6 +212,32 @@ describe("ParticipantRoom interactions", () => {
     vi.useRealTimers();
   });
 
+  it("clears the ack timeout if the round transitions out of ACTIVE, preventing late error messages", async () => {
+    let deferredCallback: ((result: unknown) => void) | null = null;
+    mockSocket.emit.mockImplementation((event: string, _data: unknown, callback?: (result: unknown) => void) => {
+      if (event === "PARTICIPANT_REJOIN") callback?.({ success: true, room: activeRoom, participant });
+      if (event === "BUZZ_SUBMIT") deferredCallback = callback || null;
+      return mockSocket;
+    });
+
+    renderRoom();
+    const btn = await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" });
+
+    vi.useFakeTimers();
+    fireEvent.pointerDown(btn);
+    expect(buzzer()).toBeDisabled();
+
+    // Round state changes out of ACTIVE before timeout
+    act(() => handlers.get("ROOM_STATE_UPDATED")?.({ ...activeRoom, roundState: RoomState.REVEALED, firstBuzzerId: "other" }));
+    
+    // Trigger what would be the timeout
+    act(() => { vi.advanceTimersByTime(5000); });
+    
+    // The error message should NOT appear because timeout was cleared
+    expect(screen.queryByText(/Ошибка сети/)).not.toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
   it("clears the saved session and blocks control after revocation", async () => {
     renderRoom();
     await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" });

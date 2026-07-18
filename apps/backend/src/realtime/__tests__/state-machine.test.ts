@@ -177,4 +177,23 @@ describe('State Machine Transitions', () => {
       });
     });
   });
+
+  it('should not mark room as FINISHED and should return error if saveGameHistory fails', (done) => {
+    setupRoom(() => {
+      // Mock prisma create to fail
+      const mockCreate = jest.fn().mockRejectedValueOnce(new Error('DB failure'));
+      jest.mocked(require('../../prisma').prisma.gameHistory.create).mockImplementation(mockCreate);
+
+      hostSocket.emit('ROOM_FINISH', (res: any) => {
+        expect(res.success).toBe(false);
+        expect(res.error).toBe('Не удалось сохранить результаты игры');
+
+        // Verify the room is still ACTIVE
+        hostSocket.emit('ROUND_START', (res2: any) => {
+          expect(res2.success).toBe(true);
+          done();
+        });
+      });
+    });
+  });
 });

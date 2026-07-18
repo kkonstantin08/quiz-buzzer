@@ -238,14 +238,6 @@ export function setupSocketIO(io: RealtimeServer) {
         }
 
         const userId = socket.data.userId;
-        if (!userId) {
-          if (callback) callback(rejectSocketAction('ROOM_CREATE', 'not_a_host', socket.id));
-          return;
-        }
-        if (socket.data.role === 'participant') {
-          if (callback) return callback(rejectSocketAction('ROOM_CREATE', 'participant_cannot_create', socket.id));
-          return;
-        }
 
         const user = await prisma.hostUser.findUnique({
           where: { id: userId },
@@ -656,13 +648,24 @@ export function setupSocketIO(io: RealtimeServer) {
         return callback && callback({ success: false, error: 'Игра уже завершена' });
       }
 
-      room.roundState = RoomState.FINISHED;
+      const prevRoundState = room.roundState;
+      const prevGameResult = room.gameResult;
+      const prevWinnerName = room.winnerName;
 
+      room.roundState = RoomState.FINISHED;
       const { calculateGameResult } = require('./room-lifecycle');
       calculateGameResult(room);
 
-      // Save to history (idempotent)
-      await saveGameHistory(room, prisma);
+      try {
+        // Save to history (idempotent)
+        await saveGameHistory(room, prisma);
+      } catch (err) {
+        // Revert temporary state
+        room.roundState = prevRoundState;
+        room.gameResult = prevGameResult;
+        room.winnerName = prevWinnerName;
+        return callback && callback({ success: false, error: 'Не удалось сохранить результаты игры' });
+      }
 
       emitRoomState(io, room);
 
@@ -711,7 +714,7 @@ export function setupSocketIO(io: RealtimeServer) {
 
       } else if (room.hostSocketId === socket.id) {
         if (!socket.data.intentionalLogout) {
-          startHostReconnectTimeout(roomId, io, buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>);
+          startHostReconnectTimeout(roomId, io, buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>, [participantDisconnectTimers]);
           emitRoomState(io, room);
         }
       }

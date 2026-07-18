@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { socket } from '../realtime/socket';
-import { RoomState, type PublicRoomData } from 'shared';
+import { RoomState, GameResult, type PublicRoomData, type SocketActionResult, type RoundResetPayload } from 'shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -29,10 +29,10 @@ export function HostRoom() {
   const [copied, setCopied] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
-  const [winnerInfo, setWinnerInfo] = useState<{winnerName: string | null, winnerScore: number, result: string} | null>(null);
+  const [winnerInfo, setWinnerInfo] = useState<{winnerName: string | null, winnerScore: number, result: GameResult | null} | null>(null);
   const soundSettingsRef = React.useRef({ enabled: true, theme: 'classic' });
   const currentActionIdRef = React.useRef<number>(0);
-  const actionTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const actionTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const announce = useAriaLive();
 
   useSocketAuthRecovery(
@@ -42,7 +42,11 @@ export function HostRoom() {
 
   useEffect(() => {
     return () => {
-      if (actionTimeoutRef.current) clearTimeout(actionTimeoutRef.current);
+      currentActionIdRef.current += 1;
+      if (actionTimeoutRef.current) {
+        clearTimeout(actionTimeoutRef.current);
+        actionTimeoutRef.current = null;
+      }
     };
   }, []);
 
@@ -50,13 +54,18 @@ export function HostRoom() {
     const onDisconnect = () => {
       setPendingAction(null);
       currentActionIdRef.current += 1;
-      if (actionTimeoutRef.current) clearTimeout(actionTimeoutRef.current);
+      if (actionTimeoutRef.current) {
+        clearTimeout(actionTimeoutRef.current);
+        actionTimeoutRef.current = null;
+      }
+      setActionError('Соединение с сервером потеряно');
+      announce('Соединение с сервером потеряно', 'assertive');
     };
     socket.on('disconnect', onDisconnect);
     return () => {
       socket.off('disconnect', onDisconnect);
     };
-  }, []);
+  }, [announce]);
 
   useEffect(() => {
     api.getSettings()
@@ -142,16 +151,16 @@ export function HostRoom() {
         }
 
         if (updatedRoom.roundState === RoomState.FINISHED && previousRoom?.roundState !== RoomState.FINISHED) {
-          const result = updatedRoom.gameResult;
+          const result = updatedRoom.gameResult as GameResult;
           let winnerName = updatedRoom.winnerName || null;
           let winnerScore = 0;
 
-          if (result === 'WINNER' || result === 'DRAW') {
+          if (result === GameResult.WINNER || result === GameResult.DRAW) {
             const sorted = [...updatedRoom.participants].sort((a, b) => b.score - a.score);
             winnerScore = sorted[0]?.score || 0;
           }
 
-          setWinnerInfo({ winnerName, winnerScore, result: result || 'NO_WINNER' });
+          setWinnerInfo({ winnerName, winnerScore, result: result || GameResult.NO_WINNER });
 
           if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
             confetti({
@@ -162,7 +171,14 @@ export function HostRoom() {
             });
           }
           playSound('fanfare', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
-          announce(`Игра завершена. Победитель: ${winnerName || 'никто'}.`);
+          
+          if (result === GameResult.WINNER && winnerName) {
+            announce(`Игра завершена. Победитель: ${winnerName}.`);
+          } else if (result === GameResult.DRAW) {
+            announce(`Игра завершена. Ничья.`);
+          } else {
+            announce(`Игра завершена без победителя.`);
+          }
         }
 
         return updatedRoom;
@@ -243,27 +259,40 @@ export function HostRoom() {
   const publicUrl = window.location.origin;
   const joinUrl = `${publicUrl}/room/${room.roomCode}`;
 
-  const emitWithTimeout = (action: string, payload?: any, onSuccess?: (res: any) => void) => {
+  // Overloads for type-safe emitWithTimeout
+  function emitWithTimeout(action: 'ROUND_START', payload: undefined, onSuccess?: (res: SocketActionResult) => void): void;
+  function emitWithTimeout(action: 'ROUND_RESET', payload: RoundResetPayload, onSuccess?: (res: SocketActionResult) => void): void;
+  function emitWithTimeout(action: 'HOST_CLEAR_SCORES', payload: undefined, onSuccess?: (res: SocketActionResult) => void): void;
+  function emitWithTimeout(action: 'ROOM_FINISH', payload: undefined, onSuccess?: (res: SocketActionResult) => void): void;
+  function emitWithTimeout(action: string, payload?: any, onSuccess?: (res: SocketActionResult) => void) {
     if (pendingAction !== null) return;
 
     const actionId = ++currentActionIdRef.current;
     setPendingAction(action);
     setActionError(null);
 
-    if (actionTimeoutRef.current) clearTimeout(actionTimeoutRef.current);
+    if (actionTimeoutRef.current) {
+      clearTimeout(actionTimeoutRef.current);
+      actionTimeoutRef.current = null;
+    }
 
     actionTimeoutRef.current = setTimeout(() => {
       if (currentActionIdRef.current === actionId) {
+        currentActionIdRef.current += 1; // invalidate current action
+        actionTimeoutRef.current = null;
         setPendingAction(null);
         setActionError('Превышено время ожидания ответа от сервера. Проверьте соединение.');
         announce('Превышено время ожидания ответа от сервера. Проверьте соединение.', 'assertive');
       }
     }, 5000);
 
-    const cb = (res: any) => {
+    const cb = (res: SocketActionResult) => {
       if (currentActionIdRef.current !== actionId) return;
 
-      if (actionTimeoutRef.current) clearTimeout(actionTimeoutRef.current);
+      if (actionTimeoutRef.current) {
+        clearTimeout(actionTimeoutRef.current);
+        actionTimeoutRef.current = null;
+      }
       setPendingAction(null);
 
       if (res && !res.success) {
@@ -276,13 +305,13 @@ export function HostRoom() {
     };
 
     if (payload !== undefined) {
-      socket.emit(action, payload, cb);
+      socket.emit(action as any, payload, cb);
     } else {
-      socket.emit(action, cb);
+      socket.emit(action as any, cb);
     }
-  };
+  }
 
-  const handleStartRound = () => emitWithTimeout('ROUND_START');
+  const handleStartRound = () => emitWithTimeout('ROUND_START', undefined);
 
   const handleReset = (winnerId: string | null = null, isCorrect: boolean | null = null) => {
     emitWithTimeout('ROUND_RESET', { winnerId }, () => {
@@ -294,7 +323,7 @@ export function HostRoom() {
   const handleCorrect = () => handleReset(room.firstBuzzerId, true);
   const handleWrong = () => handleReset(null, false);
 
-  const handleClearScoreboard = () => emitWithTimeout('HOST_CLEAR_SCORES');
+  const handleClearScoreboard = () => emitWithTimeout('HOST_CLEAR_SCORES', undefined);
 
   const handleCopy = () => {
     if (navigator.clipboard && window.isSecureContext) {
@@ -318,7 +347,9 @@ export function HostRoom() {
   };
 
   const handleFinishRoom = () => {
+    console.log('handleFinishRoom called!');
     emitWithTimeout('ROOM_FINISH', undefined, () => {
+      console.log('ROOM_FINISH onSuccess called!');
       setFinishOpen(false);
     });
   };

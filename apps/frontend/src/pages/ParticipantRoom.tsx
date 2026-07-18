@@ -270,16 +270,19 @@ export function ParticipantRoom() {
   useEffect(() => {
     const onStateUpdate = (updatedRoom: PublicRoomData) => {
       setRoom((previousRoom) => {
+        if (updatedRoom.roundState !== RoomState.ACTIVE) {
+          if (ackTimeoutRef.current) {
+            clearTimeout(ackTimeoutRef.current);
+            ackTimeoutRef.current = null;
+          }
+        }
+
         if (
           updatedRoom.roundState === RoomState.WAITING ||
           (updatedRoom.roundState === RoomState.ACTIVE && previousRoom?.roundState !== RoomState.ACTIVE)
         ) {
           setAmIFirst(false);
           setBuzzStatus("idle");
-          if (ackTimeoutRef.current) {
-            clearTimeout(ackTimeoutRef.current);
-            ackTimeoutRef.current = null;
-          }
         }
 
         if (

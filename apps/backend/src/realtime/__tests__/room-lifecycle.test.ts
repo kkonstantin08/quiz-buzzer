@@ -39,7 +39,8 @@ import {
   scheduleMaxLifetimeCleanup,
   cancelRoomLifecycleTimers,
 } from '../room-lifecycle';
-import { RoomState } from 'shared';
+import { RoomState, GameResult } from 'shared';
+import { buzzBuffers } from '../index';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -159,13 +160,13 @@ describe('Room Lifecycle', () => {
     const prisma = makeMockPrisma();
     const room = createRoom('host-1', 'sock-1');
     room.participants = [];
-    room.gameResult = undefined as any;
+    require('../room-lifecycle').calculateGameResult(room);
 
     await saveGameHistory(room, prisma);
 
     expect(prisma.gameHistory.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
-        result: 'NO_WINNER',
+        result: GameResult.NO_WINNER,
         winnerScore: 0,
         participants: 0,
       }),
@@ -176,13 +177,26 @@ describe('Room Lifecycle', () => {
   it('3c. DB error does not cause unhandled rejection and deletes room in maxLifetime cleanup', async () => {
     jest.useFakeTimers();
     const io = makeMockIo();
-    const mockCreate = jest.fn().mockRejectedValue(new Error('DB Error'));
+    
+    let rejectPromise: (reason?: any) => void;
+    const promise = new Promise((resolve, reject) => {
+      rejectPromise = reject;
+    });
+    const mockCreate = jest.fn().mockReturnValue(promise);
     jest.mocked(require('../../prisma').prisma.gameHistory.create).mockImplementation(mockCreate);
 
     const room = createRoom('host-error', 'sock-err');
     scheduleMaxLifetimeCleanup(room.roomId, io, new Map(), []);
 
     jest.advanceTimersByTime(24 * 60 * 60 * 1000);
+    // Let the setImmediate or timeout flush
+    await Promise.resolve();
+
+    // At this point, the cleanup timer has fired, but saveGameHistory is still waiting for prisma.create
+    expect(rooms.has(room.roomId)).toBe(true); // Should not be deleted yet!
+    
+    // Now reject the promise
+    rejectPromise!(new Error('DB Error'));
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve(); // Flush microtasks
@@ -202,25 +216,37 @@ describe('Room Lifecycle', () => {
     // 0 participants
     room.participants = [];
     require('../room-lifecycle').calculateGameResult(room);
-    expect(room.gameResult).toBe(RoomState.NO_WINNER || 'NO_WINNER');
+    expect(room.gameResult).toBe(GameResult.NO_WINNER);
+    expect(room.winnerName).toBeNull();
 
     // Participants but all 0 score
     room.participants = [
       { id: '1', displayName: 'A', socketId: 's', joinedAt: 1, isConnected: true, score: 0 },
     ];
     require('../room-lifecycle').calculateGameResult(room);
-    expect(room.gameResult).toBe('NO_WINNER');
+    expect(room.gameResult).toBe(GameResult.NO_WINNER);
+    expect(room.winnerName).toBeNull();
 
     // One leader
     room.participants[0].score = 10;
     require('../room-lifecycle').calculateGameResult(room);
-    expect(room.gameResult).toBe('WINNER');
+    expect(room.gameResult).toBe(GameResult.WINNER);
     expect(room.winnerName).toBe('A');
 
     // Draw
     room.participants.push({ id: '2', displayName: 'B', socketId: 's', joinedAt: 1, isConnected: true, score: 10 });
     require('../room-lifecycle').calculateGameResult(room);
-    expect(room.gameResult).toBe('DRAW');
+    expect(room.gameResult).toBe(GameResult.DRAW);
+    expect(room.winnerName).toBeNull();
+    
+    // Independent of participant order
+    room.participants = [
+      { id: '2', displayName: 'B', socketId: 's', joinedAt: 1, isConnected: true, score: 10 },
+      { id: '1', displayName: 'A', socketId: 's', joinedAt: 1, isConnected: true, score: 10 },
+    ];
+    require('../room-lifecycle').calculateGameResult(room);
+    expect(room.gameResult).toBe(GameResult.DRAW);
+    expect(room.winnerName).toBeNull();
   });
 
   // ── 4. ROOM_JOIN blocked for FINISHED room ────────────────────────────────
