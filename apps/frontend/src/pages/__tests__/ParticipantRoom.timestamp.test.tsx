@@ -73,6 +73,8 @@ describe("ParticipantRoom buzz timestamp", () => {
       JSON.stringify({
         participantId: "participant-1",
         reconnectToken: "reconnect-token",
+        createdAt: new Date(0).toISOString(),
+        expiresAt: new Date(2_000_000).toISOString(),
       }),
     );
     mockSocket.connected = true;
