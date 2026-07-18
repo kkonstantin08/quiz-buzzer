@@ -14,9 +14,9 @@ function forwardedProto(remoteAddress: string, protocol: string, scheme: string)
 
 describe('nginx proxy headers', () => {
   it('accepts X-Forwarded-Proto only from cloudflared and only for http or https', () => {
-    expect(forwardedProto('172.30.0.3', 'https', 'http')).toBe('https');
-    expect(forwardedProto('172.30.0.3', 'http', 'https')).toBe('http');
-    expect(forwardedProto('172.30.0.3', 'ftp', 'https')).toBe('https');
+    expect(forwardedProto('172.30.0.11', 'https', 'http')).toBe('https');
+    expect(forwardedProto('172.30.0.11', 'http', 'https')).toBe('http');
+    expect(forwardedProto('172.30.0.11', 'ftp', 'https')).toBe('https');
     expect(forwardedProto('198.51.100.10', 'https', 'http')).toBe('http');
   });
 

@@ -12,7 +12,7 @@ services:
       - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:5173}
       - PORT=3001
       - NODE_ENV=production
-      - TRUST_PROXY=172.30.0.2
+      - TRUST_PROXY=172.30.0.10
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
       - PAYMENTS_ENABLED=${PAYMENTS_ENABLED:-false}
     # ports are intentionally NOT exposed — access only through nginx
@@ -53,7 +53,7 @@ services:
       - backend
     networks:
       proxy_network:
-        ipv4_address: 172.30.0.2
+        ipv4_address: 172.30.0.10
 
   cloudflared:
     image: cloudflare/cloudflared:latest
@@ -65,7 +65,7 @@ services:
       - nginx
     networks:
       proxy_network:
-        ipv4_address: 172.30.0.3
+        ipv4_address: 172.30.0.11
 
 volumes:
   backend_data:

@@ -12,7 +12,7 @@ const dockerAvailable = (() => {
 
 describe('docker compose', () => {
   it.skipIf(!dockerAvailable)('uses NGINX_PORT for the nginx host port', () => {
-    const config = JSON.parse(execFileSync('docker', ['compose', 'config', '--format', 'json'], {
+    const config = JSON.parse(execFileSync('docker', ['compose', '--profile', 'tunnel', 'config', '--format', 'json'], {
       cwd: process.cwd(),
       encoding: 'utf8',
       env: {
@@ -28,5 +28,7 @@ describe('docker compose', () => {
       published: '8080',
       target: 80,
     }));
+    expect(config.services.nginx.networks.proxy_network.ipv4_address).toBe('172.30.0.10');
+    expect(config.services.cloudflared.networks.proxy_network.ipv4_address).toBe('172.30.0.11');
   });
 });

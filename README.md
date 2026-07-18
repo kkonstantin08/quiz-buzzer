@@ -108,7 +108,7 @@ COOKIE_SECURE=false
 PAYMENTS_ENABLED=false
 ```
 
-Без `TRUST_PROXY` backend игнорирует клиентский `X-Forwarded-For`. Docker Compose запускает nginx и backend в выделенной внутренней сети: backend доверяет только фиксированному IP nginx (`172.30.0.2`). Nginx принимает `CF-Connecting-IP` и `X-Forwarded-Proto` только от фиксированного контейнера `cloudflared` (`172.30.0.3`); для protocol допускаются только `http` и `https`, иначе используется локальный `$scheme`. Для API, Socket.IO и uploads nginx перезаписывает `Host`, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto` и `X-Forwarded-Host`, поэтому произвольный forwarded-заголовок клиента не передаётся дальше.
+Без `TRUST_PROXY` backend игнорирует клиентский `X-Forwarded-For`. Docker Compose запускает nginx и backend в выделенной внутренней сети: backend доверяет только фиксированному IP nginx (`172.30.0.10`). Nginx принимает `CF-Connecting-IP` и `X-Forwarded-Proto` только от фиксированного контейнера `cloudflared` (`172.30.0.11`); для protocol допускаются только `http` и `https`, иначе используется локальный `$scheme`. Для API, Socket.IO и uploads nginx перезаписывает `Host`, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto` и `X-Forwarded-Host`, поэтому произвольный forwarded-заголовок клиента не передаётся дальше.
 
 `COOKIE_SECURE=false` сохраняет локальное HTTP-тестирование. Для внешнего HTTPS задайте `COOKIE_SECURE=true` явно после настройки домена и TLS: приложение не включает HTTPS автоматически и не выводит этот флаг из request headers. При отсутствии `COOKIE_SECURE` временно поддерживается `USE_HTTPS=true`; `COOKIE_SECURE` всегда имеет приоритет.
 
