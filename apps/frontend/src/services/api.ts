@@ -31,6 +31,19 @@ const customFetch = async (url: string, options?: RequestInit) => {
   }
 };
 
+const deleteImage = async (path: string, fallbackError: string) => {
+  const res = await customFetch(`${API_URL}${path}`, { method: 'DELETE' });
+  if (!res.ok) {
+    let errorMsg = fallbackError;
+    try {
+      const error = await res.json();
+      errorMsg = error.error || errorMsg;
+    } catch (e) {}
+    throw new Error(translateError(errorMsg));
+  }
+  return res.json();
+};
+
 export const api = {
   async login(email: string, password: string) {
     const res = await customFetch(`${API_URL}/auth/login`, {
@@ -133,6 +146,10 @@ export const api = {
     return res.json();
   },
 
+  async deleteAvatar() {
+    return deleteImage('/auth/avatar', 'Failed to delete avatar');
+  },
+
   async uploadLogo(file: File) {
     const formData = new FormData();
     formData.append('logo', file);
@@ -150,6 +167,10 @@ export const api = {
       throw new Error(translateError(errorMsg));
     }
     return res.json();
+  },
+
+  async deleteLogo() {
+    return deleteImage('/settings/logo', 'Failed to delete logo');
   },
 
   async uploadBg(file: File) {
@@ -171,6 +192,10 @@ export const api = {
     return res.json();
   },
 
+  async deleteBg() {
+    return deleteImage('/settings/background', 'Failed to delete background');
+  },
+
   async getSettings() {
     const res = await customFetch(`${API_URL}/settings`);
     if (!res.ok) {
@@ -184,11 +209,12 @@ export const api = {
     return res.json();
   },
 
-  async updateSettings(data: any) {
+  async updateSettings(data: { soundEnabled?: boolean; soundTheme?: string; bgTheme?: string }) {
+    const { soundEnabled, soundTheme, bgTheme } = data;
     const res = await customFetch(`${API_URL}/settings`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify({ soundEnabled, soundTheme, bgTheme }),
     });
     if (!res.ok) {
       let errorMsg = 'Failed to update settings';

@@ -57,8 +57,14 @@ app.use('/api/legal', legalRouter);
 
 import { ensureUploadDirExists } from './utils/upload';
 
-// Serve static uploads using new config
-app.use('/uploads', express.static(config.uploadDir));
+app.use('/uploads', (req, res, next) => {
+  if (!/^[a-f0-9]{32}\.(jpg|png|webp)$/.test(req.path.slice(1))) {
+    return res.sendStatus(404);
+  }
+  return next();
+}, express.static(config.uploadDir, {
+  setHeaders: (res) => res.setHeader('X-Content-Type-Options', 'nosniff'),
+}));
 
 app.get('/api/health', async (req, res) => {
   try {

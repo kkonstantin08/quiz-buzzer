@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { BillingModal } from './BillingModal';
-import { LayoutDashboard, History, Settings, LogOut, Plus, Crown, Target, User, Save, Calendar, Pencil, Upload, Loader2 } from 'lucide-react';
+import { LayoutDashboard, History, Settings, LogOut, Plus, Crown, Target, User, Save, Calendar, Pencil, Upload, Loader2, Trash2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -26,7 +26,7 @@ interface DashboardLayoutProps {
   onLogout: () => void;
   onCreateRoom: () => void;
   onActivated?: () => void;
-  onProfileUpdated?: (newName?: string, newEmail?: string, newAvatar?: string) => void;
+  onProfileUpdated?: (newName?: string, newEmail?: string, newAvatar?: string | null) => void;
 }
 
 export function DashboardLayout({ 
@@ -96,6 +96,19 @@ export function DashboardLayout({
       }
     } catch (err: any) {
       toast.error('Ошибка загрузки', { description: err.message });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleAvatarDelete = async () => {
+    try {
+      setIsUploading(true);
+      await api.deleteAvatar();
+      onProfileUpdated?.(undefined, undefined, null);
+      toast.success('Аватарка удалена!');
+    } catch (err: any) {
+      toast.error('Ошибка удаления', { description: err.message });
     } finally {
       setIsUploading(false);
     }
@@ -219,7 +232,7 @@ export function DashboardLayout({
                       type="file" 
                       ref={fileInputRef} 
                       className="hidden" 
-                      accept="image/*"
+                      accept="image/jpeg,image/png,image/webp"
                       onChange={handleAvatarUpload}
                     />
 
@@ -237,6 +250,11 @@ export function DashboardLayout({
                         )}
                       </div>
                     </div>
+                    {avatarUrl && (
+                      <Button type="button" variant="ghost" size="sm" onClick={handleAvatarDelete} disabled={isUploading}>
+                        <Trash2 size={14} className="mr-1" /> Удалить
+                      </Button>
+                    )}
                   </div>
                   
                   {hasSubscription && subscriptionEndDate && (

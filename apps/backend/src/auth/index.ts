@@ -2,7 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
-import { uploadMiddleware, validateFileSignature, deleteUploadedFile } from '../utils/upload';
+import { InvalidUploadError, receiveUpload, saveUploadedFile, deleteUploadedFile } from '../utils/upload';
 import { prisma } from '../prisma';
 import { config } from '../config';
 import { requireAuth, AuthRequest } from './middleware';
@@ -181,43 +181,47 @@ authRouter.put('/me', requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-authRouter.post('/avatar', requireAuth, (req: AuthRequest, res: any, next: any) => {
-  uploadMiddleware.single('avatar')(req, res, (err: any) => {
-    if (err) {
-      return res.status(400).json({ error: 'Upload failed or invalid file' });
-    }
-    next();
-  });
-}, async (req: AuthRequest, res: any) => {
+authRouter.post('/avatar', requireAuth, receiveUpload('avatar'), async (req: AuthRequest, res: any) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded or invalid file type' });
     }
 
-    const filePath = req.file.path;
-    const isValid = await validateFileSignature(filePath);
-    
-    if (!isValid) {
-      import('fs').then(fs => fs.unlinkSync(filePath));
-      return res.status(400).json({ error: 'Invalid file signature. File rejected.' });
-    }
-
-    const avatarUrl = `/uploads/${req.file.filename}`;
-
-    const user = await prisma.hostUser.findUnique({ where: { id: req.userId! } });
-    if (user?.avatarUrl) {
-      deleteUploadedFile(user.avatarUrl);
-    }
-
-    const updatedUser = await prisma.hostUser.update({
-      where: { id: req.userId! },
-      data: { avatarUrl },
+    const uploaded = await saveUploadedFile(req.file, async (avatarUrl) => {
+      const user = await prisma.hostUser.findUnique({ where: { id: req.userId! } });
+      const updatedUser = await prisma.hostUser.update({
+        where: { id: req.userId! },
+        data: { avatarUrl },
+      });
+      return { previousUrl: user?.avatarUrl, result: updatedUser };
     });
 
-    return res.json({ avatarUrl: updatedUser.avatarUrl });
+    return res.json({ avatarUrl: uploaded.result.avatarUrl });
   } catch (error) {
+    if (error instanceof InvalidUploadError) {
+      return res.status(400).json({ error: error.message });
+    }
     console.error('Avatar upload error:', error);
     return res.status(500).json({ error: 'Upload failed' });
+  }
+});
+
+authRouter.delete('/avatar', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const user = await prisma.hostUser.findUnique({ where: { id: req.userId! } });
+    const updatedUser = await prisma.hostUser.update({
+      where: { id: req.userId! },
+      data: { avatarUrl: null },
+    });
+    try {
+      await deleteUploadedFile(user?.avatarUrl);
+    } catch (error) {
+      console.error('Failed to delete avatar:', error);
+    }
+    return res.json({ avatarUrl: updatedUser.avatarUrl });
+  } catch (error) {
+    console.error('Avatar delete error:', error);
+    return res.status(500).json({ error: 'Upload delete failed' });
   }
 });
 

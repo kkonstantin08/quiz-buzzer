@@ -1,9 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../prisma';
 import { requireAuth, AuthRequest } from '../auth/middleware';
-import { uploadMiddleware, validateFileSignature, deleteUploadedFile } from '../utils/upload';
-import multer from 'multer';
-import fs from 'fs';
+import { InvalidUploadError, receiveUpload, saveUploadedFile, deleteUploadedFile } from '../utils/upload';
 
 export const settingsRouter = Router();
 
@@ -32,13 +30,11 @@ settingsRouter.get('/', async (req: AuthRequest, res: any) => {
 
 settingsRouter.patch('/', async (req: AuthRequest, res: any) => {
   try {
-    const { soundEnabled, soundTheme, customLogoUrl, customBgUrl, bgTheme } = req.body;
+    const { soundEnabled, soundTheme, bgTheme } = req.body;
 
     const dataToUpdate: any = {};
     if (typeof soundEnabled === 'boolean') dataToUpdate.soundEnabled = soundEnabled;
     if (typeof soundTheme === 'string') dataToUpdate.soundTheme = soundTheme;
-    if (typeof customLogoUrl !== 'undefined') dataToUpdate.customLogoUrl = customLogoUrl;
-    if (typeof customBgUrl !== 'undefined') dataToUpdate.customBgUrl = customBgUrl;
     if (typeof bgTheme === 'string') dataToUpdate.bgTheme = bgTheme;
 
     let settings = await prisma.hostSettings.findUnique({
@@ -53,14 +49,6 @@ settingsRouter.patch('/', async (req: AuthRequest, res: any) => {
         },
       });
     } else {
-      // Check if we need to delete old files
-      if (typeof customLogoUrl !== 'undefined' && customLogoUrl !== settings.customLogoUrl) {
-        deleteUploadedFile(settings.customLogoUrl);
-      }
-      if (typeof customBgUrl !== 'undefined' && customBgUrl !== settings.customBgUrl) {
-        deleteUploadedFile(settings.customBgUrl);
-      }
-
       settings = await prisma.hostSettings.update({
         where: { hostUserId: req.userId! },
         data: dataToUpdate,
@@ -74,72 +62,51 @@ settingsRouter.patch('/', async (req: AuthRequest, res: any) => {
   }
 });
 
-settingsRouter.post('/upload-logo', (req: AuthRequest, res: any, next: any) => {
-  uploadMiddleware.single('logo')(req, res, (err: any) => {
-    if (err instanceof multer.MulterError) {
-      if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({ error: 'Файл слишком большой. Максимальный размер 5 МБ.' });
-      }
-      return res.status(400).json({ error: `Ошибка загрузки: ${err.message}` });
-    } else if (err) {
-      return res.status(400).json({ error: err.message });
-    }
-    next();
-  });
-}, async (req: AuthRequest, res: any) => {
+async function updateImage(
+  req: AuthRequest,
+  res: any,
+  field: 'customLogoUrl' | 'customBgUrl',
+) {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-    const isValid = await validateFileSignature(req.file.path);
-    if (!isValid) {
-      fs.unlinkSync(req.file.path);
-      return res.status(400).json({ error: 'Invalid file signature. Only JPEG, PNG, WebP are allowed.' });
-    }
+    const uploaded = await saveUploadedFile(req.file, async (url) => {
+      const current = await prisma.hostSettings.findUnique({ where: { hostUserId: req.userId! } });
+      const settings = current
+        ? await prisma.hostSettings.update({ where: { hostUserId: req.userId! }, data: { [field]: url } })
+        : await prisma.hostSettings.create({ data: { hostUserId: req.userId!, [field]: url } });
+      return { previousUrl: current?.[field], result: settings };
+    });
 
-    const fileUrl = `/uploads/${req.file.filename}`;
-    return res.json({ url: fileUrl });
-  } catch (error: any) {
+    return res.json({ [field]: uploaded.result[field] });
+  } catch (error) {
+    if (error instanceof InvalidUploadError) {
+      return res.status(400).json({ error: error.message });
+    }
     console.error('Upload error:', error);
-    if (req.file?.path && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
-    res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: 'Internal server error' });
   }
-});
+}
 
-settingsRouter.post('/upload-bg', (req: AuthRequest, res: any, next: any) => {
-  uploadMiddleware.single('background')(req, res, (err: any) => {
-    if (err instanceof multer.MulterError) {
-      if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({ error: 'Файл слишком большой. Максимальный размер 5 МБ.' });
-      }
-      return res.status(400).json({ error: `Ошибка загрузки: ${err.message}` });
-    } else if (err) {
-      return res.status(400).json({ error: err.message });
-    }
-    next();
-  });
-}, async (req: AuthRequest, res: any) => {
+async function clearImage(req: AuthRequest, res: any, field: 'customLogoUrl' | 'customBgUrl') {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
+    const current = await prisma.hostSettings.findUnique({ where: { hostUserId: req.userId! } });
+    const settings = current
+      ? await prisma.hostSettings.update({ where: { hostUserId: req.userId! }, data: { [field]: null } })
+      : await prisma.hostSettings.create({ data: { hostUserId: req.userId! } });
+    try {
+      await deleteUploadedFile(current?.[field]);
+    } catch (error) {
+      console.error('Failed to delete image:', error);
     }
-
-    const isValid = await validateFileSignature(req.file.path);
-    if (!isValid) {
-      fs.unlinkSync(req.file.path);
-      return res.status(400).json({ error: 'Invalid file signature. Only JPEG, PNG, WebP are allowed.' });
-    }
-
-    const fileUrl = `/uploads/${req.file.filename}`;
-    return res.json({ url: fileUrl });
-  } catch (error: any) {
-    console.error('Upload error:', error);
-    if (req.file?.path && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
-    res.status(500).json({ error: 'Internal server error' });
+    return res.json({ [field]: settings[field] });
+  } catch (error) {
+    console.error('Image delete error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
   }
-});
+}
+
+settingsRouter.post('/upload-logo', receiveUpload('logo'), (req: AuthRequest, res: any) => updateImage(req, res, 'customLogoUrl'));
+settingsRouter.post('/upload-bg', receiveUpload('background'), (req: AuthRequest, res: any) => updateImage(req, res, 'customBgUrl'));
+settingsRouter.delete('/logo', (req: AuthRequest, res: any) => clearImage(req, res, 'customLogoUrl'));
+settingsRouter.delete('/background', (req: AuthRequest, res: any) => clearImage(req, res, 'customBgUrl'));
