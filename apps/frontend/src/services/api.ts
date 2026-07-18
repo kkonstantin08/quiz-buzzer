@@ -141,7 +141,7 @@ export const api = {
       try {
         const error = await res.json();
         errorMsg = error.error || errorMsg;
-      } catch (e) {}
+      } catch {}
       throw new Error(translateError(errorMsg));
     }
     return res.json();
