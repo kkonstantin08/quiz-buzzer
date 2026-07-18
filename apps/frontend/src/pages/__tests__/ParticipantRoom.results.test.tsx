@@ -33,11 +33,12 @@ describe("ParticipantRoom results", () => {
       removeItem: vi.fn((key: string) => storage.delete(key)),
     });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ json: async () => ({}) }));
+    const sessionCreatedAt = Date.now();
     localStorage.setItem("quiz_participant_ABC123", JSON.stringify({
       participantId: "p1",
       reconnectToken: "token",
-      createdAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      createdAt: new Date(sessionCreatedAt).toISOString(),
+      expiresAt: new Date(sessionCreatedAt + 24 * 60 * 60 * 1000).toISOString(),
     }));
     mockSocket.connected = true;
     mockSocket.on.mockImplementation((event: string, handler: (payload?: unknown) => void) => {

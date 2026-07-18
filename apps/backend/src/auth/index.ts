@@ -10,30 +10,33 @@ import { appEvents } from '../events';
 import { LegalDocumentType, LegalAcceptanceSource, legalBackendConfig } from '../legal/config';
 export const authRouter = Router();
 
-const hostCookieOptions = {
+const hostCookieOptions = () => ({
   httpOnly: true,
-  secure: process.env.USE_HTTPS === 'true',
+  secure: config.cookieSecure,
   sameSite: 'lax' as const,
   path: '/',
-};
+});
 
-const loginLimiter = rateLimit({
+export const createLoginLimiter = () => rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 5, // 5 attempts
   message: { error: 'Слишком много попыток входа, пожалуйста, подождите 15 минут' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { trustProxy: false },
+  validate: { xForwardedForHeader: config.trustProxy !== false },
 });
 
-const registerLimiter = rateLimit({
+export const createRegisterLimiter = () => rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 5, // 5 registrations per IP per hour
   message: { error: 'Слишком много регистраций с этого IP, пожалуйста, подождите час' },
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { trustProxy: false },
+  validate: { xForwardedForHeader: config.trustProxy !== false },
 });
+
+const loginLimiter = createLoginLimiter();
+const registerLimiter = createRegisterLimiter();
 
 authRouter.post('/login', loginLimiter, async (req, res) => {
   try {
@@ -71,7 +74,7 @@ authRouter.post('/login', loginLimiter, async (req, res) => {
     
     // Set JWT in httpOnly cookie (inaccessible to JavaScript)
     res.cookie('hostToken', token, {
-      ...hostCookieOptions,
+      ...hostCookieOptions(),
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
     });
     
@@ -130,12 +133,12 @@ authRouter.post('/logout', requireAuth, async (req: AuthRequest, res) => {
     data: { revokedAt: new Date() }
   });
   appEvents.emit('host_logout', req.sessionId!);
-  res.clearCookie('hostToken', hostCookieOptions);
+  res.clearCookie('hostToken', hostCookieOptions());
   return res.json({ success: true });
 });
 
 authRouter.post('/clear-session', (_req, res) => {
-  res.clearCookie('hostToken', hostCookieOptions);
+  res.clearCookie('hostToken', hostCookieOptions());
   return res.json({ success: true });
 });
 
@@ -307,7 +310,7 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
 
     // Set JWT in httpOnly cookie (inaccessible to JavaScript)
     res.cookie('hostToken', token, {
-      ...hostCookieOptions,
+      ...hostCookieOptions(),
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
     });
 
