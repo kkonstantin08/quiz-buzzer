@@ -2,12 +2,13 @@ import React from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { BillingModal } from './BillingModal';
-import { LayoutDashboard, History, Settings, LogOut, Plus, Crown, Target, User, Save, Calendar, Pencil, Upload, Loader2 } from 'lucide-react';
+import { LayoutDashboard, History, Settings, LogOut, Plus, Crown, Target, User, Save, Calendar, Pencil, Upload, Loader2, Trash2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { api } from '../services/api';
+import { resolveAssetUrl } from '../lib/assets';
 
 const LogoIcon = () => (
   <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-red-400 to-red-600 flex items-center justify-center shadow-sm shrink-0">
@@ -26,7 +27,7 @@ interface DashboardLayoutProps {
   onLogout: () => void;
   onCreateRoom: () => void;
   onActivated?: () => void;
-  onProfileUpdated?: (newName?: string, newEmail?: string, newAvatar?: string) => void;
+  onProfileUpdated?: (newName?: string, newEmail?: string, newAvatar?: string | null) => void;
 }
 
 export function DashboardLayout({ 
@@ -101,13 +102,22 @@ export function DashboardLayout({
     }
   };
 
+  const handleAvatarDelete = async () => {
+    try {
+      setIsUploading(true);
+      await api.deleteAvatar();
+      onProfileUpdated?.(undefined, undefined, null);
+      toast.success('Аватарка удалена!');
+    } catch (err: any) {
+      toast.error('Ошибка удаления', { description: err.message });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const displayName = name || email;
   const initial = displayName ? displayName.charAt(0).toUpperCase() : 'U';
-  // Use absolute URL for avatar if it's relative
-  const BASE_URL = import.meta.env.VITE_API_URL || '/api';
-  const cleanBaseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
-  const SERVER_URL = cleanBaseUrl.endsWith('/api') ? cleanBaseUrl.slice(0, -4) : cleanBaseUrl;
-  const avatarSrc = avatarUrl ? (avatarUrl.startsWith('http') ? avatarUrl : `${SERVER_URL}${avatarUrl}`) : null;
+  const avatarSrc = resolveAssetUrl(avatarUrl);
 
   return (
     <div className="flex min-h-[100dvh] bg-slate-50">
@@ -117,7 +127,7 @@ export function DashboardLayout({
       <aside className="w-64 bg-white border-r border-slate-200 flex-col hidden md:flex shrink-0">
         <Link to="/dashboard" className="h-16 flex items-center px-6 border-b border-slate-100 gap-3 shrink-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset">
           {customLogoUrl ? (
-            <img src={customLogoUrl} alt="Logo" className="max-h-8 object-contain" />
+            <img src={resolveAssetUrl(customLogoUrl) ?? undefined} alt="Logo" className="max-h-8 object-contain" />
           ) : (
             <>
               <LogoIcon />
@@ -219,7 +229,7 @@ export function DashboardLayout({
                       type="file" 
                       ref={fileInputRef} 
                       className="hidden" 
-                      accept="image/*"
+                      accept="image/jpeg,image/png,image/webp"
                       onChange={handleAvatarUpload}
                     />
 
@@ -237,6 +247,11 @@ export function DashboardLayout({
                         )}
                       </div>
                     </div>
+                    {avatarUrl && (
+                      <Button type="button" variant="ghost" size="sm" onClick={handleAvatarDelete} disabled={isUploading}>
+                        <Trash2 size={14} className="mr-1" /> Удалить
+                      </Button>
+                    )}
                   </div>
                   
                   {hasSubscription && subscriptionEndDate && (
@@ -295,7 +310,7 @@ export function DashboardLayout({
         <header className="md:hidden h-16 bg-white border-b flex items-center justify-between px-4 shrink-0 shadow-sm z-10">
           <Link to="/dashboard" className="flex items-center gap-2 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
             {customLogoUrl ? (
-              <img src={customLogoUrl} alt="Logo" className="max-h-8 object-contain" />
+            <img src={resolveAssetUrl(customLogoUrl) ?? undefined} alt="Logo" className="max-h-8 object-contain" />
             ) : (
               <>
                 <LogoIcon />

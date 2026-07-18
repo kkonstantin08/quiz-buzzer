@@ -98,7 +98,7 @@ export function HostDashboard() {
       onProfileUpdated={(newName, newEmail, newAvatar) => {
         if (newName !== undefined) setName(newName);
         if (newEmail !== undefined) setEmail(newEmail);
-        if (newAvatar !== undefined) setAvatarUrl(newAvatar);
+        if (newAvatar !== undefined) setAvatarUrl(newAvatar ?? undefined);
       }}
     >
       <div className="p-4 sm:p-6 md:p-10 max-w-5xl mx-auto w-full space-y-6 md:space-y-8 pb-20">

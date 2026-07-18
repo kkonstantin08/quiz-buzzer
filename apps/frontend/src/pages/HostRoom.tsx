@@ -12,7 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { QrCode, Timer, Crown, LogOut, Check } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { playSound } from '../lib/sounds';
-import { api, BASE_URL } from '../services/api';
+import { api } from '../services/api';
+import { resolveAssetUrl } from '../lib/assets';
 import { useAriaLive } from '../lib/AriaLiveContext';
 import { useSocketAuthRecovery } from '../realtime/authRecovery';
 
@@ -428,7 +429,7 @@ export function HostRoom() {
 
   if (room.customBgUrl) {
     bgClass = "min-h-[100dvh] bg-cover bg-center bg-no-repeat relative";
-    bgStyle = { backgroundImage: `url(${room.customBgUrl.startsWith('http') ? room.customBgUrl : `${BASE_URL.replace('/api', '')}${room.customBgUrl}`})` };
+    bgStyle = { backgroundImage: `url(${resolveAssetUrl(room.customBgUrl)})` };
     showOverlay = true;
   } else if (room.bgTheme === 'dark') {
     bgClass = "min-h-[100dvh] bg-slate-950 text-slate-100";
@@ -480,7 +481,7 @@ export function HostRoom() {
         <div className="flex items-center gap-4 flex-col sm:flex-row text-center sm:text-left">
           {room.customLogoUrl && (
             <img
-              src={room.customLogoUrl.startsWith('http') ? room.customLogoUrl : `${BASE_URL.replace('/api', '')}${room.customLogoUrl}`}
+              src={resolveAssetUrl(room.customLogoUrl) ?? undefined}
               alt="Logo"
               className="max-h-12 object-contain"
             />

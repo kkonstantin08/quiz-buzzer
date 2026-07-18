@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, BASE_URL } from '../services/api';
+import { api } from '../services/api';
 import { socket } from '../realtime/socket';
 import { emitRoomCreateWhenConnected } from '../realtime/roomCreate';
 import { useSocketAuthRecovery } from '../realtime/authRecovery';
@@ -13,6 +13,7 @@ import { DashboardLayout } from '../components/DashboardLayout';
 import { Volume2, Image as ImageIcon, Crown, ExternalLink, Loader2, Check, AlertTriangle, Upload } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
+import { resolveAssetUrl } from '../lib/assets';
 
 export function HostSettings() {
   const navigate = useNavigate();
@@ -61,11 +62,7 @@ export function HostSettings() {
     try {
       setIsUploadingLogo(true);
       const res = await api.uploadLogo(file);
-      
-      const cleanBaseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
-      const fullUrl = `${cleanBaseUrl}${res.url}`;
-      
-      setCustomLogoUrl(fullUrl);
+      setCustomLogoUrl(res.customLogoUrl);
       toast.success('Логотип загружен');
     } catch (err: any) {
       toast.error('Ошибка загрузки', { description: err.message });
@@ -87,11 +84,7 @@ export function HostSettings() {
     try {
       setIsUploadingBg(true);
       const res = await api.uploadBg(file);
-      
-      const cleanBaseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
-      const fullUrl = `${cleanBaseUrl}${res.url}`;
-      
-      setCustomBgUrl(fullUrl);
+      setCustomBgUrl(res.customBgUrl);
       setBgTheme('custom');
       toast.success('Фоновое изображение загружено');
     } catch (err: any) {
@@ -118,7 +111,7 @@ export function HostSettings() {
       handleSaveSettings(true);
     }, 800);
     return () => clearTimeout(timer);
-  }, [soundEnabled, soundTheme, customLogoUrl, customBgUrl, bgTheme, isLoaded]);
+  }, [soundEnabled, soundTheme, bgTheme, isLoaded]);
 
   const loadData = async () => {
     try {
@@ -153,8 +146,6 @@ export function HostSettings() {
       await api.updateSettings({
         soundEnabled,
         soundTheme,
-        customLogoUrl: customLogoUrl.trim() === '' ? null : customLogoUrl.trim(),
-        customBgUrl: customBgUrl.trim() === '' ? null : customBgUrl.trim(),
         bgTheme,
       });
       if (!silent) toast.success('Настройки успешно сохранены!');
@@ -167,6 +158,41 @@ export function HostSettings() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleLogoDelete = async () => {
+    try {
+      setIsUploadingLogo(true);
+      await api.deleteLogo();
+      setCustomLogoUrl('');
+      toast.success('Логотип удалён');
+    } catch (err: any) {
+      toast.error('Ошибка удаления', { description: err.message });
+    } finally {
+      setIsUploadingLogo(false);
+    }
+  };
+
+  const handleBgDelete = async (theme = 'light') => {
+    try {
+      setIsUploadingBg(true);
+      await api.deleteBg();
+      setCustomBgUrl('');
+      setBgTheme(theme);
+      toast.success('Фоновое изображение удалено');
+    } catch (err: any) {
+      toast.error('Ошибка удаления', { description: err.message });
+    } finally {
+      setIsUploadingBg(false);
+    }
+  };
+
+  const handleBgThemeChange = (theme: string) => {
+    if (customBgUrl) {
+      void handleBgDelete(theme);
+      return;
+    }
+    setBgTheme(theme);
   };
 
   const handleCreateRoom = () => {
@@ -226,7 +252,7 @@ export function HostSettings() {
       onProfileUpdated={(newName, newEmail, newAvatarUrl) => {
         if (newName !== undefined) setName(newName);
         if (newEmail !== undefined) setEmail(newEmail);
-        if (newAvatarUrl !== undefined) setAvatarUrl(newAvatarUrl);
+        if (newAvatarUrl !== undefined) setAvatarUrl(newAvatarUrl ?? undefined);
       }}
     >
       <div className="p-4 sm:p-6 md:p-10 max-w-4xl mx-auto w-full space-y-8 pb-20">
@@ -311,18 +337,11 @@ export function HostSettings() {
             </CardHeader>
             <CardContent className="p-6 space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="logoUrl">Ссылка на логотип (URL) или загрузка с компьютера</Label>
+                <Label>Логотип компании</Label>
                 <div className="flex gap-3">
-                  <Input 
-                    id="logoUrl" 
-                    placeholder="https://example.com/my-logo.png" 
-                    value={customLogoUrl}
-                    onChange={(e) => setCustomLogoUrl(e.target.value)}
-                    className="flex-1"
-                  />
                   <input 
                     type="file" 
-                    accept="image/*" 
+                    accept="image/jpeg,image/png,image/webp"
                     className="hidden" 
                     ref={logoInputRef}
                     onChange={handleLogoUpload}
@@ -331,14 +350,14 @@ export function HostSettings() {
                     variant="outline" 
                     onClick={() => logoInputRef.current?.click()}
                     disabled={isUploadingLogo}
-                    className="shrink-0 flex items-center gap-2"
+                    className="flex items-center gap-2"
                   >
                     {isUploadingLogo ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
                     Загрузить
                   </Button>
                 </div>
                 <p className="text-xs text-slate-500 leading-normal">
-                  Максимальный размер: <strong>5 МБ</strong>. Поддерживаемые форматы: <strong>PNG, JPG, WEBP, GIF</strong>.<br />
+                  Максимальный размер: <strong>5 МБ</strong>. Поддерживаемые форматы: <strong>PNG, JPG, WEBP</strong>.<br />
                   Рекомендуется изображение с прозрачным фоном, пропорции 1:1 или горизонтальные.
                 </p>
               </div>
@@ -346,14 +365,14 @@ export function HostSettings() {
               {customLogoUrl && (
                 <div className="mt-4 p-4 border rounded-lg bg-slate-50 flex items-center justify-center relative">
                   <img 
-                    src={customLogoUrl} 
+                    src={resolveAssetUrl(customLogoUrl) ?? undefined}
                     alt="Предпросмотр логотипа" 
                     className="max-h-16 object-contain"
                   />
                   <Button 
                     variant="destructive" 
                     size="sm" 
-                    onClick={() => setCustomLogoUrl('')}
+                    onClick={handleLogoDelete}
                     className="absolute top-2 right-2 h-7 px-2"
                   >
                     Удалить
@@ -373,10 +392,7 @@ export function HostSettings() {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => {
-                      setBgTheme('light');
-                      setCustomBgUrl('');
-                    }}
+                    onClick={() => handleBgThemeChange('light')}
                     className={`h-12 font-medium transition-all flex items-center justify-center gap-1.5 ${
                       bgTheme === 'light' && !customBgUrl
                         ? "ring-2 ring-primary ring-offset-2 opacity-100 font-bold border-primary"
@@ -389,10 +405,7 @@ export function HostSettings() {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => {
-                      setBgTheme('dark');
-                      setCustomBgUrl('');
-                    }}
+                    onClick={() => handleBgThemeChange('dark')}
                     className={`h-12 font-medium bg-slate-900 text-white hover:bg-slate-800 hover:text-white transition-all flex items-center justify-center gap-1.5 ${
                       bgTheme === 'dark' && !customBgUrl
                         ? "ring-2 ring-slate-900 ring-offset-2 opacity-100 font-bold"
@@ -405,10 +418,7 @@ export function HostSettings() {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => {
-                      setBgTheme('violet-fuchsia');
-                      setCustomBgUrl('');
-                    }}
+                    onClick={() => handleBgThemeChange('violet-fuchsia')}
                     className={`h-12 font-medium bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white hover:text-white transition-all flex items-center justify-center gap-1.5 ${
                       bgTheme === 'violet-fuchsia' && !customBgUrl
                         ? "ring-2 ring-violet-600 ring-offset-2 opacity-100 font-bold"
@@ -422,21 +432,11 @@ export function HostSettings() {
 
                 {/* Custom Background Upload */}
                 <div className="space-y-2 pt-2">
-                  <Label htmlFor="bgUrl">Собственное фоновое изображение (URL или загрузка)</Label>
+                  <Label>Собственное фоновое изображение</Label>
                   <div className="flex gap-3">
-                    <Input 
-                      id="bgUrl" 
-                      placeholder="https://example.com/my-bg.jpg" 
-                      value={customBgUrl}
-                      onChange={(e) => {
-                        setCustomBgUrl(e.target.value);
-                        setBgTheme('custom');
-                      }}
-                      className="flex-1"
-                    />
                     <input 
                       type="file" 
-                      accept="image/*" 
+                      accept="image/jpeg,image/png,image/webp"
                       className="hidden" 
                       ref={bgInputRef}
                       onChange={handleBgUpload}
@@ -445,14 +445,14 @@ export function HostSettings() {
                       variant="outline" 
                       onClick={() => bgInputRef.current?.click()}
                       disabled={isUploadingBg}
-                      className="shrink-0 flex items-center gap-2"
+                      className="flex items-center gap-2"
                     >
                       {isUploadingBg ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
                       Загрузить
                     </Button>
                   </div>
                   <p className="text-xs text-slate-500 leading-normal">
-                    Максимальный размер: <strong>5 МБ</strong>. Поддерживаемые форматы: <strong>PNG, JPG, WEBP, GIF</strong>.<br />
+                    Максимальный размер: <strong>5 МБ</strong>. Поддерживаемые форматы: <strong>PNG, JPG, WEBP</strong>.<br />
                     Рекомендуется использовать контрастные или приглушенные изображения.
                   </p>
                 </div>
@@ -462,7 +462,7 @@ export function HostSettings() {
                     <span className="text-xs font-semibold text-slate-500 self-start">Предпросмотр фона:</span>
                     <div 
                       className="w-full h-32 rounded-md bg-cover bg-center border shadow-sm relative overflow-hidden"
-                      style={{ backgroundImage: `url(${customBgUrl})` }}
+                      style={{ backgroundImage: `url(${resolveAssetUrl(customBgUrl)})` }}
                     >
                       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center">
                         <span className="text-white text-xs font-bold px-3 py-1.5 bg-black/40 rounded-full">
@@ -473,10 +473,7 @@ export function HostSettings() {
                     <Button 
                       variant="destructive" 
                       size="sm" 
-                      onClick={() => {
-                        setCustomBgUrl('');
-                        setBgTheme('light');
-                      }}
+                      onClick={() => handleBgDelete()}
                       className="absolute top-2 right-2 h-7 px-2"
                     >
                       Удалить

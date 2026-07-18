@@ -30,5 +30,6 @@ describe('docker compose', () => {
     }));
     expect(config.services.nginx.networks.proxy_network.ipv4_address).toBe('172.30.0.10');
     expect(config.services.cloudflared.networks.proxy_network.ipv4_address).toBe('172.30.0.11');
+    expect(config.services.backend.environment.UPLOAD_DIR).toBe('/app/uploads');
   });
 });
