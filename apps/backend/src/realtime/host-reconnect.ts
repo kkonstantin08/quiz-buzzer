@@ -55,7 +55,9 @@ export const reconnectTimeoutLoader = {
 export function startHostReconnectTimeout(
   roomId: string,
   io: Server,
-  buzzBuffers?: Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>
+  buzzBuffers?: Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>,
+  extraTimers?: Map<string, NodeJS.Timeout>[],
+  participantDisconnectTimers?: Map<string, NodeJS.Timeout>
 ) {
   // Cancel any existing timer to avoid duplicate schedules
   cancelHostReconnectTimeout(roomId);
@@ -68,7 +70,7 @@ export function startHostReconnectTimeout(
   const timeoutMs = 10 * 60 * 1000; // 10 minutes
 
   const timer = reconnectTimeoutLoader.setTimeout(() => {
-    closeRoomAfterHostTimeout(roomId, io, buzzBuffers);
+    closeRoomAfterHostTimeout(roomId, io, buzzBuffers, extraTimers, participantDisconnectTimers);
   }, timeoutMs);
 
   hostDisconnectTimers.set(roomId, timer);
@@ -85,16 +87,23 @@ export function cancelHostReconnectTimeout(roomId: string) {
 export function closeRoomAfterHostTimeout(
   roomId: string,
   io: Server,
-  buzzBuffers?: Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>
+  buzzBuffers?: Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>,
+  extraTimers?: Map<string, NodeJS.Timeout>[],
+  participantDisconnectTimers?: Map<string, NodeJS.Timeout>
 ) {
   cancelRoomLifecycleTimers(roomId);
-  const { participantDisconnectTimers } = require('./index');
+  
+  const allTimers = [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers];
+  if (extraTimers) {
+    allTimers.push(...extraTimers);
+  }
+  
   deleteRoom(
     roomId,
     'ведущий не вернулся',
     io,
     buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }> | undefined,
-    [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers],
+    allTimers,
     participantDisconnectTimers
   );
 }

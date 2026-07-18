@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { RoomState, type PublicRoomData } from "shared";
@@ -124,5 +124,176 @@ describe("ParticipantRoom state listener", () => {
         mockSocket.on.mock.calls.filter(([event]) => event === "ROOM_STATE_UPDATED"),
       ).toHaveLength(1);
     });
+  });
+
+  it("cleans up both connect and connect_error listeners regardless of which fires first", async () => {
+    // Start disconnected
+    mockSocket.connected = false;
+
+    // Capture the `on` handlers registered during join attempt
+    const onHandlers: Record<string, Function> = {};
+    mockSocket.on.mockImplementation((event: string, handler: Function) => {
+      onHandlers[event] = handler;
+      return mockSocket;
+    });
+
+    const { unmount } = render(
+      <AriaLiveProvider>
+        <MemoryRouter initialEntries={["/room/ABC123"]}>
+          <Routes>
+            <Route path="/room/:roomCode" element={<ParticipantRoom />} />
+          </Routes>
+        </MemoryRouter>
+      </AriaLiveProvider>,
+    );
+
+    // Enter name and try to join
+    const input = await screen.findByPlaceholderText("Имя или игровой псевдоним");
+    const joinButton = screen.getByRole("button", { name: "Войти в игру" });
+
+    act(() => {
+      fireEvent.change(input, { target: { value: "ТестИгрок" } });
+      fireEvent.click(joinButton);
+    });
+
+    await waitFor(() => {
+      expect(onHandlers.connect).toBeDefined();
+      expect(onHandlers.connect_error).toBeDefined();
+    });
+
+    // Simulate connect_error
+    act(() => {
+      onHandlers.connect_error!(new Error("test error"));
+    });
+
+    // Verify both were removed
+    expect(mockSocket.off).toHaveBeenCalledWith("connect_error", onHandlers.connect_error);
+    expect(mockSocket.off).toHaveBeenCalledWith("connect", onHandlers.connect);
+
+    // clear mocks
+    mockSocket.off.mockClear();
+    
+    // Simulate another join to test unmount
+    act(() => {
+      fireEvent.click(joinButton);
+    });
+
+    // simulate unmount
+    unmount();
+    
+    // Should remove both on unmount
+    expect(mockSocket.off).toHaveBeenCalledWith("connect_error", expect.any(Function));
+    expect(mockSocket.off).toHaveBeenCalledWith("connect", expect.any(Function));
+  });
+
+  it("auth error does not remove listeners and is handled distinctly", async () => {
+    mockSocket.connected = false;
+    const onHandlers: Record<string, Function> = {};
+    mockSocket.on.mockImplementation((event: string, handler: Function) => {
+      onHandlers[event] = handler;
+      return mockSocket;
+    });
+
+    render(
+      <AriaLiveProvider>
+        <MemoryRouter initialEntries={["/room/ABC123"]}>
+          <Routes>
+            <Route path="/room/:roomCode" element={<ParticipantRoom />} />
+          </Routes>
+        </MemoryRouter>
+      </AriaLiveProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText("Имя или игровой псевдоним");
+    const joinButton = screen.getByRole("button", { name: "Войти в игру" });
+
+    act(() => {
+      fireEvent.change(input, { target: { value: "ТестИгрок" } });
+      fireEvent.click(joinButton);
+    });
+
+    const error = new Error("auth");
+    (error as any).data = { code: "AUTH_SESSION_INVALID" };
+
+    act(() => {
+      onHandlers.connect_error!(error);
+    });
+
+    // Verify they are NOT removed
+    expect(mockSocket.off).not.toHaveBeenCalledWith("connect_error", onHandlers.connect_error);
+    expect(mockSocket.off).not.toHaveBeenCalledWith("connect", onHandlers.connect);
+  });
+  
+  it("sends one ROOM_JOIN while a join attempt is pending", async () => {
+    mockSocket.connected = true;
+    let joinCallback: Function | undefined;
+
+    mockSocket.emit.mockImplementation((event: string, data: any, callback: Function) => {
+      if (event === "ROOM_JOIN") {
+        joinCallback = callback;
+      }
+      return mockSocket;
+    });
+
+    render(
+      <AriaLiveProvider>
+        <MemoryRouter initialEntries={["/room/ABC123"]}>
+          <Routes>
+            <Route path="/room/:roomCode" element={<ParticipantRoom />} />
+          </Routes>
+        </MemoryRouter>
+      </AriaLiveProvider>,
+    );
+
+    const input = await screen.findByPlaceholderText("Имя или игровой псевдоним");
+    const joinButton = screen.getByRole("button", { name: "Войти в игру" });
+
+    act(() => {
+      fireEvent.change(input, { target: { value: "ТестИгрок" } });
+      fireEvent.click(joinButton);
+    });
+    
+    fireEvent.submit(joinButton.closest("form")!);
+
+    expect(mockSocket.emit.mock.calls.filter(([event]) => event === "ROOM_JOIN")).toHaveLength(1);
+
+    act(() => {
+      joinCallback?.({ success: true, room: activeRoom, participant: activeRoom.participants[0], reconnectToken: "token" });
+    });
+
+    await screen.findByText("ЖМИТЕ!");
+  });
+
+  it("ignores a pending ROOM_JOIN callback after unmount", async () => {
+    mockSocket.connected = true;
+    let joinCallback: Function | undefined;
+
+    mockSocket.emit.mockImplementation((event: string, data: any, callback: Function) => {
+      if (event === "ROOM_JOIN") joinCallback = callback;
+      return mockSocket;
+    });
+
+    const { unmount } = render(
+      <AriaLiveProvider>
+        <MemoryRouter initialEntries={["/room/ABC123"]}>
+          <Routes>
+            <Route path="/room/:roomCode" element={<ParticipantRoom />} />
+          </Routes>
+        </MemoryRouter>
+      </AriaLiveProvider>,
+    );
+
+    fireEvent.change(await screen.findByPlaceholderText("Имя или игровой псевдоним"), { target: { value: "ТестИгрок" } });
+    fireEvent.click(screen.getByRole("button", { name: "Войти в игру" }));
+    unmount();
+
+    act(() => {
+      joinCallback?.({ success: true, room: activeRoom, participant: activeRoom.participants[0], reconnectToken: "late-token" });
+    });
+
+    expect(localStorage.setItem).not.toHaveBeenCalledWith(
+      "quiz_participant_ABC123",
+      expect.stringContaining("late-token"),
+    );
   });
 });

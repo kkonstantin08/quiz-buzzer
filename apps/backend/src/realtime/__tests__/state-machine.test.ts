@@ -99,7 +99,7 @@ describe('State Machine Transitions', () => {
       hostSocket.emit('ROUND_START', (res1: any) => {
         if (!res1.success) console.error('ROUND_START failed:', res1.error);
         expect(res1.success).toBe(true);
-        
+
         // 2. Invalid transition (already ACTIVE)
         hostSocket.emit('ROUND_START', (res2: any) => {
           expect(res2.success).toBe(false);
@@ -114,10 +114,38 @@ describe('State Machine Transitions', () => {
     setupRoom(() => {
       // Invalid transition from WAITING
       hostSocket.emit('ROUND_RESET', {}, (res: any) => {
-        if (res.success) console.error('ROUND_RESET succeeded unexpectedly!');
         expect(res.success).toBe(false);
         expect(res.error).toBe('Сброс возможен только после ответа');
         done();
+      });
+    });
+  });
+
+  it('should validate winnerId during ROUND_RESET and apply score', (done) => {
+    setupRoom(() => {
+      // Manually set internal state for this test
+      const room = Array.from(rooms.values()).find(r => r.roomCode === createdRoomCode);
+      if (!room) return done(new Error('Room not found'));
+
+      // Simulate participant
+      room.participants.push({
+        id: 'p1', displayName: 'Player 1', socketId: 's1', joinedAt: 1, isConnected: true, score: 0, reconnectTokenHash: 'h'
+      });
+      room.roundState = RoomState.REVEALED;
+      room.firstBuzzerId = 'p1';
+
+      // 1. Invalid winner
+      hostSocket.emit('ROUND_RESET', { winnerId: 'wrong_id' }, (res1: any) => {
+        expect(res1.success).toBe(false);
+        expect(res1.error).toBe('Неверный победитель');
+
+        // 2. Valid winner
+        hostSocket.emit('ROUND_RESET', { winnerId: 'p1' }, (res2: any) => {
+          expect(res2.success).toBe(true);
+          expect(room.roundState).toBe(RoomState.WAITING);
+          expect(room.participants[0].score).toBe(1);
+          done();
+        });
       });
     });
   });
@@ -148,5 +176,100 @@ describe('State Machine Transitions', () => {
         });
       });
     });
+  });
+
+  it('should not mark room as FINISHED and should return error if saveGameHistory fails', (done) => {
+    setupRoom(() => {
+      // Mock prisma create to fail
+      const mockCreate = jest.fn().mockRejectedValueOnce(new Error('DB failure') as never);
+      jest.mocked(require('../../prisma').prisma.gameHistory.create).mockImplementation(mockCreate);
+
+      hostSocket.emit('ROOM_FINISH', (res: any) => {
+        expect(res.success).toBe(false);
+        expect(res.error).toBe('Не удалось сохранить результаты игры');
+
+        // Verify the room is still ACTIVE
+        hostSocket.emit('ROUND_START', (res2: any) => {
+          expect(res2.success).toBe(true);
+          done();
+        });
+      });
+    });
+  });
+
+  it('should handle ROOM_FINISH DB errors by reverting state and allowing retry', (done) => {
+    setupRoom(() => {
+      const room = Array.from(rooms.values()).find(r => r.roomCode === createdRoomCode);
+      if (!room) return done(new Error('Room not found'));
+
+      // 1. Mock DB failure
+      (prisma.gameHistory.create as jest.Mock).mockRejectedValueOnce(new Error('DB Timeout') as never);
+
+      hostSocket.emit('ROOM_FINISH', (res1: any) => {
+        // Assert failure
+        expect(res1.success).toBe(false);
+        expect(res1.error).toBe('Не удалось сохранить результаты игры');
+
+        // Assert state is reverted to WAITING (default)
+        expect(room.roundState).toBe(RoomState.WAITING);
+        expect(room.gameResult).toBeUndefined();
+
+        // 2. Mock DB success on retry
+        (prisma.gameHistory.create as jest.Mock).mockResolvedValueOnce({} as never);
+
+        hostSocket.emit('ROOM_FINISH', (res2: any) => {
+          expect(res2.success).toBe(true);
+          expect(room.roundState).toBe(RoomState.FINISHED);
+          done();
+        });
+      });
+    });
+  });
+
+  it('retries ROOM_FINISH after one failed history write without broadcasting or duplicating history', async () => {
+    await new Promise<void>((resolve, reject) => setupRoom(error => error ? reject(error) : resolve()));
+    const room = Array.from(rooms.values()).find(r => r.roomCode === createdRoomCode);
+    if (!room) throw new Error('Room not found');
+
+    (prisma.gameHistory.create as jest.Mock).mockReset();
+    const snapshots: RoomState[] = [];
+    hostSocket.on('ROOM_STATE_UPDATED', snapshot => snapshots.push(snapshot.roundState));
+    const unhandledRejection = jest.fn();
+    process.on('unhandledRejection', unhandledRejection);
+    let successfulHistoryWrites = 0;
+    (prisma.gameHistory.create as jest.Mock)
+      .mockRejectedValueOnce(new Error('DB unavailable') as never)
+      .mockImplementationOnce(async () => {
+        successfulHistoryWrites += 1;
+        return {} as never;
+      });
+
+    try {
+      const first = await new Promise<{ success: boolean; error?: string }>(resolve => {
+        hostSocket.emit('ROOM_FINISH', resolve);
+      });
+      await new Promise<void>(resolve => setImmediate(resolve));
+
+      expect(first).toEqual({ success: false, error: 'Не удалось сохранить результаты игры' });
+      expect(snapshots).not.toContain(RoomState.FINISHED);
+
+      const finishedSnapshot = new Promise<void>(resolve => {
+        hostSocket.once('ROOM_STATE_UPDATED', snapshot => {
+          if (snapshot.roundState === RoomState.FINISHED) resolve();
+        });
+      });
+      const second = await new Promise<{ success: boolean }>(resolve => {
+        hostSocket.emit('ROOM_FINISH', resolve);
+      });
+      await finishedSnapshot;
+      await new Promise<void>(resolve => setImmediate(resolve));
+
+      expect(second).toEqual({ success: true });
+      expect(successfulHistoryWrites).toBe(1);
+      expect(prisma.gameHistory.create).toHaveBeenCalledTimes(2);
+      expect(unhandledRejection).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandledRejection);
+    }
   });
 });

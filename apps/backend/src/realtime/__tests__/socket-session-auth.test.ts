@@ -15,6 +15,11 @@ jest.mock('../../prisma', () => ({
     },
     session: {
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
+      update: jest.fn(),
+    },
+    gameHistory: {
+      create: jest.fn().mockResolvedValue({} as never),
     },
   },
 }));
@@ -180,5 +185,29 @@ describe('Socket.IO host session authentication', () => {
       const result = await new Promise<{ success: boolean }>((resolve) => action(resolve));
       expect(result.success).toBe(false);
     }
+  });
+
+  it('disconnects sockets when host_logout event is emitted', async () => {
+    const { appEvents } = require('../../events');
+    const token = jwt.sign({ userId, sessionId }, config.jwtSecret);
+    const client = createClient(token);
+
+    await expect(waitForConnection(client)).resolves.toBe('connected');
+
+    // Create room to test room deletion
+    const room = await createRoom(client);
+    expect(room.success).toBe(true);
+    expect(rooms.size).toBe(1);
+
+    const disconnectPromise = new Promise((resolve) => client.once('disconnect', resolve));
+
+    appEvents.emit('host_logout', sessionId);
+
+    await disconnectPromise;
+    expect(client.connected).toBe(false);
+
+    // Give event loop a tick to ensure room deletion is processed
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(rooms.size).toBe(0);
   });
 });

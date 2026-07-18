@@ -40,7 +40,7 @@ jobs:
       - name: Check for uncommitted generated files
         run: git diff --exit-code
       - name: Run script tests
-        run: npx vitest run scripts/
+        run: npm run test:scripts
       - name: Run legal check
         run: npm run legal:check
 

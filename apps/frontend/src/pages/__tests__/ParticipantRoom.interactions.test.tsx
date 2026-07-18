@@ -157,6 +157,87 @@ describe("ParticipantRoom interactions", () => {
     expect(mockSocket.emit.mock.calls.filter(([event]) => event === "BUZZ_SUBMIT")).toHaveLength(2);
   });
 
+  it("retains pending and accepted states across same-round ACTIVE snapshots", async () => {
+    let deferredCallback: ((result: unknown) => void) | null = null;
+    mockSocket.emit.mockImplementation((event: string, _data: unknown, callback?: (result: unknown) => void) => {
+      if (event === "PARTICIPANT_REJOIN") callback?.({ success: true, room: activeRoom, participant });
+      if (event === "BUZZ_SUBMIT") deferredCallback = callback || null;
+      return mockSocket;
+    });
+
+    renderRoom();
+    const btn = await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" });
+    fireEvent.pointerDown(btn);
+
+    expect(screen.getAllByText(/Отправляем сигнал/)[0]).toBeInTheDocument();
+
+    // intermediate snapshot (like another user joining)
+    act(() => handlers.get("ROOM_STATE_UPDATED")?.({ ...activeRoom, participants: [participant, { ...participant, id: "p2" }] }));
+    expect(screen.getAllByText(/Отправляем сигнал/)[0]).toBeInTheDocument(); // should not be reset to idle
+
+    act(() => { deferredCallback?.({ success: true, status: "accepted" }); });
+    expect(screen.getAllByText(/Сигнал принят/)[0]).toBeInTheDocument();
+
+    // another intermediate snapshot
+    act(() => handlers.get("ROOM_STATE_UPDATED")?.({ ...activeRoom, unlockAt: 123 }));
+    expect(screen.getAllByText(/Сигнал принят/)[0]).toBeInTheDocument(); // should still be accepted
+  });
+
+  it("ignores late callbacks after the network timeout has already reset the UI", async () => {
+    let deferredCallback: ((result: unknown) => void) | null = null;
+    mockSocket.emit.mockImplementation((event: string, _data: unknown, callback?: (result: unknown) => void) => {
+      if (event === "PARTICIPANT_REJOIN") callback?.({ success: true, room: activeRoom, participant });
+      if (event === "BUZZ_SUBMIT") deferredCallback = callback || null;
+      return mockSocket;
+    });
+
+    renderRoom();
+    const btn = await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" });
+
+    vi.useFakeTimers();
+    fireEvent.pointerDown(btn);
+    expect(buzzer()).toBeDisabled();
+
+    // trigger timeout
+    act(() => { vi.advanceTimersByTime(5000); });
+    expect(screen.getAllByText(/Ошибка сети/)[0]).toBeInTheDocument();
+    expect(buzzer()).toBeEnabled(); // it is active, so it unlocks
+
+    // now the late callback arrives
+    act(() => { deferredCallback?.({ success: true, status: "accepted" }); });
+
+    // UI should NOT change to accepted, because timeout already fired
+    expect(screen.queryByText(/Сигнал принят/)).not.toBeInTheDocument();
+    expect(buzzer()).toBeEnabled();
+    vi.useRealTimers();
+  });
+
+  it("clears the ack timeout if the round transitions out of ACTIVE, preventing late error messages", async () => {
+    let deferredCallback: ((result: unknown) => void) | null = null;
+    mockSocket.emit.mockImplementation((event: string, _data: unknown, callback?: (result: unknown) => void) => {
+      if (event === "PARTICIPANT_REJOIN") callback?.({ success: true, room: activeRoom, participant });
+      if (event === "BUZZ_SUBMIT") deferredCallback = callback || null;
+      return mockSocket;
+    });
+
+    renderRoom();
+    const btn = await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" });
+
+    vi.useFakeTimers();
+    fireEvent.pointerDown(btn);
+    expect(buzzer()).toBeDisabled();
+
+    // Round state changes out of ACTIVE before timeout
+    act(() => handlers.get("ROOM_STATE_UPDATED")?.({ ...activeRoom, roundState: RoomState.REVEALED, firstBuzzerId: "other" }));
+    
+    // Trigger what would be the timeout
+    act(() => { vi.advanceTimersByTime(5000); });
+    
+    // The error message should NOT appear because timeout was cleared
+    expect(screen.queryByText(/Ошибка сети/)).not.toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
   it("clears the saved session and blocks control after revocation", async () => {
     renderRoom();
     await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" });

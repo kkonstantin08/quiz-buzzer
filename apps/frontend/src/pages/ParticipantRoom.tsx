@@ -3,8 +3,9 @@ import { useParams, useNavigate } from "react-router-dom";
 import { socket } from "../realtime/socket";
 import { timeSync } from "../realtime/timeSync";
 import { api, BASE_URL } from "../services/api";
-import { RoomState, type PublicRoomData } from "shared";
+import { RoomState, GameResult, type PublicRoomData } from "shared";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import confetti from "canvas-confetti";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -31,6 +32,7 @@ export function ParticipantRoom() {
   const [winnerInfo, setWinnerInfo] = useState<{
     winnerName: string | null;
     winnerScore: number;
+    result: GameResult | null;
   } | null>(null);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [unlockReady, setUnlockReady] = useState(false);
@@ -45,9 +47,16 @@ export function ParticipantRoom() {
     connect?: () => void;
     connect_error?: (e: Error) => void;
   }>({});
+  const roomStateRef = useRef<RoomState | undefined>(undefined);
+
+  useEffect(() => {
+    roomStateRef.current = room?.roundState;
+  }, [room?.roundState]);
 
   useEffect(() => {
     return () => {
+      joinAttemptIdRef.current += 1;
+      joinPendingRef.current = false;
       if (ackTimeoutRef.current) clearTimeout(ackTimeoutRef.current);
       if (buzzTimeoutRef.current) clearTimeout(buzzTimeoutRef.current);
       if (joinListenersRef.current.connect) {
@@ -60,11 +69,20 @@ export function ParticipantRoom() {
   }, []);
   const roomCodeRef = useRef(roomCode);
   const joinPendingRef = useRef(false);
+  const joinAttemptIdRef = useRef<number>(0);
   const shouldReduceMotion = useReducedMotion();
 
   useSocketAuthRecovery(
     () => { socket.connect(); },
-    () => { setIsJoining(false); setError("Не удалось подключиться к игре. Повторите попытку."); },
+    () => { 
+      setIsJoining(false); 
+      joinPendingRef.current = false;
+      if (joinListenersRef.current.connect) socket.off("connect", joinListenersRef.current.connect);
+      if (joinListenersRef.current.connect_error) socket.off("connect_error", joinListenersRef.current.connect_error);
+      joinListenersRef.current.connect = undefined;
+      joinListenersRef.current.connect_error = undefined;
+      setError("Не удалось подключиться к игре. Повторите попытку."); 
+    },
   );
 
   useEffect(() => {
@@ -180,6 +198,7 @@ export function ParticipantRoom() {
     e.preventDefault();
     if (!name.trim() || joinPendingRef.current) return;
 
+    const attemptId = ++joinAttemptIdRef.current;
     joinPendingRef.current = true;
     setIsJoining(true);
     setError("");
@@ -188,6 +207,7 @@ export function ParticipantRoom() {
       "ROOM_JOIN",
       { roomCode: roomCode || "", displayName: name },
       (res) => {
+        if (joinAttemptIdRef.current !== attemptId) return;
         joinPendingRef.current = false;
         setIsJoining(false);
         if (res.success) {
@@ -231,16 +251,24 @@ export function ParticipantRoom() {
       if (joinListenersRef.current.connect) {
         socket.off("connect", joinListenersRef.current.connect);
       }
+      if (joinListenersRef.current.connect_error) {
+        socket.off("connect_error", joinListenersRef.current.connect_error);
+      }
       joinListenersRef.current.connect = undefined;
       joinListenersRef.current.connect_error = undefined;
-      joinPendingRef.current = false;
-      setIsJoining(false);
-      setError("Не удалось подключиться к игре. Повторите попытку.");
+      if (joinAttemptIdRef.current === attemptId) {
+        joinPendingRef.current = false;
+        setIsJoining(false);
+        setError("Не удалось подключиться к игре. Повторите попытку.");
+      }
     };
 
     const emitJoinWithCleanup = () => {
       if (joinListenersRef.current.connect_error) {
         socket.off("connect_error", joinListenersRef.current.connect_error);
+      }
+      if (joinListenersRef.current.connect) {
+        socket.off("connect", joinListenersRef.current.connect);
       }
       joinListenersRef.current.connect = undefined;
       joinListenersRef.current.connect_error = undefined;
@@ -250,24 +278,27 @@ export function ParticipantRoom() {
     joinListenersRef.current.connect = emitJoinWithCleanup;
     joinListenersRef.current.connect_error = onConnectError;
 
-    socket.once("connect", emitJoinWithCleanup);
-    socket.once("connect_error", onConnectError);
+    socket.on("connect", emitJoinWithCleanup);
+    socket.on("connect_error", onConnectError);
     socket.connect();
   };
 
   useEffect(() => {
     const onStateUpdate = (updatedRoom: PublicRoomData) => {
       setRoom((previousRoom) => {
-        if (
-          updatedRoom.roundState === RoomState.WAITING ||
-          updatedRoom.roundState === RoomState.ACTIVE
-        ) {
-          setAmIFirst(false);
-          setBuzzStatus("idle");
+        if (updatedRoom.roundState !== RoomState.ACTIVE) {
           if (ackTimeoutRef.current) {
             clearTimeout(ackTimeoutRef.current);
             ackTimeoutRef.current = null;
           }
+        }
+
+        if (
+          updatedRoom.roundState === RoomState.WAITING ||
+          (updatedRoom.roundState === RoomState.ACTIVE && previousRoom?.roundState !== RoomState.ACTIVE)
+        ) {
+          setAmIFirst(false);
+          setBuzzStatus("idle");
         }
 
         if (
@@ -304,20 +335,33 @@ export function ParticipantRoom() {
           updatedRoom.roundState === RoomState.FINISHED &&
           previousRoom?.roundState !== RoomState.FINISHED
         ) {
-          const result = updatedRoom.gameResult;
+          const result = updatedRoom.gameResult as GameResult;
           let winnerName = updatedRoom.winnerName || null;
           let winnerScore = 0;
 
-          if (result === 'WINNER' || result === 'DRAW') {
+          if (result === GameResult.WINNER || result === GameResult.DRAW) {
             const sorted = [...updatedRoom.participants].sort((a, b) => b.score - a.score);
             winnerScore = sorted[0]?.score || 0;
-            if (result === 'DRAW') winnerName = 'Ничья';
           }
 
-          setWinnerInfo({ winnerName, winnerScore });
-          announce(
-            `Игра завершена. Победитель: ${winnerName || "Нет победителя"}`,
-          );
+          setWinnerInfo({ winnerName, winnerScore, result: result || GameResult.NO_WINNER });
+
+          if (!shouldReduceMotion) {
+            confetti({
+              particleCount: 150,
+              spread: 80,
+              origin: { y: 0.6 },
+              colors: ["#ef4444", "#f59e0b", "#3b82f6", "#10b981"],
+            });
+          }
+
+          if (result === GameResult.WINNER && winnerName) {
+            announce(`Игра завершена. Победитель: ${winnerName}.`);
+          } else if (result === GameResult.DRAW) {
+            announce(`Игра завершена. Ничья.`);
+          } else {
+            announce(`Игра завершена без победителя.`);
+          }
         }
 
         if (
@@ -406,7 +450,9 @@ export function ParticipantRoom() {
     ackTimeoutRef.current = setTimeout(() => {
       ackTimeoutRef.current = null;
       announce("Ошибка сети. Попробуйте еще раз", "assertive");
-      setBuzzStatus("idle");
+      if (roomStateRef.current === RoomState.ACTIVE) {
+        setBuzzStatus("idle");
+      }
     }, 5000);
 
     socket.emit("BUZZ_SUBMIT", { clientPressedAt }, (res) => {
@@ -423,7 +469,9 @@ export function ParticipantRoom() {
         setBuzzStatus("accepted");
       } else {
         announce(res?.error || "Ошибка", "assertive");
-        setBuzzStatus("idle");
+        if (roomStateRef.current === RoomState.ACTIVE) {
+          setBuzzStatus("idle");
+        }
       }
     });
   };
@@ -462,19 +510,50 @@ export function ParticipantRoom() {
         tabIndex={-1}
         className="flex flex-col items-center justify-center min-h-[100dvh] bg-slate-50 p-6 text-center"
       >
-        <Crown className="w-16 h-16 text-yellow-500 mb-4" />
-        <h2 className="text-3xl font-black text-slate-800 tracking-tight mb-2">
-          Игра окончена
-        </h2>
-        <p className="text-slate-600 mb-6">Ведущий завершил эту игру.</p>
-        <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 w-full max-w-sm">
-          <p className="text-xs font-semibold text-slate-600 tracking-wide mb-1">
-            Победитель
-          </p>
-          <p className="text-2xl font-bold text-primary break-words">
-            {winnerInfo.winnerName}
-          </p>
-        </div>
+        <Card className="w-full max-w-sm shadow-lg border-0 bg-white">
+          <CardHeader className="text-center pb-2">
+            <CardTitle className="text-3xl font-black text-slate-800 tracking-tight">
+              {winnerInfo?.result === GameResult.WINNER ? "Победитель!" : winnerInfo?.result === GameResult.DRAW ? "Ничья!" : "Игра завершена"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6 pt-4 flex flex-col items-center">
+            {winnerInfo?.result === GameResult.WINNER && winnerInfo?.winnerName ? (
+              <>
+                <div className="w-24 h-24 bg-yellow-100 text-yellow-600 rounded-full flex items-center justify-center shadow-inner mb-2 animate-bounce">
+                  <Crown className="w-12 h-12" />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-3xl font-bold text-slate-800">
+                    {winnerInfo.winnerName}
+                  </p>
+                  <p className="text-slate-500 font-medium text-lg">
+                    Счёт: {winnerInfo.winnerScore}
+                  </p>
+                </div>
+              </>
+            ) : winnerInfo?.result === GameResult.DRAW ? (
+              <>
+                <div className="w-24 h-24 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center shadow-inner mb-2 animate-bounce">
+                  <Crown className="w-12 h-12" />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-slate-600 font-medium text-xl">
+                    Победила дружба
+                  </p>
+                  <p className="text-slate-500 font-medium text-lg">
+                    Счёт: {winnerInfo.winnerScore}
+                  </p>
+                </div>
+              </>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-slate-600 font-medium text-xl">
+                  Нет победителя
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </main>
     );
   }

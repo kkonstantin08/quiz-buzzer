@@ -1,9 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act, fireEvent } from '@testing-library/react';
 import { HostRoom } from '../HostRoom';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { socket } from '../../realtime/socket';
 import { RoomState } from 'shared';
+
+const mockPlaySound = vi.fn();
+vi.mock('../../lib/sounds', () => ({
+  playSound: (...args: any[]) => mockPlaySound(...args)
+}));
 
 vi.mock('../../realtime/socket', () => {
   const mSocket = {
@@ -27,9 +32,17 @@ vi.mock('../../services/api', () => ({
 }));
 
 describe('HostRoom interactions & pending states', () => {
+  let hostRejoinCallback: any;
+  let eventCallbackMap: Record<string, any> = {};
+  let eventCallbacks: Record<string, any[]> = {};
+
   beforeEach(() => {
+    vi.useFakeTimers();
     vi.clearAllMocks();
+    eventCallbackMap = {};
+    eventCallbacks = {};
     socket.connected = false;
+    
     // @ts-ignore
     socket.connect.mockImplementation(() => {
       socket.connected = true;
@@ -39,6 +52,17 @@ describe('HostRoom interactions & pending states', () => {
         connectCalls.forEach((call: any) => call[1]());
       }, 0);
     });
+
+    socket.emit = vi.fn().mockImplementation((event, ...args) => {
+      const cb = args.find(a => typeof a === 'function');
+      if (event === 'HOST_REJOIN_ROOM') hostRejoinCallback = cb;
+      eventCallbackMap[event] = cb;
+      if (cb) (eventCallbacks[event] ??= []).push(cb);
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   const mockRoomData = (state: RoomState) => ({
@@ -52,110 +76,226 @@ describe('HostRoom interactions & pending states', () => {
     createdAt: Date.now(),
   });
 
-  const renderComponent = () => {
-    return render(
+  const renderComponent = async (state: RoomState = RoomState.WAITING) => {
+    const rendered = render(
       <MemoryRouter initialEntries={[`/host/room/room-123`]}>
         <Routes>
           <Route path="/host/room/:roomId" element={<HostRoom />} />
         </Routes>
       </MemoryRouter>
     );
+    
+    await act(async () => {
+      vi.advanceTimersByTime(10);
+    });
+
+    await act(async () => {
+      hostRejoinCallback({ success: true, room: mockRoomData(state) });
+    });
+    
+    if (state === RoomState.REVEALED) {
+      await act(async () => {
+        // @ts-ignore
+        const stateUpdateCalls = socket.on.mock.calls.filter((call: any) => call[0] === 'ROOM_STATE_UPDATED');
+        stateUpdateCalls.forEach((call: any) => call[1]({
+          ...mockRoomData(RoomState.REVEALED),
+          participants: [{ id: 'p1', displayName: 'Player 1', score: 0 }],
+        }));
+      });
+    }
+
+    return rendered;
   };
 
-  it('1. Start round button shows pending state and disables during callback', async () => {
-    let hostRejoinCallback: any;
-    let roundStartCallback: any;
-
-    socket.emit = vi.fn().mockImplementation((event, ...args) => {
-      const cb = args.find(a => typeof a === 'function');
-      if (event === 'HOST_REJOIN_ROOM') hostRejoinCallback = cb;
-      if (event === 'ROUND_START') roundStartCallback = cb;
-    });
-
-    renderComponent();
-
-    // Wait for the simulated socket connect event to fire emit
-    await act(async () => {
-      await new Promise(r => setTimeout(r, 10));
-    });
-
-    // Trigger rejoin
-    await act(async () => {
-      hostRejoinCallback({ success: true, room: mockRoomData(RoomState.WAITING) });
-    });
-
-    const startBtn = await screen.findByRole('button', { name: /СТАРТ РАУНДА/i });
-    expect(startBtn).not.toBeDisabled();
-
-    // Click start
-    await act(async () => {
-      fireEvent.click(startBtn);
-    });
-
-    // Should now be disabled and show 'ЗАПУСК...'
-    expect(startBtn).toBeDisabled();
-    expect(startBtn).toHaveTextContent(/ЗАПУСК\.\.\./i);
+  it('1. ROUND_START logic', async () => {
+    await renderComponent();
+    const btn = screen.getByRole('button', { name: /СТАРТ РАУНДА/i });
     
-    // Resolve callback
+    // Click
     await act(async () => {
-      roundStartCallback({ success: true });
+      fireEvent.click(btn);
     });
-
-    // After callback, state resets to normal text (even though state might change from server later)
-    expect(startBtn).toHaveTextContent(/СТАРТ РАУНДА/i);
+    
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveTextContent(/ЗАПУСК\.\.\./i);
+    
+    // Duplicate click during pending should not fire again
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+    expect(socket.emit).toHaveBeenCalledTimes(2); // REJOIN + 1 ROUND_START
+    
+    // Success callback
+    await act(async () => {
+      eventCallbackMap['ROUND_START']({ success: true });
+    });
+    expect(btn).not.toBeDisabled();
+    expect(btn).toHaveTextContent(/СТАРТ РАУНДА/i);
+    
+    // Error callback
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+    expect(btn).toBeDisabled();
+    await act(async () => {
+      eventCallbackMap['ROUND_START']({ success: false, error: 'Cannot start' });
+    });
+    expect(btn).not.toBeDisabled();
+    expect(screen.getByText('Cannot start')).toBeInTheDocument();
+    
+    // Timeout
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+    expect(btn).toBeDisabled();
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(btn).not.toBeDisabled();
+    expect(screen.getByText('Превышено время ожидания ответа от сервера. Проверьте соединение.')).toBeInTheDocument();
+    
+    // Late callback should be ignored
+    await act(async () => {
+      eventCallbackMap['ROUND_START']({ success: false, error: 'Late error' });
+    });
+    expect(screen.queryByText('Late error')).not.toBeInTheDocument();
   });
 
-  it('2. Reveal buttons disable and show error if callback fails', async () => {
-    let hostRejoinCallback: any;
-    let roundResetCallback: any;
+  it('2. ROUND_RESET (Correct and Wrong)', async () => {
+    await renderComponent(RoomState.REVEALED);
+    const correctBtn = screen.getByRole('button', { name: /Верно/i });
+    const wrongBtn = screen.getByRole('button', { name: /Мимо/i });
+    
+    // Success correct
+    await act(async () => { fireEvent.click(correctBtn); });
+    await act(async () => { eventCallbackMap['ROUND_RESET']({ success: true }); });
+    expect(mockPlaySound).toHaveBeenCalledWith('correct', 'classic', true);
+    
+    mockPlaySound.mockClear();
+    
+    // Success wrong
+    await act(async () => { fireEvent.click(wrongBtn); });
+    await act(async () => { eventCallbackMap['ROUND_RESET']({ success: true }); });
+    expect(mockPlaySound).toHaveBeenCalledWith('wrong', 'classic', true);
+    
+    mockPlaySound.mockClear();
+    
+    // Error
+    await act(async () => { fireEvent.click(correctBtn); });
+    await act(async () => { eventCallbackMap['ROUND_RESET']({ success: false, error: 'Err' }); });
+    expect(mockPlaySound).not.toHaveBeenCalled();
+    
+    // Timeout
+    await act(async () => { fireEvent.click(correctBtn); });
+    await act(async () => { vi.advanceTimersByTime(5000); });
+    expect(mockPlaySound).not.toHaveBeenCalled();
+    
+    // Late callback
+    await act(async () => { eventCallbackMap['ROUND_RESET']({ success: true }); });
+    expect(mockPlaySound).not.toHaveBeenCalled();
+  });
 
-    socket.emit = vi.fn().mockImplementation((event, ...args) => {
-      const cb = args.find(a => typeof a === 'function');
-      if (event === 'HOST_REJOIN_ROOM') hostRejoinCallback = cb;
-      if (event === 'ROUND_RESET') roundResetCallback = cb;
-    });
+  it('3. HOST_CLEAR_SCORES logic', async () => {
+    await renderComponent();
+    
+    // We need to click "Очистить счёт"
+    const clearBtn = screen.getByRole('button', { name: /Очистить счёт/i });
+    
+    // Click triggers emit immediately
+    await act(async () => { fireEvent.click(clearBtn); });
+    expect(clearBtn).toBeDisabled();
+    expect(clearBtn).toHaveTextContent(/Очистка/i);
+    
+    // Dupe click should be ignored
+    await act(async () => { fireEvent.click(clearBtn); });
+    expect(socket.emit).toHaveBeenCalledTimes(2); // REJOIN + 1 CLEAR
+    
+    // Success
+    await act(async () => { eventCallbackMap['HOST_CLEAR_SCORES']({ success: true }); });
+    expect(clearBtn).not.toBeDisabled();
+    expect(clearBtn).toHaveTextContent(/Очистить счёт/i);
+    
+    // Rejection
+    await act(async () => { fireEvent.click(clearBtn); });
+    expect(clearBtn).toBeDisabled();
+    await act(async () => { eventCallbackMap['HOST_CLEAR_SCORES']({ success: false, error: 'Cannot clear' }); });
+    expect(clearBtn).not.toBeDisabled();
+    expect(screen.getByText('Cannot clear')).toBeInTheDocument();
+    
+    // Timeout
+    await act(async () => { fireEvent.click(clearBtn); });
+    expect(clearBtn).toBeDisabled();
+    await act(async () => { vi.advanceTimersByTime(5000); });
+    expect(clearBtn).not.toBeDisabled();
+    expect(screen.getByText('Превышено время ожидания ответа от сервера. Проверьте соединение.')).toBeInTheDocument();
+  });
 
-    renderComponent();
+  it('4. ROOM_FINISH logic', async () => {
+    const rendered = await renderComponent();
+    const finishTrigger = screen.getByRole('button', { name: /Завершить/i });
+    await act(async () => { fireEvent.click(finishTrigger); });
+    const confirmFinishBtn = screen.getByRole('button', { name: /^Завершить$/i });
+    await act(async () => { fireEvent.click(confirmFinishBtn); });
+    expect(confirmFinishBtn).toBeDisabled();
+    await act(async () => { eventCallbacks.ROOM_FINISH[0]({ success: true }); });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
-    // Wait for the simulated socket connect event to fire emit
-    await act(async () => {
-      await new Promise(r => setTimeout(r, 10));
-    });
+    await act(async () => { fireEvent.click(finishTrigger); });
+    const reopenConfirmBtn = screen.getByRole('button', { name: /^Завершить$/i });
+    await act(async () => { fireEvent.click(reopenConfirmBtn); });
+    expect(reopenConfirmBtn).toBeDisabled();
+    await act(async () => { eventCallbacks.ROOM_FINISH[1]({ success: false, error: 'Finish Error' }); });
+    expect(reopenConfirmBtn).not.toBeDisabled();
+    expect(screen.getByText('Finish Error')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
 
-    await act(async () => {
-      hostRejoinCallback({ success: true, room: mockRoomData(RoomState.REVEALED) });
-    });
+    await act(async () => { fireEvent.click(reopenConfirmBtn); });
+    expect(reopenConfirmBtn).toBeDisabled();
+    await act(async () => { vi.advanceTimersByTime(5000); });
+    expect(reopenConfirmBtn).not.toBeDisabled();
+    expect(screen.getByText('Превышено время ожидания ответа от сервера. Проверьте соединение.')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
 
-    // Need to set name manually for first buzzer
+    await act(async () => { fireEvent.click(reopenConfirmBtn); });
+    expect(reopenConfirmBtn).toBeDisabled();
+    await act(async () => { eventCallbacks.ROOM_FINISH[2]({ success: true }); });
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await act(async () => { eventCallbacks.ROOM_FINISH[3]({ success: true }); });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    rendered.unmount();
+  });
+
+  it('invalidates a pending ROOM_FINISH callback when its component unmounts', async () => {
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+    const rendered = await renderComponent();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Завершить/i })); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^Завершить$/i })); });
+
+    rendered.unmount();
+    expect(clearTimeoutSpy).toHaveBeenCalled();
+    expect(() => eventCallbacks.ROOM_FINISH[0]({ success: true })).not.toThrow();
+  });
+
+  it('5. Lifecycle disconnect', async () => {
+    await renderComponent();
+    
+    const startBtn = screen.getByRole('button', { name: /СТАРТ РАУНДА/i });
+    await act(async () => { fireEvent.click(startBtn); });
+    expect(startBtn).toBeDisabled();
+    
+    // Disconnect
     await act(async () => {
       // @ts-ignore
-      const stateUpdateCalls = socket.on.mock.calls.filter((call: any) => call[0] === 'ROOM_STATE_UPDATED');
-      stateUpdateCalls.forEach((call: any) => call[1]({
-        ...mockRoomData(RoomState.REVEALED),
-        participants: [{ id: 'p1', displayName: 'Player 1', score: 0 }],
-      }));
+      const disconnectCalls = socket.on.mock.calls.filter((call: any) => call[0] === 'disconnect');
+      disconnectCalls.forEach((call: any) => call[1]());
     });
-
-    const correctBtn = await screen.findByRole('button', { name: /Верно/i });
-    expect(correctBtn).not.toBeDisabled();
-
-    await act(async () => {
-      fireEvent.click(correctBtn);
-    });
-
-    expect(correctBtn).toBeDisabled();
-    expect(correctBtn).toHaveTextContent(/Ожидание\.\.\./i);
-
-    // Fail the callback
-    await act(async () => {
-      roundResetCallback({ success: false, error: 'Ошибка обновления' });
-    });
-
-    // Button should be re-enabled
-    expect(correctBtn).not.toBeDisabled();
-    expect(correctBtn).toHaveTextContent(/Верно/i);
-
-    // Error message should be visible
-    expect(await screen.findByText('Ошибка обновления')).toBeInTheDocument();
+    
+    expect(startBtn).not.toBeDisabled();
+    expect(screen.getByText('Соединение с сервером потеряно')).toBeInTheDocument();
+    
+    // Ensure timeout doesn't do anything crazy
+    await act(async () => { vi.advanceTimersByTime(5000); });
+    expect(startBtn).not.toBeDisabled();
   });
 });

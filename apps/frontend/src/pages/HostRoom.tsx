@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { socket } from '../realtime/socket';
-import { RoomState, type PublicRoomData } from 'shared';
+import { RoomState, GameResult, type PublicRoomData, type SocketActionResult, type HostRejoinRoomResult } from 'shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -29,14 +29,43 @@ export function HostRoom() {
   const [copied, setCopied] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
-  const [winnerInfo, setWinnerInfo] = useState<{winnerName: string | null, winnerScore: number} | null>(null);
+  const [winnerInfo, setWinnerInfo] = useState<{winnerName: string | null, winnerScore: number, result: GameResult | null} | null>(null);
   const soundSettingsRef = React.useRef({ enabled: true, theme: 'classic' });
+  const currentActionIdRef = React.useRef<number>(0);
+  const actionTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const announce = useAriaLive();
 
   useSocketAuthRecovery(
     () => { announce('Сессия ведущего недействительна. Войдите снова.', 'assertive'); navigate('/login', { replace: true }); },
     () => { announce('Не удалось восстановить подключение. Войдите снова.', 'assertive'); navigate('/login', { replace: true }); },
   );
+
+  useEffect(() => {
+    return () => {
+      currentActionIdRef.current += 1;
+      if (actionTimeoutRef.current) {
+        clearTimeout(actionTimeoutRef.current);
+        actionTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const onDisconnect = () => {
+      setPendingAction(null);
+      currentActionIdRef.current += 1;
+      if (actionTimeoutRef.current) {
+        clearTimeout(actionTimeoutRef.current);
+        actionTimeoutRef.current = null;
+      }
+      setActionError('Соединение с сервером потеряно');
+      announce('Соединение с сервером потеряно', 'assertive');
+    };
+    socket.on('disconnect', onDisconnect);
+    return () => {
+      socket.off('disconnect', onDisconnect);
+    };
+  }, [announce]);
 
   useEffect(() => {
     api.getSettings()
@@ -60,7 +89,7 @@ export function HostRoom() {
         socket.connect();
       }
 
-      socket.emit('HOST_REJOIN_ROOM', { roomId }, (res) => {
+      socket.emit('HOST_REJOIN_ROOM', { roomId }, (res: HostRejoinRoomResult) => {
         if (res.success) {
           setRoom(res.room);
           setReconnectState('connected');
@@ -122,17 +151,16 @@ export function HostRoom() {
         }
 
         if (updatedRoom.roundState === RoomState.FINISHED && previousRoom?.roundState !== RoomState.FINISHED) {
-          const result = updatedRoom.gameResult;
+          const result = updatedRoom.gameResult as GameResult;
           let winnerName = updatedRoom.winnerName || null;
           let winnerScore = 0;
 
-          if (result === 'WINNER' || result === 'DRAW') {
+          if (result === GameResult.WINNER || result === GameResult.DRAW) {
             const sorted = [...updatedRoom.participants].sort((a, b) => b.score - a.score);
             winnerScore = sorted[0]?.score || 0;
-            if (result === 'DRAW') winnerName = 'Ничья';
           }
 
-          setWinnerInfo({ winnerName, winnerScore });
+          setWinnerInfo({ winnerName, winnerScore, result: result || GameResult.NO_WINNER });
 
           if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
             confetti({
@@ -143,7 +171,14 @@ export function HostRoom() {
             });
           }
           playSound('fanfare', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
-          announce(`Игра завершена. Победитель: ${winnerName || 'никто'}.`);
+          
+          if (result === GameResult.WINNER && winnerName) {
+            announce(`Игра завершена. Победитель: ${winnerName}.`);
+          } else if (result === GameResult.DRAW) {
+            announce(`Игра завершена. Ничья.`);
+          } else {
+            announce(`Игра завершена без победителя.`);
+          }
         }
 
         return updatedRoom;
@@ -224,56 +259,66 @@ export function HostRoom() {
   const publicUrl = window.location.origin;
   const joinUrl = `${publicUrl}/room/${room.roomCode}`;
 
-  const handleStartRound = () => {
-    setPendingAction('ROUND_START');
-    socket.emit('ROUND_START', (res: any) => {
+  function emitWithTimeout(
+    action: 'ROUND_START' | 'ROUND_RESET' | 'HOST_CLEAR_SCORES' | 'ROOM_FINISH',
+    emit: (callback: (res: SocketActionResult) => void) => void,
+    onSuccess?: (res: SocketActionResult) => void
+  ) {
+    if (pendingAction !== null) return;
+
+    const actionId = ++currentActionIdRef.current;
+    setPendingAction(action);
+    setActionError(null);
+
+    if (actionTimeoutRef.current) {
+      clearTimeout(actionTimeoutRef.current);
+      actionTimeoutRef.current = null;
+    }
+
+    actionTimeoutRef.current = setTimeout(() => {
+      if (currentActionIdRef.current === actionId) {
+        currentActionIdRef.current += 1; // invalidate current action
+        actionTimeoutRef.current = null;
+        setPendingAction(null);
+        setActionError('Превышено время ожидания ответа от сервера. Проверьте соединение.');
+        announce('Превышено время ожидания ответа от сервера. Проверьте соединение.', 'assertive');
+      }
+    }, 5000);
+
+    const cb = (res: SocketActionResult) => {
+      if (currentActionIdRef.current !== actionId) return;
+
+      if (actionTimeoutRef.current) {
+        clearTimeout(actionTimeoutRef.current);
+        actionTimeoutRef.current = null;
+      }
       setPendingAction(null);
+
       if (res && !res.success) {
-        setActionError(res.error);
-        announce(res.error, 'assertive');
+        setActionError(res.error || 'Ошибка выполнения действия');
+        announce(res.error || 'Ошибка выполнения действия', 'assertive');
       } else {
         setActionError(null);
+        if (onSuccess) onSuccess(res);
       }
-    });
-  };
+    };
+
+    emit(cb);
+  }
+
+  const handleStartRound = () => emitWithTimeout('ROUND_START', callback => socket.emit('ROUND_START', callback));
 
   const handleReset = (winnerId: string | null = null, isCorrect: boolean | null = null) => {
-    setPendingAction('ROUND_RESET');
-    socket.emit('ROUND_RESET', { winnerId }, (res: any) => {
-      setPendingAction(null);
-      if (res && !res.success) {
-        setActionError(res.error);
-        announce(res.error, 'assertive');
-      } else {
-        setActionError(null);
-        if (isCorrect === true) playSound('correct', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
-        else if (isCorrect === false) playSound('wrong', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
-      }
+    emitWithTimeout('ROUND_RESET', callback => socket.emit('ROUND_RESET', { winnerId }, callback), () => {
+      if (isCorrect === true) playSound('correct', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
+      else if (isCorrect === false) playSound('wrong', soundSettingsRef.current.theme, soundSettingsRef.current.enabled);
     });
   };
 
-  const handleCorrect = () => {
-    handleReset(room.firstBuzzerId, true);
-  };
+  const handleCorrect = () => handleReset(room.firstBuzzerId, true);
+  const handleWrong = () => handleReset(null, false);
 
-  const handleWrong = () => {
-    handleReset(null, false);
-  };
-
-  const handleClearScoreboard = () => {
-    setPendingAction('HOST_CLEAR_SCORES');
-    socket.emit('HOST_CLEAR_SCORES', (result: any) => {
-      setPendingAction(null);
-      if (result && result.success) {
-        setActionError(null);
-        return;
-      }
-      if (result) {
-        setActionError(result.error);
-        announce(result.error, 'assertive');
-      }
-    });
-  };
+  const handleClearScoreboard = () => emitWithTimeout('HOST_CLEAR_SCORES', callback => socket.emit('HOST_CLEAR_SCORES', callback));
 
   const handleCopy = () => {
     if (navigator.clipboard && window.isSecureContext) {
@@ -297,15 +342,8 @@ export function HostRoom() {
   };
 
   const handleFinishRoom = () => {
-    setPendingAction('ROOM_FINISH');
-    socket.emit('ROOM_FINISH', (res: any) => {
-      setPendingAction(null);
-      if (res && res.success) {
-        setFinishOpen(false);
-      } else if (res) {
-        setActionError(res.error);
-        announce(res.error, 'assertive');
-      }
+    emitWithTimeout('ROOM_FINISH', callback => socket.emit('ROOM_FINISH', callback), () => {
+      setFinishOpen(false);
     });
   };
 
@@ -320,7 +358,7 @@ export function HostRoom() {
               </div>
               <div className="space-y-2">
                 <h1 className="text-3xl font-black text-slate-800 tracking-tight">Игра завершена</h1>
-                <p className="text-lg text-slate-600">В игре так и не появилось участников. Эта игра не будет сохранена в статистике.</p>
+                <p className="text-lg text-slate-600">В игре так и не появилось участников. Игра завершена без победителя.</p>
               </div>
               <Button size="lg" className="mt-8 w-full h-14 text-lg font-bold" onClick={() => navigate('/dashboard')}>
                 На главную
@@ -344,13 +382,34 @@ export function HostRoom() {
             </div>
 
             <div className="bg-slate-50 border border-slate-100 rounded-2xl p-6 w-full mt-6 shadow-sm">
-              <p className="text-sm font-semibold text-slate-600 tracking-wide mb-2">Победитель</p>
-              <h2 className="text-3xl font-bold text-primary break-words">
-                {winnerInfo.winnerName}
-              </h2>
-              <div className="mt-4 inline-flex items-center justify-center px-4 py-1.5 rounded-full bg-yellow-100 text-yellow-700 font-bold text-lg">
-                {winnerInfo.winnerScore} {winnerInfo.winnerScore === 1 ? 'балл' : winnerInfo.winnerScore > 1 && winnerInfo.winnerScore < 5 ? 'балла' : 'баллов'}
-              </div>
+              {winnerInfo.result === GameResult.NO_WINNER ? (
+                <>
+                  <p className="text-sm font-semibold text-slate-600 tracking-wide mb-2">Результат</p>
+                  <h2 className="text-3xl font-bold text-slate-700 break-words">
+                    Нет победителя
+                  </h2>
+                </>
+              ) : winnerInfo.result === GameResult.DRAW ? (
+                <>
+                  <p className="text-sm font-semibold text-slate-600 tracking-wide mb-2">Результат</p>
+                  <h2 className="text-3xl font-bold text-primary break-words">
+                    Ничья
+                  </h2>
+                  <div className="mt-4 inline-flex items-center justify-center px-4 py-1.5 rounded-full bg-yellow-100 text-yellow-700 font-bold text-lg">
+                    {winnerInfo.winnerScore} {winnerInfo.winnerScore === 1 ? 'балл' : winnerInfo.winnerScore > 1 && winnerInfo.winnerScore < 5 ? 'балла' : 'баллов'} у лидеров
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-semibold text-slate-600 tracking-wide mb-2">Победитель</p>
+                  <h2 className="text-3xl font-bold text-primary break-words">
+                    {winnerInfo.winnerName}
+                  </h2>
+                  <div className="mt-4 inline-flex items-center justify-center px-4 py-1.5 rounded-full bg-yellow-100 text-yellow-700 font-bold text-lg">
+                    {winnerInfo.winnerScore} {winnerInfo.winnerScore === 1 ? 'балл' : winnerInfo.winnerScore > 1 && winnerInfo.winnerScore < 5 ? 'балла' : 'баллов'}
+                  </div>
+                </>
+              )}
             </div>
 
             <Button size="lg" className="mt-8 w-full h-14 text-lg font-bold" onClick={() => navigate('/dashboard')}>
