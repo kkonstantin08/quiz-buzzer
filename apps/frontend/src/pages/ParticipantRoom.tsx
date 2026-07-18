@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Crown } from "lucide-react";
 import { useAriaLive } from "../lib/AriaLiveContext";
 import { isSocketAuthError, useSocketAuthRecovery } from "../realtime/authRecovery";
+import { readParticipantSession, removeParticipantSession, saveParticipantSession } from "../lib/participantSessionStorage";
 
 export function ParticipantRoom() {
   const { roomCode } = useParams<{ roomCode: string }>();
@@ -143,28 +144,23 @@ export function ParticipantRoom() {
 
   useEffect(() => {
     const tryRejoin = () => {
-      const savedSession = localStorage.getItem(`quiz_participant_${roomCode}`);
+      const savedSession = readParticipantSession(roomCode);
       if (savedSession) {
-        try {
-          const { participantId, reconnectToken } = JSON.parse(savedSession);
-          socket.emit(
-            "PARTICIPANT_REJOIN",
-            { roomCode: roomCode || "", participantId, reconnectToken },
-            (res) => {
-              if (res.success && res.room && res.participant) {
-                setRoom(res.room);
-                setName(res.participant.displayName);
-                myParticipantIdRef.current = res.participant.id;
-                setMyParticipantId(res.participant.id);
-              } else {
-                localStorage.removeItem(`quiz_participant_${roomCode}`);
-                setRoom(null);
-              }
-            },
-          );
-        } catch (e) {
-          localStorage.removeItem(`quiz_participant_${roomCode}`);
-        }
+        socket.emit(
+          "PARTICIPANT_REJOIN",
+          { roomCode: roomCode || "", participantId: savedSession.participantId, reconnectToken: savedSession.reconnectToken },
+          (res) => {
+            if (res.success && res.room && res.participant) {
+              setRoom(res.room);
+              setName(res.participant.displayName);
+              myParticipantIdRef.current = res.participant.id;
+              setMyParticipantId(res.participant.id);
+            } else {
+              removeParticipantSession(roomCode);
+              setRoom(null);
+            }
+          },
+        );
       }
     };
 
@@ -173,7 +169,7 @@ export function ParticipantRoom() {
     };
 
     const onDisconnect = () => {
-      const savedSession = localStorage.getItem(`quiz_participant_${roomCode}`);
+      const savedSession = readParticipantSession(roomCode);
       if (!savedSession) {
         setRoom(null);
       }
@@ -216,13 +212,7 @@ export function ParticipantRoom() {
           if (res.participant?.id && res.reconnectToken) {
             myParticipantIdRef.current = res.participant.id;
             setMyParticipantId(res.participant.id);
-            localStorage.setItem(
-              `quiz_participant_${roomCode}`,
-              JSON.stringify({
-                participantId: res.participant.id,
-                reconnectToken: res.reconnectToken,
-              }),
-            );
+            saveParticipantSession(roomCode, res.participant.id, res.reconnectToken, res.room.createdAt);
           }
         } else {
           setError(
@@ -382,13 +372,13 @@ export function ParticipantRoom() {
     };
 
     const onRoomClosed = (data: { reason: string }) => {
-      localStorage.removeItem(`quiz_participant_${roomCodeRef.current}`);
+      removeParticipantSession(roomCodeRef.current);
       setRoomClosedReason(data.reason);
       setRoom(null);
     };
 
     const onControlRevoked = () => {
-      localStorage.removeItem(`quiz_participant_${roomCodeRef.current}`);
+      removeParticipantSession(roomCodeRef.current);
       setRoom(null);
       setError("Вы вошли с другого устройства или вкладки");
       announce(

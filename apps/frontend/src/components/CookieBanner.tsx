@@ -3,25 +3,21 @@ import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Cookie, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { acknowledgeCookieNotice, shouldShowCookieNotice } from '@/lib/cookieNoticeStorage';
 
 export function CookieBanner() {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
-    const consent = localStorage.getItem('cookieConsent');
-    if (!consent) {
+    if (shouldShowCookieNotice()) {
       // Small delay for better UX
       const timer = setTimeout(() => setIsVisible(true), 1000);
       return () => clearTimeout(timer);
     }
   }, []);
 
-  const acceptCookies = () => {
-    localStorage.setItem('cookieConsent', 'true');
-    setIsVisible(false);
-  };
-
-  const closeBanner = () => {
+  const dismissBanner = () => {
+    acknowledgeCookieNotice();
     setIsVisible(false);
   };
 
@@ -36,7 +32,7 @@ export function CookieBanner() {
           className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:max-w-sm z-[100] bg-white text-slate-800 rounded-2xl shadow-xl border border-slate-100 p-5 sm:p-6 flex flex-col gap-4 items-center text-center"
         >
           <button
-            onClick={closeBanner}
+            onClick={dismissBanner}
             className="absolute top-3 right-3 text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1.5 rounded-full transition-colors"
             aria-label="Закрыть"
           >
@@ -56,17 +52,10 @@ export function CookieBanner() {
           </div>
           <div className="flex w-full gap-2 mt-2">
             <Button
-              variant="outline"
-              onClick={closeBanner}
-              className="w-full flex-1 border-slate-200 text-slate-600 hover:bg-slate-50"
+              onClick={dismissBanner}
+              className="w-full shadow-md shadow-primary/20"
             >
-              Закрыть
-            </Button>
-            <Button
-              onClick={acceptCookies}
-              className="w-full flex-1 shadow-md shadow-primary/20"
-            >
-              Принять технические
+              Понятно
             </Button>
           </div>
         </motion.div>

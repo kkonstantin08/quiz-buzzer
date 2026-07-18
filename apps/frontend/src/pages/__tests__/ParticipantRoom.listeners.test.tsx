@@ -70,6 +70,8 @@ describe("ParticipantRoom state listener", () => {
       JSON.stringify({
         participantId: "participant-1",
         reconnectToken: "reconnect-token",
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       }),
     );
 

@@ -51,7 +51,12 @@ describe("ParticipantRoom interactions", () => {
       removeItem: vi.fn((key: string) => storage.delete(key)),
     });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ json: async () => ({}) }));
-    localStorage.setItem("quiz_participant_ABC123", JSON.stringify({ participantId: participant.id, reconnectToken: "token" }));
+    localStorage.setItem("quiz_participant_ABC123", JSON.stringify({
+      participantId: participant.id,
+      reconnectToken: "token",
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    }));
     buzzResult = { success: true, status: "accepted" };
     mockSocket.connected = true;
     mockSocket.on.mockImplementation((event: string, handler: (payload?: unknown) => void) => {
@@ -246,5 +251,39 @@ describe("ParticipantRoom interactions", () => {
     expect(localStorage.getItem("quiz_participant_ABC123")).toBeNull();
     expect(await screen.findByRole("alert")).toHaveTextContent("другого устройства или вкладки");
     expect(screen.queryByRole("button", { name: "Игровой пульт (Buzzer)" })).not.toBeInTheDocument();
+  });
+
+  it("removes an expired reconnect record instead of using it for rejoin", async () => {
+    storage.set("quiz_participant_ABC123", JSON.stringify({
+      participantId: participant.id,
+      reconnectToken: "token",
+      createdAt: "2026-07-17T00:00:00.000Z",
+      expiresAt: "2026-07-18T00:00:00.000Z",
+    }));
+
+    renderRoom();
+
+    await waitFor(() => expect(localStorage.getItem("quiz_participant_ABC123")).toBeNull());
+    expect(mockSocket.emit.mock.calls.filter(([event]) => event === "PARTICIPANT_REJOIN")).toHaveLength(0);
+  });
+
+  it("removes the reconnect record after a rejected rejoin", async () => {
+    mockSocket.emit.mockImplementation((event: string, _data: unknown, callback?: (result: unknown) => void) => {
+      if (event === "PARTICIPANT_REJOIN") callback?.({ success: false, error: "Недействительный токен" });
+      return mockSocket;
+    });
+
+    renderRoom();
+
+    await waitFor(() => expect(localStorage.getItem("quiz_participant_ABC123")).toBeNull());
+  });
+
+  it("removes the reconnect record when the room closes", async () => {
+    renderRoom();
+    await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" });
+
+    act(() => handlers.get("ROOM_CLOSED")?.({ reason: "время комнаты истекло" }));
+
+    expect(localStorage.getItem("quiz_participant_ABC123")).toBeNull();
   });
 });
