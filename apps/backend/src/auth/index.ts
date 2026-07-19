@@ -35,6 +35,7 @@ export const createRegisterLimiter = () => rateLimit({
   legacyHeaders: false,
 });
 
+// Current deployment has one backend process; use a shared rate-limit store before horizontal scaling.
 export const createPasswordVerificationLimiter = () => rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
