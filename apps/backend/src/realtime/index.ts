@@ -192,6 +192,13 @@ export function setupSocketIO(io: RealtimeServer) {
     }
   });
 
+  appEvents.on('host_sessions_revoked', (sessionIds) => {
+    const revokedSessionIds = new Set(sessionIds);
+    for (const socket of io.sockets.sockets.values()) {
+      if (socket.data.sessionId && revokedSessionIds.has(socket.data.sessionId)) socket.disconnect(true);
+    }
+  });
+
   io.on('connection', (socket: RealtimeSocket) => {
 
     // Time Sync

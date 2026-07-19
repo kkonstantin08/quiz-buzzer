@@ -17,6 +17,9 @@ const translateError = (errorMsg: string) => {
   if (errorMsg === 'Registration failed') return 'Ошибка регистрации';
   if (errorMsg === 'Invalid credentials') return 'Неверный email или пароль';
   if (errorMsg === 'Email already in use') return 'Этот email уже зарегистрирован';
+  if (errorMsg === 'Unable to update email') return 'Не удалось изменить email. Проверьте текущий пароль.';
+  if (errorMsg === 'Invalid password change') return 'Не удалось изменить пароль';
+  if (errorMsg === 'Too many password attempts, please try again after 15 minutes') return 'Слишком много попыток. Попробуйте позже.';
   if (errorMsg === 'Failed to fetch') return 'Сервер недоступен. Пожалуйста, проверьте подключение к интернету или попробуйте позже.';
   if (errorMsg === 'Failed to activate') return 'Ошибка активации. Пожалуйста, попробуйте позже.';
   return errorMsg;
@@ -110,7 +113,7 @@ export const api = {
     return res.json();
   },
 
-  async updateProfile(data: { name?: string, email?: string }) {
+  async updateProfile(data: { name?: string, email?: string, currentPassword?: string }) {
     const res = await customFetch(`${API_URL}/auth/me`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -122,6 +125,23 @@ export const api = {
         const error = await res.json();
         errorMsg = error.error || errorMsg;
       } catch (e) {}
+      throw new Error(translateError(errorMsg));
+    }
+    return res.json();
+  },
+
+  async changePassword(data: { currentPassword: string, newPassword: string }) {
+    const res = await customFetch(`${API_URL}/auth/change-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      let errorMsg = 'Failed to change password';
+      try {
+        const error = await res.json();
+        errorMsg = error.error || errorMsg;
+      } catch {}
       throw new Error(translateError(errorMsg));
     }
     return res.json();
