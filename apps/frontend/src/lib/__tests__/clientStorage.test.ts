@@ -13,7 +13,7 @@ describe("client storage", () => {
     vi.useRealTimers();
   });
 
-  it("writes the current cookie acknowledgement with an ISO timestamp and clears the legacy key", () => {
+  it("writes current cookie category preferences with an ISO timestamp and clears the legacy key", () => {
     localStorage.setItem("cookieConsent", "true");
 
     acknowledgeCookieNotice();
@@ -21,7 +21,8 @@ describe("client storage", () => {
     expect(localStorage.getItem("cookieConsent")).toBeNull();
     expect(JSON.parse(localStorage.getItem(COOKIE_NOTICE_STORAGE_KEY)!)).toEqual({
       noticeVersion: "1.0",
-      acknowledgedAt: "2026-07-18T12:00:00.000Z",
+      decidedAt: "2026-07-18T12:00:00.000Z",
+      categories: { necessary: true, analytics: false },
     });
     expect(shouldShowCookieNotice()).toBe(false);
   });

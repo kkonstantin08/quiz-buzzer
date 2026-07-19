@@ -18,6 +18,7 @@ const prefix = `profile-security-${Date.now()}`;
 const password = 'password123';
 const userIds = new Set<string>();
 let requestNumber = 1;
+const originalRegistrationEnabled = process.env.REGISTRATION_ENABLED;
 
 function post(path: string) {
   return request(app).post(path).set('X-Forwarded-For', `198.51.100.${requestNumber++}`);
@@ -95,10 +96,16 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
+  if (originalRegistrationEnabled === undefined) delete process.env.REGISTRATION_ENABLED;
+  else process.env.REGISTRATION_ENABLED = originalRegistrationEnabled;
   await prisma.$disconnect();
 });
 
 describe('profile security', () => {
+  beforeEach(() => {
+    process.env.REGISTRATION_ENABLED = 'true';
+  });
+
   it('stores a trimmed lowercase email at registration and logs in with different casing', async () => {
     const rawEmail = `  ${email('registered').toUpperCase()}  `;
     const canonicalEmail = email('registered');
@@ -108,6 +115,8 @@ describe('profile security', () => {
       password,
       termsAccepted: true,
       displayedTermsVersion: legalBackendConfig.versions[LegalDocumentType.TERMS],
+      personalDataConsentAccepted: true,
+      displayedPersonalDataConsentVersion: '1.0',
     });
 
     expect(registration.status).toBe(200);
@@ -124,6 +133,8 @@ describe('profile security', () => {
       password,
       termsAccepted: true,
       displayedTermsVersion: legalBackendConfig.versions[LegalDocumentType.TERMS],
+      personalDataConsentAccepted: true,
+      displayedPersonalDataConsentVersion: '1.0',
     };
 
     const responses = await Promise.all([
@@ -171,6 +182,8 @@ describe('profile security', () => {
       password,
       termsAccepted: true,
       displayedTermsVersion: legalBackendConfig.versions[LegalDocumentType.TERMS],
+      personalDataConsentAccepted: true,
+      displayedPersonalDataConsentVersion: '1.0',
     }).expect(400);
     await put('/auth/me').set('Cookie', hostCookie(login)).send({ email: legacyEmail.toUpperCase(), currentPassword: password }).expect(400);
   });
@@ -324,7 +337,7 @@ describe('profile security', () => {
   });
 
   it.each([
-    { label: 'registration', path: '/auth/register', payload: { password, termsAccepted: true, displayedTermsVersion: legalBackendConfig.versions[LegalDocumentType.TERMS] } },
+    { label: 'registration', path: '/auth/register', payload: { password, termsAccepted: true, displayedTermsVersion: legalBackendConfig.versions[LegalDocumentType.TERMS], personalDataConsentAccepted: true, displayedPersonalDataConsentVersion: '1.0' } },
     { label: 'login', path: '/auth/login', payload: { password } },
   ])('rejects non-string, invalid, and overlong email at $label', async ({ path, payload }) => {
     for (const invalidEmail of [{ address: email('object') }, 'missing-at-sign', `${'a'.repeat(250)}@example.com`]) {

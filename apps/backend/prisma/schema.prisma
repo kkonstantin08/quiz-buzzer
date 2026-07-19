@@ -83,7 +83,7 @@ model GameHistory {
 model LegalAcceptance {
   id               String                @id @default(uuid())
   hostUserId       String
-  documentType     String                // TERMS, OFFER, RECURRING_PAYMENT, MARKETING, PRIVACY_ACKNOWLEDGEMENT
+  documentType     String                // TERMS, OFFER, RECURRING_PAYMENT, MARKETING, PRIVACY_ACKNOWLEDGEMENT, PERSONAL_DATA_CONSENT
   documentVersion  String
   acceptanceSource String                // REGISTRATION, CHECKOUT, ACCOUNT_SETTINGS, DOCUMENT_UPDATE
   ipAddress        String?

@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Target, Rocket, QrCode, Crown } from 'lucide-react';
+import { ArrowRight, Target, Rocket, QrCode, Crown } from 'lucide-react';
 import { Footer } from '../components/Footer';
 
 const LogoIcon = () => (
@@ -52,6 +52,10 @@ export function LandingPage() {
               </Button>
             </Link>
           </div>
+          <Link to="/tariff" className="inline-flex items-center gap-1 text-sm font-semibold text-slate-600 hover:text-primary transition-colors">
+            Доступ ведущего: 500 ₽ / 30 дней
+            <ArrowRight size={16} />
+          </Link>
 
           <div className="pt-4 lg:pt-8 grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-2xl mx-auto lg:mx-0">
             {/* Card 1 */}

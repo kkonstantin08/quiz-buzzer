@@ -16,7 +16,7 @@ describe('HostAuth - Legal Acceptance', () => {
     vi.clearAllMocks();
   });
 
-  it('requires accepting terms during registration', async () => {
+  it('requires separate acceptance of terms and personal data consent during registration', async () => {
     render(
       <BrowserRouter>
         <HostAuth />
@@ -36,17 +36,18 @@ describe('HostAuth - Legal Acceptance', () => {
     fireEvent.change(passwordInput, { target: { value: 'password123' } });
     fireEvent.change(confirmPasswordInput, { target: { value: 'password123' } });
 
-    // Terms checkbox should be present
-    const termsCheckbox = screen.getByRole('checkbox', { name: /Я принимаю/i });
+    const termsCheckbox = screen.getByRole('checkbox', { name: /Пользовательское соглашение/i });
+    const personalDataConsentCheckbox = screen.getByRole('checkbox', { name: /Даю отдельное согласие/i });
+    const { api } = await import('../../services/api');
     expect(termsCheckbox).toBeInTheDocument();
     expect(termsCheckbox).not.toBeChecked();
+    expect(personalDataConsentCheckbox).not.toBeChecked();
 
     // Click register without accepting
     fireEvent.click(submitBtn);
 
     // Expect an error toast or similar indicating terms must be accepted
     // Check if the mock wasn't called
-    const { api } = await import('../../services/api');
     expect(api.register).not.toHaveBeenCalled();
 
     // Now accept terms
@@ -54,11 +55,36 @@ describe('HostAuth - Legal Acceptance', () => {
     expect(termsCheckbox).toBeChecked();
 
     fireEvent.click(submitBtn);
+    expect(api.register).not.toHaveBeenCalled();
 
-    // Should call register
+    fireEvent.click(personalDataConsentCheckbox);
+    expect(personalDataConsentCheckbox).toBeChecked();
+
+    fireEvent.click(submitBtn);
+
     await waitFor(() => {
-      expect(api.register).toHaveBeenCalled();
+      expect(api.register).toHaveBeenCalledWith('test@example.com', 'password123', {
+        termsAccepted: true,
+        displayedTermsVersion: '1.0',
+        personalDataConsentAccepted: true,
+        displayedPersonalDataConsentVersion: '1.0',
+      });
     });
+  });
+
+  it('keeps both registration checkboxes at the same fixed size', () => {
+    render(
+      <BrowserRouter>
+        <HostAuth defaultIsLogin={false} />
+      </BrowserRouter>
+    );
+
+    for (const checkbox of [
+      screen.getByRole('checkbox', { name: /Пользовательское соглашение/i }),
+      screen.getByRole('checkbox', { name: /Даю отдельное согласие/i }),
+    ]) {
+      expect(checkbox).toHaveClass('h-4', 'w-4', 'shrink-0');
+    }
   });
 
   it('does not require terms for login', async () => {
@@ -108,7 +134,8 @@ describe('HostAuth - Legal Acceptance', () => {
     fireEvent.change(screen.getByLabelText('Повторите пароль'), { target: { value: 'password123' } });
     
     // Accept terms
-    fireEvent.click(screen.getByRole('checkbox', { name: /Я принимаю/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Пользовательское соглашение/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Даю отдельное согласие/i }));
     
     // Submit
     fireEvent.click(screen.getByRole('button', { name: /Зарегистрироваться/i }));
@@ -135,7 +162,8 @@ describe('HostAuth - Legal Acceptance', () => {
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'test@example.com' } });
     fireEvent.change(screen.getByLabelText('Пароль'), { target: { value: 'password123' } });
     fireEvent.change(screen.getByLabelText('Повторите пароль'), { target: { value: 'password123' } });
-    fireEvent.click(screen.getByRole('checkbox', { name: /Я принимаю/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Пользовательское соглашение/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Даю отдельное согласие/i }));
     fireEvent.click(screen.getByRole('button', { name: /Зарегистрироваться/i }));
 
     await waitFor(() => {

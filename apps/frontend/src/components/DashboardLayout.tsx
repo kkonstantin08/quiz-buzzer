@@ -162,7 +162,7 @@ export function DashboardLayout({
   return (
     <Dialog open={isProfileOpen} onOpenChange={(open) => { setIsProfileOpen(open); if (!open) clearPasswords(); }}>
       <div className="flex min-h-[100dvh] bg-slate-50">
-      {!hasSubscription && <BillingModal onActivated={onActivated || (() => {})} />}
+      {!hasSubscription && <BillingModal onActivated={onActivated} />}
 
       {/* Sidebar (Desktop) */}
       <aside className="w-64 bg-white border-r border-slate-200 flex-col hidden md:flex shrink-0">

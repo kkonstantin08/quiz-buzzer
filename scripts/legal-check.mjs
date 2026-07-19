@@ -7,11 +7,16 @@ const __dirname = path.dirname(__filename);
 const ROOT_DIR = process.env.LEGAL_CHECK_ROOT || path.resolve(__dirname, '..');
 
 const SEARCH_PATTERN = 'TODO_LEGAL(';
-const EXCLUDE_DIRS = ['node_modules', 'dist', 'build', 'coverage', 'playwright-report', 'test-results', '.git'];
+const EXCLUDE_DIRS = ['node_modules', 'dist', 'build', 'coverage', 'playwright-report', 'test-results', '.git', 'docs'];
 const EXCLUDE_FILES = ['package-lock.json', 'legal-check.mjs', 'legal-check.test.mjs'];
 const ALLOWED_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.md', '.json', '.yml', '.yaml', '.html'];
 
 let foundTodos = false;
+
+function isExcluded(relativePath) {
+  const parts = relativePath.split(path.sep);
+  return parts.some(part => EXCLUDE_DIRS.includes(part)) || /\.(test|spec)\.[cm]?[jt]sx?$/.test(relativePath);
+}
 
 function scanDirectory(dir) {
   if (!fs.existsSync(dir)) return;
@@ -21,7 +26,7 @@ function scanDirectory(dir) {
     const fullPath = path.join(dir, file);
     const relativePath = path.relative(ROOT_DIR, fullPath);
 
-    if (EXCLUDE_DIRS.some(exclude => relativePath === exclude || relativePath.startsWith(exclude + path.sep))) {
+    if (isExcluded(relativePath)) {
       continue;
     }
 

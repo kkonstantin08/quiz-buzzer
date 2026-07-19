@@ -11,6 +11,7 @@ if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
 const defaultCors = [
   'http://localhost:5173',
   'http://localhost:4173',
+  'http://127.0.0.1:5173',
   /^http:\/\/10\.\d+\.\d+\.\d+:\d+$/,
   /^http:\/\/192\.168\.\d+\.\d+:\d+$/,
   /^http:\/\/198\.18\.\d+\.\d+:\d+$/,

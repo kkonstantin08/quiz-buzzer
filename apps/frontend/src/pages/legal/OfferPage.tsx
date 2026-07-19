@@ -1,68 +1,7 @@
 import React from 'react';
 import { legalConfig } from '../../config/legal';
-import { LegalDraftNotice } from '../../components/LegalDraftNotice';
-import { LegalTodo } from '../../components/LegalTodo';
+import { LegalDocumentPage } from './LegalDocumentPage';
 
 export function OfferPage() {
-  return (
-    <>
-      <LegalDraftNotice />
-      <h1>Публичная оферта на оказание услуг</h1>
-      <p className="text-sm text-slate-500 mb-8">Версия: {legalConfig.versions.offer}. Дата: {legalConfig.dates.offer}</p>
-      
-      <h2>1. Статус оферты</h2>
-      <LegalTodo id="section" description="подтвердить статус публичной оферты согласно ст. 437 ГК РФ, указать, для кого она предназначена" />
-
-      <h2>2. Термины и определения</h2>
-      <LegalTodo id="section" description="определить термины: Оферта, Акцепт, Заказчик/Исполнитель, Платформа, Тариф" />
-
-      <h2>3. Предмет договора</h2>
-      <LegalTodo id="section" description="описать, что Исполнитель предоставляет доступ к SaaS-платформе за плату" />
-
-      <h2>4. Порядок акцепта</h2>
-      <LegalTodo id="section" description="закрепить, что оплата или нажатие кнопки «Оплатить» является полным и безоговорочным акцептом" />
-
-      <h2>5. Регистрация</h2>
-      <LegalTodo id="section" description="ссылка на Пользовательское соглашение в части правил создания аккаунта" />
-
-      <h2>6. Описание услуги</h2>
-      <LegalTodo id="section" description="подробное описание: создание виртуальных комнат для квизов, подключение участников по коду" />
-
-      <h2>7. Стоимость</h2>
-      <LegalTodo id="section" description="сослаться на страницу тарифов, указать НДС или применение УСН" />
-
-      <h2>8. Порядок оплаты</h2>
-      <LegalTodo id="section" description="описать работу с ЮKassa, способы оплаты, момент признания обязательств исполненными" />
-
-      <h2>9. Пробный период</h2>
-      <LegalTodo id="section" description="описать условия предоставления бесплатного триала на 30 дней, единоразовость триала" />
-
-      <h2>10. Срок доступа</h2>
-      <LegalTodo id="section" description="подтвердить расчётный период: 30 дней или календарный месяц" />
-
-      <h2>11. Права и обязанности</h2>
-      <LegalTodo id="section" description="описать обязанность Исполнителя поддерживать доступность, обязанность Заказчика вовремя платить" />
-
-      <h2>12. Ограничения</h2>
-      <LegalTodo id="section" description="указать лимиты на количество участников в комнате, недопустимость перепродажи" />
-
-      <h2>13. Ответственность</h2>
-      <LegalTodo id="section" description="ограничить ответственность Исполнителя суммой оплаченного тарифа, отказ от гарантий бесперебойности" />
-
-      <h2>14. Отказ от услуги</h2>
-      <LegalTodo id="section" description="описать порядок расторжения договора по инициативе Заказчика" />
-
-      <h2>15. Возвраты</h2>
-      <LegalTodo id="section" description="сделать ссылку на Политику возвратов, описать общие принципы" />
-
-      <h2>16. Претензионный порядок</h2>
-      <LegalTodo id="section" description="установить обязательный досудебный порядок, срок ответа на претензию - например, 10 или 30 дней" />
-
-      <h2>17. Изменение оферты</h2>
-      <LegalTodo id="section" description="право Исполнителя изменять текст в одностороннем порядке, срок публикации новой редакции" />
-
-      <h2>18. Реквизиты Исполнителя</h2>
-      <LegalTodo id="section" description="вписать полные реквизиты: ИНН, ОГРНИП, банк, р/с, к/с, БИК, юридический адрес ИП" />
-    </>
-  );
+  return <LegalDocumentPage document={legalConfig.documents.offer} />;
 }

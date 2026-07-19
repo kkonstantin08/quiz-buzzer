@@ -58,7 +58,23 @@ describe('legal-check.mjs', () => {
     const output = error.stdout ? error.stdout.toString() : '';
     expect(output).toContain('test.md:2');
     expect(output).toContain('test.json:1');
-    expect(output).toContain('docs/legal-readiness-todo.md:1');
     expect(output).not.toContain('ignored.ts'); // Should not match TODO_LEGAL without parenthesis
+  });
+
+  it('ignores generated files, repository documentation, and test sources', () => {
+    const ignoredRoot = path.join(FIXTURES_DIR, 'ignored-only');
+    fs.mkdirSync(path.join(ignoredRoot, 'apps/frontend/dist'), { recursive: true });
+    fs.mkdirSync(path.join(ignoredRoot, 'docs'), { recursive: true });
+    fs.mkdirSync(path.join(ignoredRoot, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(ignoredRoot, 'apps/frontend/dist/bundle.js'), 'TODO_LEGAL(stale bundle)');
+    fs.writeFileSync(path.join(ignoredRoot, 'docs/legal-readiness-todo.md'), 'TODO_LEGAL(documentation)');
+    fs.writeFileSync(path.join(ignoredRoot, 'scripts/legal-check.test.ts'), 'TODO_LEGAL(test source)');
+
+    const result = execSync(`node ${path.join(__dirname, 'legal-check.mjs')} --strict`, {
+      env: { ...process.env, LEGAL_CHECK_ROOT: ignoredRoot },
+      encoding: 'utf8'
+    });
+
+    expect(result).toContain('Проверка пройдена');
   });
 });

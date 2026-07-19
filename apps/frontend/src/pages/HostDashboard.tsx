@@ -94,7 +94,7 @@ export function HostDashboard() {
       subscriptionEndDate={subscriptionEndDate}
       onLogout={handleLogout}
       onCreateRoom={handleCreateRoom}
-      onActivated={() => checkAuth()}
+      onActivated={checkAuth}
       onProfileUpdated={(newName, newEmail, newAvatar) => {
         if (newName !== undefined) setName(newName);
         if (newEmail !== undefined) setEmail(newEmail);

@@ -1,14 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { Rocket, Zap, Users, Crown, Sparkles, Loader2 } from 'lucide-react';
+import { Rocket, Zap, Users, Crown, Sparkles } from 'lucide-react';
 import { api } from '../services/api';
 
-export function BillingModal({ onActivated }: { onActivated: () => void }) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+export function BillingModal({ onActivated }: { onActivated?: () => void }) {
   const [billingStatus, setBillingStatus] = useState<{ checkoutAvailable: boolean; loading: boolean }>({ checkoutAvailable: false, loading: true });
+  const [isActivating, setIsActivating] = useState(false);
 
   useEffect(() => {
     api.getBillingStatus()
@@ -20,23 +19,10 @@ export function BillingModal({ onActivated }: { onActivated: () => void }) {
       });
   }, []);
 
-  const handleFreeActivation = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      await api.activateFreeTrial();
-      onActivated();
-    } catch (err: any) {
-      setError(err.message || 'Ошибка активации');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleCheckout = async () => {
     if (!billingStatus.checkoutAvailable) {
       toast.info('Оплата временно недоступна', {
-        description: <span className="text-slate-600">В настоящее время прием платежей отключен. Пожалуйста, воспользуйтесь бесплатной активацией.</span>
+        description: <span className="text-slate-600">В настоящее время прием платежей отключен.</span>
       });
       return;
     }
@@ -45,6 +31,19 @@ export function BillingModal({ onActivated }: { onActivated: () => void }) {
       await api.checkout();
     } catch (err: any) {
       toast.error(err.message || 'Ошибка инициализации оплаты');
+    }
+  };
+
+  const handleFreeActivation = async () => {
+    try {
+      setIsActivating(true);
+      await api.activateFreeTrial();
+      toast.success('Доступ активирован на 30 дней');
+      onActivated?.();
+    } catch (err: any) {
+      toast.error(err.message || 'Ошибка активации');
+    } finally {
+      setIsActivating(false);
     }
   };
 
@@ -73,12 +72,6 @@ export function BillingModal({ onActivated }: { onActivated: () => void }) {
         
         <div className="overflow-y-auto sm:overflow-visible flex-1 custom-scrollbar">
           <CardContent className="p-6 pt-0">
-            {error && (
-              <div className="text-red-500 text-sm text-left bg-red-50 p-3 rounded-lg font-medium border border-red-100 animate-in slide-in-from-top-2 mb-4">
-                {error}
-              </div>
-            )}
-            
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
               {/* Left Column: Features Grid */}
               <div className="space-y-2">
@@ -128,46 +121,33 @@ export function BillingModal({ onActivated }: { onActivated: () => void }) {
                       Полный доступ
                     </div>
                     <div className="flex items-end justify-center gap-1 mb-1">
-                      <span className="text-4xl font-black tracking-tight">990 ₽</span>
-                      <span className="text-lg text-slate-500 font-medium mb-1">/ месяц</span>
+                      <span className="text-4xl font-black tracking-tight">500 ₽</span>
+                      <span className="text-lg text-slate-500 font-medium mb-1">/ 30 дней</span>
                     </div>
                     <p className="text-xs text-slate-500">
-                      {import.meta.env.DEV ? 'TODO_LEGAL(Условия тарифа уточняются)' : 'Условия тарифа уточняются'}
+                      Без автоматического продления
                     </p>
                   </div>
                 </div>
 
                 {/* Action Buttons */}
                 <div className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both" style={{ animationDelay: '600ms' }}>
+                  <Button
+                    className="w-full h-14 text-lg font-bold bg-violet-600 hover:bg-violet-500 text-white shadow-xl shadow-violet-500/30"
+                    onClick={handleFreeActivation}
+                    disabled={isActivating}
+                  >
+                    {isActivating ? 'Активация...' : 'Активировать бесплатно на 30 дней'}
+                  </Button>
                   <Button 
                     className={`w-full h-14 text-lg font-bold text-white shadow-xl border-0 transition-all ${billingStatus.checkoutAvailable ? 'bg-gradient-to-r from-violet-600 hover:from-violet-500 to-fuchsia-600 hover:to-fuchsia-500 shadow-violet-500/30 hover:shadow-violet-500/50 hover:-translate-y-0.5' : 'bg-slate-400 cursor-not-allowed shadow-none'}`}
                     onClick={handleCheckout}
                     disabled={billingStatus.loading || !billingStatus.checkoutAvailable}
                     aria-disabled={billingStatus.loading || !billingStatus.checkoutAvailable}
                   >
-                    {billingStatus.loading ? 'Проверка...' : billingStatus.checkoutAvailable ? 'Оплатить подписку (ЮKassa)' : 'Оплата временно недоступна'}
+                    {billingStatus.loading ? 'Проверка...' : billingStatus.checkoutAvailable ? 'Оплатить подписку' : 'Оплата временно недоступна'}
                   </Button>
                   
-                  <div className="relative w-full text-center py-1">
-                    <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200"></div></div>
-                    <span className="relative bg-white px-4 text-xs text-slate-600 font-semibold tracking-wide">или попробовать</span>
-                  </div>
-                  
-                  <Button 
-                    variant="outline" 
-                    className="w-full h-12 text-sm font-semibold text-slate-600 border-2 border-slate-200 hover:border-violet-300 hover:text-violet-700 hover:bg-violet-50 transition-all"
-                    onClick={handleFreeActivation}
-                    disabled={loading}
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Активация...
-                      </>
-                    ) : (
-                      'Активировать бесплатно на 30 дней'
-                    )}
-                  </Button>
                 </div>
               </div>
             </div>

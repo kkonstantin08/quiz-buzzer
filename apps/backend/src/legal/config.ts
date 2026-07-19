@@ -3,7 +3,8 @@ export enum LegalDocumentType {
   OFFER = 'OFFER',
   RECURRING_PAYMENT = 'RECURRING_PAYMENT',
   MARKETING = 'MARKETING',
-  PRIVACY_ACKNOWLEDGEMENT = 'PRIVACY_ACKNOWLEDGEMENT'
+  PRIVACY_ACKNOWLEDGEMENT = 'PRIVACY_ACKNOWLEDGEMENT',
+  PERSONAL_DATA_CONSENT = 'PERSONAL_DATA_CONSENT'
 }
 
 export enum LegalAcceptanceSource {
@@ -20,5 +21,6 @@ export const legalBackendConfig = {
     [LegalDocumentType.RECURRING_PAYMENT]: '1.0',
     [LegalDocumentType.MARKETING]: '1.0',
     [LegalDocumentType.PRIVACY_ACKNOWLEDGEMENT]: '1.0',
+    [LegalDocumentType.PERSONAL_DATA_CONSENT]: '1.0',
   }
 };
