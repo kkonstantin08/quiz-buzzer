@@ -54,6 +54,23 @@ function sessionIdFromCookie(cookie: string) {
   return decoded.sessionId;
 }
 
+function compareBarrier(count: number) {
+  let arrived = 0;
+  let ready!: () => void;
+  let release!: () => void;
+  const allArrived = new Promise<void>((resolve) => { ready = resolve; });
+  const continueComparisons = new Promise<void>((resolve) => { release = resolve; });
+  return {
+    async wait() {
+      arrived += 1;
+      if (arrived === count) ready();
+      await continueComparisons;
+    },
+    allArrived,
+    release,
+  };
+}
+
 async function createUser(userEmail: string, userPassword = password) {
   const user = await prisma.hostUser.create({
     data: { email: userEmail, passwordHash: await bcrypt.hash(userPassword, 10) },
@@ -126,6 +143,184 @@ describe('profile security', () => {
     await post('/auth/login')
       .send({ email: ` ${legacyEmail.toLowerCase()} `, password })
       .expect(200);
+  });
+
+  it('uses an exact legacy email match and fails closed for an ambiguous fallback', async () => {
+    const firstEmail = `${prefix}-User@Example.com`;
+    const secondEmail = `${prefix}-user@example.com`;
+    await createUser(firstEmail, 'first-password123');
+    await createUser(secondEmail, 'second-password123');
+    const warning = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await post('/auth/login').send({ email: firstEmail, password: 'first-password123' }).expect(200);
+    await post('/auth/login').send({ email: secondEmail, password: 'second-password123' }).expect(200);
+    await post('/auth/login').send({ email: `${prefix}-USER@example.com`, password: 'first-password123' }).expect(401);
+
+    expect(warning).toHaveBeenCalledWith(JSON.stringify({ event: 'ambiguous_legacy_email', matchCount: 2 }));
+  });
+
+  it('rejects registration and email changes to an ambiguous legacy canonical email', async () => {
+    const legacyEmail = `${prefix}-User@Example.com`;
+    await createUser(legacyEmail);
+    await createUser(legacyEmail.toLowerCase());
+    const source = await createUser(email('ambiguous-email-source'));
+    const login = await post('/auth/login').send({ email: source.email, password }).expect(200);
+
+    await post('/auth/register').send({
+      email: legacyEmail.toUpperCase(),
+      password,
+      termsAccepted: true,
+      displayedTermsVersion: legalBackendConfig.versions[LegalDocumentType.TERMS],
+    }).expect(400);
+    await put('/auth/me').set('Cookie', hostCookie(login)).send({ email: legacyEmail.toUpperCase(), currentPassword: password }).expect(400);
+  });
+
+  it('does not create a session when the verified login hash changes before session creation', async () => {
+    const user = await createUser(email('login-race'));
+    const compare = bcrypt.compare.bind(bcrypt);
+    jest.spyOn(bcrypt, 'compare').mockImplementationOnce(async (candidate, hash) => {
+      const result = await compare(candidate, hash);
+      await prisma.hostUser.update({ where: { id: user.id }, data: { passwordHash: await bcrypt.hash('changed-password123', 10) } });
+      return result;
+    });
+
+    await post('/auth/login').send({ email: user.email, password }).expect(401);
+    await expect(prisma.session.count({ where: { userId: user.id, revokedAt: null } })).resolves.toBe(0);
+  });
+
+  it('does not update email when the current session is revoked after password verification', async () => {
+    const user = await createUser(email('email-session-race'));
+    const login = await post('/auth/login').send({ email: user.email, password }).expect(200);
+    const cookie = hostCookie(login);
+    const compare = bcrypt.compare.bind(bcrypt);
+    jest.spyOn(bcrypt, 'compare').mockImplementationOnce(async (candidate, hash) => {
+      const result = await compare(candidate, hash);
+      await prisma.session.update({ where: { id: sessionIdFromCookie(cookie) }, data: { revokedAt: new Date() } });
+      return result;
+    });
+
+    await put('/auth/me').set('Cookie', cookie).send({ email: email('email-session-race-new'), currentPassword: password }).expect(400);
+    await expect(prisma.hostUser.findUnique({ where: { id: user.id } })).resolves.toMatchObject({ email: user.email });
+  });
+
+  it('does not update the password when the verified hash changes before its transaction', async () => {
+    const user = await createUser(email('password-hash-race'));
+    const login = await post('/auth/login').send({ email: user.email, password }).expect(200);
+    const cookie = hostCookie(login);
+    const replacementPassword = 'replacement-password123';
+    const compare = bcrypt.compare.bind(bcrypt);
+    jest.spyOn(bcrypt, 'compare').mockImplementationOnce(async (candidate, hash) => {
+      const result = await compare(candidate, hash);
+      await prisma.hostUser.update({ where: { id: user.id }, data: { passwordHash: await bcrypt.hash(replacementPassword, 10) } });
+      return result;
+    });
+
+    await post('/auth/change-password').set('Cookie', cookie).send({ currentPassword: password, newPassword: 'new-password123' }).expect(400);
+    const changedUser = await prisma.hostUser.findUniqueOrThrow({ where: { id: user.id } });
+    await expect(bcrypt.compare(replacementPassword, changedUser.passwordHash)).resolves.toBe(true);
+  });
+
+  it('does not update the password or revoke other sessions after the current session is revoked', async () => {
+    const user = await createUser(email('password-session-race'));
+    const currentLogin = await post('/auth/login').send({ email: user.email, password }).expect(200);
+    const otherLogin = await post('/auth/login').send({ email: user.email, password }).expect(200);
+    const currentCookie = hostCookie(currentLogin);
+    const compare = bcrypt.compare.bind(bcrypt);
+    jest.spyOn(bcrypt, 'compare').mockImplementationOnce(async (candidate, hash) => {
+      const result = await compare(candidate, hash);
+      await prisma.session.update({ where: { id: sessionIdFromCookie(currentCookie) }, data: { revokedAt: new Date() } });
+      return result;
+    });
+
+    await post('/auth/change-password').set('Cookie', currentCookie).send({ currentPassword: password, newPassword: 'new-password123' }).expect(400);
+    await post('/auth/login').send({ email: user.email, password }).expect(200);
+    await request(app).get('/auth/me').set('Cookie', hostCookie(otherLogin)).expect(200);
+  });
+
+  it('allows only one of two concurrent password changes verified against the same hash', async () => {
+    const user = await createUser(email('parallel-password'));
+    const login = await post('/auth/login').send({ email: user.email, password }).expect(200);
+    const cookie = hostCookie(login);
+    const barrier = compareBarrier(2);
+    const compare = bcrypt.compare.bind(bcrypt);
+    jest.spyOn(bcrypt, 'compare').mockImplementation(async (candidate, hash) => {
+      const result = await compare(candidate, hash);
+      if (candidate === password && result) await barrier.wait();
+      return result;
+    });
+
+    const first = post('/auth/change-password').set('Cookie', cookie).send({ currentPassword: password, newPassword: 'first-password123' }).then((response) => response);
+    const second = post('/auth/change-password').set('Cookie', cookie).send({ currentPassword: password, newPassword: 'second-password123' }).then((response) => response);
+    await barrier.allArrived;
+    barrier.release();
+    const responses = await Promise.all([first, second]);
+
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 400]);
+    const changedUser = await prisma.hostUser.findUniqueOrThrow({ where: { id: user.id } });
+    const matches = await Promise.all([
+      bcrypt.compare('first-password123', changedUser.passwordHash),
+      bcrypt.compare('second-password123', changedUser.passwordHash),
+    ]);
+    expect(matches.filter(Boolean)).toHaveLength(1);
+  });
+
+  it('leaves email and password in a consistent state when both are verified concurrently', async () => {
+    const user = await createUser(email('email-password-race'));
+    const login = await post('/auth/login').send({ email: user.email, password }).expect(200);
+    const cookie = hostCookie(login);
+    const newEmail = email('email-password-race-new');
+    const newPassword = 'new-password123';
+    const barrier = compareBarrier(2);
+    const compare = bcrypt.compare.bind(bcrypt);
+    jest.spyOn(bcrypt, 'compare').mockImplementation(async (candidate, hash) => {
+      const result = await compare(candidate, hash);
+      if (candidate === password && result) await barrier.wait();
+      return result;
+    });
+
+    const emailChange = put('/auth/me').set('Cookie', cookie).send({ email: newEmail, currentPassword: password }).then((response) => response);
+    const passwordChange = post('/auth/change-password').set('Cookie', cookie).send({ currentPassword: password, newPassword }).then((response) => response);
+    await barrier.allArrived;
+    barrier.release();
+    const [emailResponse, passwordResponse] = await Promise.all([emailChange, passwordChange]);
+
+    expect([200, 400]).toContain(emailResponse.status);
+    expect([200, 400]).toContain(passwordResponse.status);
+    expect(emailResponse.status === 200 || passwordResponse.status === 200).toBe(true);
+    const changedUser = await prisma.hostUser.findUniqueOrThrow({ where: { id: user.id } });
+    expect(changedUser.email).toBe(emailResponse.status === 200 ? newEmail : user.email);
+    if (passwordResponse.status === 200) await expect(bcrypt.compare(newPassword, changedUser.passwordHash)).resolves.toBe(true);
+    else await expect(bcrypt.compare(password, changedUser.passwordHash)).resolves.toBe(true);
+  });
+
+  it('does not count correct current passwords when a later email update is rejected', async () => {
+    const user = await createUser(email('limit-conflict'));
+    const occupied = await createUser(email('limit-conflict-occupied'));
+    const login = await post('/auth/login').send({ email: user.email, password }).expect(200);
+    const cookie = hostCookie(login);
+    const ip = '198.51.100.210';
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await putFrom(ip, '/auth/me').set('Cookie', cookie).send({ email: occupied.email, currentPassword: password }).expect(400);
+    }
+    await putFrom(ip, '/auth/me').set('Cookie', cookie).send({ email: email('limit-conflict-new'), currentPassword: 'wrong-password' }).expect(400);
+  });
+
+  it('does not count malformed password changes or database failures as wrong current passwords', async () => {
+    const user = await createUser(email('limit-non-password-failures'));
+    const login = await post('/auth/login').send({ email: user.email, password }).expect(200);
+    const cookie = hostCookie(login);
+    const ip = '198.51.100.211';
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await postFrom(ip, '/auth/change-password').set('Cookie', cookie).send({ currentPassword: password, newPassword: 'short' }).expect(400);
+    }
+    const transaction = jest.spyOn(prisma, '$transaction').mockRejectedValue(new Error('database failed'));
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await postFrom(ip, '/auth/change-password').set('Cookie', cookie).send({ currentPassword: password, newPassword: 'new-password123' }).expect(500);
+    }
+    transaction.mockRestore();
+    await postFrom(ip, '/auth/change-password').set('Cookie', cookie).send({ currentPassword: 'wrong-password', newPassword: 'new-password123' }).expect(400);
   });
 
   it.each([

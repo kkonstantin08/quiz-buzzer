@@ -98,4 +98,16 @@ describe('DashboardLayout profile security', () => {
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Ошибка смены пароля', { description: 'Не удалось изменить пароль' }));
   });
+
+  it('opens the shared profile dialog from the mobile trigger and clears passwords on close', () => {
+    renderProfile();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть профиль' }));
+    fireEvent.change(screen.getByLabelText('Текущий пароль'), { target: { value: 'current-password' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть профиль' }));
+
+    expect(screen.getByLabelText('Текущий пароль')).toHaveValue('');
+    expect(screen.getAllByText('Профиль')).toHaveLength(1);
+  });
 });

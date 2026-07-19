@@ -7,6 +7,7 @@ import { config } from '../../config';
 import { prisma } from '../../prisma';
 import { rooms } from '../../rooms';
 import { participantDisconnectTimers, setupSocketIO } from '../index';
+import { cancelHostReconnectTimeout, hostDisconnectTimers } from '../host-reconnect';
 
 jest.mock('../../prisma', () => ({
   prisma: {
@@ -74,6 +75,7 @@ describe('Socket.IO host session authentication', () => {
 
   afterEach(() => {
     for (const client of clients.splice(0)) client.disconnect();
+    for (const roomId of hostDisconnectTimers.keys()) cancelHostReconnectTimeout(roomId);
     rooms.clear();
     jest.clearAllMocks();
   });
@@ -211,7 +213,7 @@ describe('Socket.IO host session authentication', () => {
     expect(rooms.size).toBe(0);
   });
 
-  it('disconnects revoked sessions without disconnecting the current session or deleting its room', async () => {
+  it('disconnects a revoked room owner through the reconnect lifecycle without affecting the current session', async () => {
     const { appEvents } = require('../../events');
     const currentSessionId = 'current-session';
     const revokedSessionId = 'revoked-session';
@@ -220,13 +222,23 @@ describe('Socket.IO host session authentication', () => {
 
     await expect(waitForConnection(current)).resolves.toBe('connected');
     await expect(waitForConnection(revoked)).resolves.toBe('connected');
-    await expect(createRoom(current)).resolves.toMatchObject({ success: true });
+    const createdRoom = await createRoom(revoked);
+    expect(createdRoom).toMatchObject({ success: true, room: { roomId: expect.any(String) } });
+    const roomId = createdRoom.room!.roomId;
+    const room = rooms.get(roomId)!;
+    expect(room.hostSocketId).toBe(revoked.id);
+    expect(room.isHostConnected).toBe(true);
+    const disconnectPromise = new Promise((resolve) => revoked.once('disconnect', resolve));
 
     appEvents.emit('host_sessions_revoked', [revokedSessionId]);
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await disconnectPromise;
 
     expect(revoked.connected).toBe(false);
     expect(current.connected).toBe(true);
     expect(rooms.size).toBe(1);
+    expect(rooms.get(roomId)).toMatchObject({ isHostConnected: false });
+    expect(hostDisconnectTimers.has(roomId)).toBe(true);
+    cancelHostReconnectTimeout(roomId);
+    expect(hostDisconnectTimers.has(roomId)).toBe(false);
   });
 });

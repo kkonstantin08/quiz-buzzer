@@ -2,6 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import { Prisma } from '@prisma/client';
 import { countUploadReferences, InvalidUploadError, receiveUpload, saveUploadedFile, deleteUploadedFile, withUploadLock } from '../utils/upload';
 import { prisma } from '../prisma';
 import { config } from '../config';
@@ -39,6 +40,7 @@ export const createPasswordVerificationLimiter = () => rateLimit({
   max: 5,
   skipSuccessfulRequests: true,
   skip: (req) => typeof req.body?.currentPassword !== 'string',
+  requestWasSuccessful: (_req, res) => res.locals.passwordVerificationFailed !== true,
   keyGenerator: (req) => {
     const authRequest = req as AuthRequest;
     return `${authRequest.userId ?? 'anonymous'}:${authRequest.sessionId ?? 'no-session'}:${ipKeyGenerator(req.ip ?? '0.0.0.0')}`;
@@ -56,21 +58,48 @@ function isUniqueConstraintError(error: unknown) {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002';
 }
 
-async function findUserIdByNormalizedEmail(email: string) {
-  const matches = await prisma.$queryRaw<{ id: string }[]>`
-    SELECT "id" FROM "HostUser" WHERE lower("email") = ${email} LIMIT 1
+type DatabaseClient = typeof prisma | Prisma.TransactionClient;
+type ProfileUser = Prisma.HostUserGetPayload<{ include: { subscription: true; settings: true } }>;
+type EmailChangeResult =
+  | { kind: 'stale' }
+  | { kind: 'conflict' }
+  | { kind: 'updated'; user: ProfileUser; revokedSessionIds: string[] };
+
+async function findUserIdsByCanonicalEmail(db: DatabaseClient, email: string) {
+  return db.$queryRaw<{ id: string }[]>`
+    SELECT "id" FROM "HostUser" WHERE lower("email") = ${email} LIMIT 2
   `;
-  return matches[0]?.id;
 }
 
-async function findUserByNormalizedEmail(email: string) {
-  const userId = await findUserIdByNormalizedEmail(email);
-  if (!userId) return null;
+async function resolveLoginUserId(db: DatabaseClient, trimmedEmail: string, canonicalEmail: string) {
+  const exactMatch = await db.hostUser.findUnique({ where: { email: trimmedEmail }, select: { id: true } });
+  if (exactMatch) return exactMatch.id;
 
-  return prisma.hostUser.findUnique({
-    where: { id: userId },
-    include: { subscription: true, settings: true },
-  });
+  const matches = await findUserIdsByCanonicalEmail(db, canonicalEmail);
+  if (matches.length === 1) return matches[0].id;
+  if (matches.length > 1) console.warn(JSON.stringify({ event: 'ambiguous_legacy_email', matchCount: matches.length }));
+  return null;
+}
+
+async function hasOtherCanonicalEmailMatch(db: DatabaseClient, canonicalEmail: string, userId?: string) {
+  const matches = await findUserIdsByCanonicalEmail(db, canonicalEmail);
+  return matches.some((match) => match.id !== userId);
+}
+
+async function hasCurrentSensitiveState(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  sessionId: string,
+  verifiedPasswordHash: string,
+) {
+  const [user, session] = await Promise.all([
+    tx.hostUser.findUnique({ where: { id: userId }, select: { passwordHash: true } }),
+    tx.session.findUnique({ where: { id: sessionId }, select: { userId: true, revokedAt: true, expiresAt: true } }),
+  ]);
+  return user?.passwordHash === verifiedPasswordHash
+    && session?.userId === userId
+    && session.revokedAt === null
+    && session.expiresAt > new Date();
 }
 
 authRouter.post('/login', loginLimiter, async (req, res) => {
@@ -81,12 +110,19 @@ authRouter.post('/login', loginLimiter, async (req, res) => {
     if (!normalizedEmail.ok || typeof password !== 'string' || password.length === 0) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
+    const trimmedEmail = email.trim();
 
-    const user = await findUserByNormalizedEmail(normalizedEmail.value);
+    const userId = await resolveLoginUserId(prisma, trimmedEmail, normalizedEmail.value);
 
-    if (!user) {
+    if (!userId) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
+
+    const user = await prisma.hostUser.findUnique({
+      where: { id: userId },
+      include: { subscription: true, settings: true },
+    });
+    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
     const isMatch = await bcrypt.compare(password, user.passwordHash);
     if (!isMatch) {
@@ -96,14 +132,20 @@ authRouter.post('/login', loginLimiter, async (req, res) => {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
-    const session = await prisma.session.create({
-      data: {
-        userId: user.id,
-        expiresAt,
-      }
-    });
+    const login = await prisma.$transaction(async (tx) => {
+      const currentUser = await tx.hostUser.findUnique({
+        where: { id: user.id },
+        include: { subscription: true, settings: true },
+      });
+      const currentUserId = await resolveLoginUserId(tx, trimmedEmail, normalizedEmail.value);
+      if (!currentUser || currentUser.passwordHash !== user.passwordHash || currentUserId !== user.id) return null;
 
-    const token = jwt.sign({ userId: user.id, sessionId: session.id }, config.jwtSecret, { expiresIn: '7d' });
+      const session = await tx.session.create({ data: { userId: user.id, expiresAt } });
+      return { user: currentUser, session };
+    });
+    if (!login) return res.status(401).json({ error: 'Invalid credentials' });
+
+    const token = jwt.sign({ userId: login.user.id, sessionId: login.session.id }, config.jwtSecret, { expiresIn: '7d' });
     
     // Set JWT in httpOnly cookie (inaccessible to JavaScript)
     res.cookie('hostToken', token, {
@@ -112,16 +154,16 @@ authRouter.post('/login', loginLimiter, async (req, res) => {
     });
     
     // Check subscription status
-    const hasActiveSubscription = user.subscription && 
-      user.subscription.status === 'active' && 
-      user.subscription.currentPeriodEnd > new Date();
+    const hasActiveSubscription = login.user.subscription &&
+      login.user.subscription.status === 'active' &&
+      login.user.subscription.currentPeriodEnd > new Date();
 
     return res.json({
       hasActiveSubscription: !!hasActiveSubscription,
-      email: user.email,
-      name: user.name,
-      avatarUrl: user.avatarUrl,
-      customLogoUrl: user.settings?.customLogoUrl || null,
+      email: login.user.email,
+      name: login.user.name,
+      avatarUrl: login.user.avatarUrl,
+      customLogoUrl: login.user.settings?.customLogoUrl || null,
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -192,21 +234,27 @@ authRouter.put('/me', requireAuth, passwordVerificationLimiter, async (req: Auth
 
     const emailChanged = email?.ok && email.value !== currentUser.email;
     if (emailChanged) {
-      if (typeof payload.currentPassword !== 'string' || !await bcrypt.compare(payload.currentPassword, currentUser.passwordHash)) {
+      if (typeof payload.currentPassword !== 'string') {
+        return res.status(400).json({ error: 'Unable to update email' });
+      }
+      const isCurrentPassword = await bcrypt.compare(payload.currentPassword, currentUser.passwordHash);
+      if (!isCurrentPassword) {
+        res.locals.passwordVerificationFailed = true;
         return res.status(400).json({ error: 'Unable to update email' });
       }
 
-      const existingUserId = await findUserIdByNormalizedEmail(email.value);
-      if (existingUserId && existingUserId !== req.userId) {
+      if (await hasOtherCanonicalEmailMatch(prisma, email.value, req.userId)) {
         return res.status(400).json({ error: 'Email already in use' });
       }
     }
 
-    let updatedUser;
+    let updatedUser: ProfileUser | null = null;
     let revokedSessionIds: string[] = [];
     try {
       if (emailChanged) {
-        const changed = await prisma.$transaction(async (tx) => {
+        const changed: EmailChangeResult = await prisma.$transaction(async (tx): Promise<EmailChangeResult> => {
+          if (!await hasCurrentSensitiveState(tx, req.userId!, req.sessionId!, currentUser.passwordHash)) return { kind: 'stale' };
+          if (await hasOtherCanonicalEmailMatch(tx, email!.value, req.userId)) return { kind: 'conflict' };
           const user = await tx.hostUser.update({
             where: { id: req.userId! },
             data: { name: name?.ok ? name.value : undefined, email: email.value },
@@ -220,8 +268,10 @@ authRouter.put('/me', requireAuth, passwordVerificationLimiter, async (req: Auth
             where: { id: { in: sessions.map((session) => session.id) }, revokedAt: null },
             data: { revokedAt: new Date() },
           });
-          return { user, revokedSessionIds: sessions.map((session) => session.id) };
+          return { kind: 'updated', user, revokedSessionIds: sessions.map((session) => session.id) };
         });
+        if (changed.kind === 'stale') return res.status(400).json({ error: 'Unable to update email' });
+        if (changed.kind === 'conflict') return res.status(400).json({ error: 'Email already in use' });
         updatedUser = changed.user;
         revokedSessionIds = changed.revokedSessionIds;
       } else {
@@ -236,6 +286,7 @@ authRouter.put('/me', requireAuth, passwordVerificationLimiter, async (req: Auth
       throw error;
     }
 
+    if (!updatedUser) return res.status(400).json({ error: 'Unable to update email' });
     if (revokedSessionIds.length > 0) appEvents.emit('host_sessions_revoked', revokedSessionIds);
 
     const hasActiveSubscription = updatedUser.subscription && 
@@ -266,12 +317,20 @@ authRouter.post('/change-password', requireAuth, passwordVerificationLimiter, as
     }
 
     const user = await prisma.hostUser.findUnique({ where: { id: req.userId! } });
-    if (!user || !await bcrypt.compare(currentPassword, user.passwordHash) || await bcrypt.compare(newPassword, user.passwordHash)) {
+    if (!user) return res.status(400).json({ error: 'Invalid password change' });
+
+    const isCurrentPassword = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!isCurrentPassword) {
+      res.locals.passwordVerificationFailed = true;
+      return res.status(400).json({ error: 'Invalid password change' });
+    }
+    if (await bcrypt.compare(newPassword, user.passwordHash)) {
       return res.status(400).json({ error: 'Invalid password change' });
     }
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
     const revokedSessionIds = await prisma.$transaction(async (tx) => {
+      if (!await hasCurrentSensitiveState(tx, req.userId!, req.sessionId!, user.passwordHash)) return null;
       await tx.hostUser.update({ where: { id: req.userId! }, data: { passwordHash } });
       const sessions = await tx.session.findMany({
         where: { userId: req.userId!, id: { not: req.sessionId! }, revokedAt: null },
@@ -283,6 +342,8 @@ authRouter.post('/change-password', requireAuth, passwordVerificationLimiter, as
       });
       return sessions.map((session) => session.id);
     });
+
+    if (!revokedSessionIds) return res.status(400).json({ error: 'Invalid password change' });
 
     if (revokedSessionIds.length > 0) appEvents.emit('host_sessions_revoked', revokedSessionIds);
     return res.json({ success: true });
@@ -389,7 +450,7 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Пароль должен содержать минимум 8 символов' });
     }
 
-    if (await findUserIdByNormalizedEmail(normalizedEmail.value)) {
+    if (await hasOtherCanonicalEmailMatch(prisma, normalizedEmail.value)) {
       return res.status(400).json({ error: 'Пользователь с таким email уже существует' });
     }
 

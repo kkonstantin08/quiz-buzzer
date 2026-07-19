@@ -160,7 +160,8 @@ export function DashboardLayout({
   const avatarSrc = resolveAssetUrl(avatarUrl);
 
   return (
-    <div className="flex min-h-[100dvh] bg-slate-50">
+    <Dialog open={isProfileOpen} onOpenChange={(open) => { setIsProfileOpen(open); if (!open) clearPasswords(); }}>
+      <div className="flex min-h-[100dvh] bg-slate-50">
       {!hasSubscription && <BillingModal onActivated={onActivated || (() => {})} />}
 
       {/* Sidebar (Desktop) */}
@@ -207,9 +208,8 @@ export function DashboardLayout({
         </nav>
 
         <div className="p-4 border-t border-slate-100 shrink-0 bg-slate-50/50">
-          <Dialog open={isProfileOpen} onOpenChange={(open) => { setIsProfileOpen(open); if (!open) clearPasswords(); }}>
             <DialogTrigger asChild>
-              <div className="flex items-center gap-3 mb-4 px-2 cursor-pointer hover:bg-slate-100 p-2 rounded-lg transition-colors -mx-2">
+              <button type="button" className="flex w-full items-center gap-3 mb-4 px-2 cursor-pointer hover:bg-slate-100 p-2 rounded-lg transition-colors -mx-2 text-left">
                 <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center shrink-0 border border-slate-300 overflow-hidden">
                   {avatarSrc ? (
                     <img src={avatarSrc} alt="Avatar" className="w-full h-full object-cover" />
@@ -234,7 +234,7 @@ export function DashboardLayout({
                     )}
                   </div>
                 </div>
-              </div>
+              </button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[425px]">
               <DialogHeader>
@@ -369,7 +369,6 @@ export function DashboardLayout({
                 </div>
               </div>
             </DialogContent>
-          </Dialog>
           <Button variant="ghost" className="w-full justify-start gap-3 text-slate-600 hover:text-red-600 hover:bg-red-50" onClick={() => setShowLogoutDialog(true)}>
             <LogOut size={18} />
             Выйти
@@ -402,6 +401,11 @@ export function DashboardLayout({
                 <Crown size={20} />
               </Button>
             )}
+            <DialogTrigger asChild>
+              <Button variant="ghost" size="icon" aria-label="Открыть профиль" className="text-slate-600 hover:bg-slate-100">
+                <User size={20} />
+              </Button>
+            </DialogTrigger>
             <Button variant="ghost" size="icon" onClick={() => navigate(isDashboard ? '/settings' : '/dashboard')} className="text-slate-600 hover:bg-slate-100">
               {isDashboard ? <Settings size={20} /> : <LayoutDashboard size={20} />}
             </Button>
@@ -435,6 +439,7 @@ export function DashboardLayout({
           </DialogContent>
         </Dialog>
       </main>
-    </div>
+      </div>
+    </Dialog>
   );
 }
