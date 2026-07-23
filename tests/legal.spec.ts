@@ -49,8 +49,8 @@ test.describe('Published legal pages', () => {
   test('registration requires each separate consent and exposes its documents', async ({ page }) => {
     await page.goto('/register');
     await page.getByLabel('Email').fill('legal-playwright@example.test');
-    await page.getByRole('textbox', { name: 'Пароль', exact: true }).fill('password123');
-    await page.getByRole('textbox', { name: 'Повторите пароль' }).fill('password123');
+    await page.getByLabel('Пароль', { exact: true }).fill('password123');
+    await page.getByLabel('Повторите пароль').fill('password123');
 
     const checkboxes = page.getByRole('checkbox');
     await expect(checkboxes).toHaveCount(2);

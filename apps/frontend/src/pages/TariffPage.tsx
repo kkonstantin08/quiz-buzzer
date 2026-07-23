@@ -1,12 +1,12 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Check, Target, Zap, Shield, Infinity, Sparkles } from 'lucide-react';
+import { Check, Target, Zap, Shield, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Footer } from '../components/Footer';
 import { useDocumentMetadata } from '../lib/useDocumentMetadata';
 
 export function TariffPage() {
-  useDocumentMetadata('Тарифы «КвизПульт» | КвизПульт', 'Безлимитный доступ ко всем функциям сервиса «КвизПульт». Проводите интерактивные викторины без ограничений.');
+  useDocumentMetadata('Доступ к сервису «КвизПульт» | КвизПульт', 'Условия доступа к сервису «КвизПульт»: 500 ₽ за 30 дней без автоматического продления.');
 
   return (
     <div className="min-h-[100dvh] bg-slate-50 flex flex-col relative overflow-hidden">
@@ -45,13 +45,13 @@ export function TariffPage() {
             <span>Единый тариф для ведущих</span>
           </div>
           <h1 className="text-4xl sm:text-6xl font-extrabold text-slate-900 tracking-tight leading-[1.15] mb-6">
-            Безлимитный доступ <br className="hidden sm:block" />
+            Проводите квизы <br className="hidden sm:block" />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-red-600 to-orange-500">
-              ко всем функциям
+              без физических кнопок
             </span>
           </h1>
           <p className="text-lg text-slate-600 max-w-2xl mx-auto leading-relaxed">
-            Проводите незабываемые квизы без физических кнопок. Один тариф дает полный контроль над игрой и неограниченное количество эмоций для гостей.
+            «КвизПульт» — онлайн-сервис для интерактивных викторин. Ведущий создаёт комнату, а участники подключаются со смартфонов через браузер без установки приложения.
           </p>
         </section>
 
@@ -63,15 +63,12 @@ export function TariffPage() {
             <div className="relative bg-white/90 backdrop-blur-xl border border-slate-200/50 rounded-[2rem] p-8 sm:p-10 shadow-2xl shadow-slate-200/50 flex flex-col h-full">
               <div className="flex justify-between items-start mb-6">
                 <div>
-                  <h3 className="text-2xl font-bold text-slate-900">Доступ ведущего</h3>
-                  <p className="text-slate-500 mt-1">Полный контроль над играми</p>
+                  <h3 className="text-2xl font-bold text-slate-900">Доступ к сервису «КвизПульт»</h3>
+                  <p className="text-slate-500 mt-1">Полный доступ ко всем функциям ведущего</p>
                 </div>
               </div>
 
-              <div className="mb-8 flex items-baseline gap-2">
-                <span className="text-6xl font-black text-slate-900 tracking-tight">500 ₽</span>
-                <span className="text-lg text-slate-500 font-medium">/ 30 дней</span>
-              </div>
+              <p className="mb-8 text-5xl sm:text-6xl font-black text-slate-900 tracking-tight">500 ₽ за 30 дней</p>
 
               <Link to="/register" className="block mb-8">
                 <Button size="lg" className="w-full h-14 text-lg shadow-xl shadow-primary/20 hover:shadow-primary/30 transition-all">
@@ -81,7 +78,7 @@ export function TariffPage() {
 
               <div className="space-y-4 flex-1">
                 {[
-                  'Создание и проведение неограниченного числа игр',
+                  'Создание и проведение игр',
                   'Подключение участников по QR-коду и пин-коду',
                   'Высокоточное определение первого нажавшего',
                   'Управление раундами и начисление баллов',
@@ -108,19 +105,19 @@ export function TariffPage() {
               <div>
                 <h4 className="font-bold text-slate-900 mb-1">Без скрытых списаний</h4>
                 <p className="text-sm text-slate-600 leading-relaxed">
-                  Мы не используем автоматическое продление. По истечении 30 дней доступ просто приостановится, и вы сами решаете, когда оплатить следующий период.
+                  Без автоматического продления. Следующий период оплачивается самостоятельно.
                 </p>
               </div>
             </div>
 
             <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex gap-4 items-start">
               <div className="w-12 h-12 rounded-xl bg-purple-50 flex items-center justify-center shrink-0">
-                <Infinity className="w-6 h-6 text-purple-600" />
+                <Check className="w-6 h-6 text-purple-600" />
               </div>
               <div>
-                <h4 className="font-bold text-slate-900 mb-1">Безлимит для участников</h4>
+                <h4 className="font-bold text-slate-900 mb-1">Условия и ограничения</h4>
                 <p className="text-sm text-slate-600 leading-relaxed">
-                  Участие в игре абсолютно бесплатно для всех гостей. Нет никаких лимитов на количество подключающихся игроков в одной комнате.*
+                  Отдельные тарифные лимиты на количество игр и участников не установлены. Для стабильности и безопасности могут применяться разумные технические ограничения.
                 </p>
               </div>
             </div>
@@ -132,14 +129,11 @@ export function TariffPage() {
               <div>
                 <h4 className="font-bold text-slate-900 mb-1">Мгновенная активация</h4>
                 <p className="text-sm text-slate-600 leading-relaxed">
-                  Первый месяц тестирования бесплатен для новых ведущих. Платный доступ открывается автоматически сразу после подтверждения оплаты.
+                  На период тестирования доступ можно активировать бесплатно один раз на 30 дней.
                 </p>
+                <p className="text-sm text-slate-600 leading-relaxed mt-2">Платный доступ открывается автоматически сразу после подтверждения оплаты.</p>
               </div>
             </div>
-
-            <p className="text-xs text-slate-400 mt-4 px-2">
-              * Для стабильности работы серверов могут применяться разумные технические ограничения, если количество одновременных подключений к одной комнате аномально высоко.
-            </p>
           </div>
 
         </section>

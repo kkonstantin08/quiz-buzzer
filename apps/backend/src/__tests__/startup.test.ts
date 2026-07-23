@@ -5,6 +5,10 @@ jest.mock('../billing/readiness', () => ({
   checkBillingReadiness: jest.fn()
 }));
 
+jest.mock('../history/cleanup', () => ({
+  startGameHistoryCleanup: jest.fn(),
+}));
+
 // We need to mock config to change paymentsEnabled dynamically before importing server.ts
 jest.mock('../config', () => ({
   config: {
@@ -66,24 +70,23 @@ describe('Startup Guard', () => {
 
     // Since we mock server.listen, we also need to mock ensureUploadDirExists
     jest.mock('../utils/upload', () => ({
-      ensureUploadDirExists: jest.fn()
+      ensureUploadDirExists: jest.fn(),
+      receiveUpload: () => (_req: unknown, _res: unknown, next: () => void) => next(),
     }));
     
-    // Also we need to prevent the server from actually listening
+    // Prevent the real server from binding a port while preserving the Server API Socket.IO needs.
     const http = require('http');
-    const mockListen = jest.fn();
-    jest.spyOn(http, 'createServer').mockReturnValue({
-      listen: mockListen,
-      on: jest.fn()
-    } as any);
+    jest.spyOn(http.Server.prototype, 'listen').mockImplementation(function (this: any, ...args: any[]) {
+      const callback = args.find((arg) => typeof arg === 'function');
+      callback?.();
+      return this;
+    });
 
-    try {
-      require('../server');
-    } catch (e) {
-      // shouldn't throw process.exit
-    }
+    require('../server');
 
     expect(mockExit).not.toHaveBeenCalled();
+    const { startGameHistoryCleanup } = require('../history/cleanup');
+    expect(startGameHistoryCleanup).toHaveBeenCalledTimes(1);
     process.env.NODE_ENV = originalNodeEnv;
   });
 });

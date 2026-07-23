@@ -13,6 +13,8 @@ describe('TariffPage', () => {
     expect(screen.getByText('500 ₽ за 30 дней')).toBeInTheDocument();
     expect(screen.getByText('Без автоматического продления. Следующий период оплачивается самостоятельно.')).toBeInTheDocument();
     expect(screen.getByText('На период тестирования доступ можно активировать бесплатно один раз на 30 дней.')).toBeInTheDocument();
+    expect(screen.getByText('Отдельные тарифные лимиты на количество игр и участников не установлены. Для стабильности и безопасности могут применяться разумные технические ограничения.')).toBeInTheDocument();
+    expect(screen.queryByText(/безлимит/i)).not.toBeInTheDocument();
     expect(document.title).toBe('Доступ к сервису «КвизПульт» | КвизПульт');
     expect(document.querySelector('meta[name="description"]')).toHaveAttribute('content', 'Условия доступа к сервису «КвизПульт»: 500 ₽ за 30 дней без автоматического продления.');
   });

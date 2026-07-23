@@ -8,6 +8,42 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'legal-check');
 
+const finalRoutes = ['/offer', '/terms', '/privacy', '/cookies', '/subscription', '/refunds', '/consent', '/legal/details', '/tariff'];
+
+function writeFixture(root: string, files: Record<string, string>) {
+  for (const [relativePath, content] of Object.entries(files)) {
+    const file = path.join(root, relativePath);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, content);
+  }
+}
+
+function createStrictFixture(root: string, overrides: Record<string, string> = {}) {
+  writeFixture(root, {
+    'apps/frontend/src/App.tsx': finalRoutes.map((route) => `path="${route}"`).join('\n'),
+    'apps/frontend/src/config/legal.ts': 'documentVersion\neffectiveDate\ninn:\nogrnip:\nphone:\nemail:',
+    'apps/backend/src/legal/config.ts': 'LEGAL_DOCUMENT_VERSION\n[LegalDocumentType.TERMS]\n[LegalDocumentType.PERSONAL_DATA_CONSENT]',
+    'packages/shared/src/legal.ts': "export const LEGAL_DOCUMENT_VERSION = '1.0';",
+    'apps/frontend/src/pages/HostAuth.tsx': 'terms-checkbox\npersonal-data-consent-checkbox\ntermsAccepted\npersonalDataConsentAccepted',
+    'apps/frontend/src/components/Footer.tsx': 'openCookieSettings',
+    'apps/frontend/src/components/CookieBanner.tsx': 'Настройки cookie',
+    '.env.example': 'VITE_YANDEX_METRIKA_ID=\nPAYMENTS_ENABLED=false\nREGISTRATION_ENABLED=false',
+    ...overrides,
+  });
+}
+
+function strictFailure(root: string) {
+  try {
+    execSync(`node ${path.join(__dirname, 'legal-check.mjs')} --strict 2>&1`, {
+      env: { ...process.env, LEGAL_CHECK_ROOT: root },
+      encoding: 'utf8',
+    });
+  } catch (error: any) {
+    return error.stdout.toString();
+  }
+  throw new Error('Expected strict legal check to fail');
+}
+
 describe('legal-check.mjs', () => {
   beforeAll(() => {
     if (fs.existsSync(FIXTURES_DIR)) {
@@ -92,5 +128,18 @@ describe('legal-check.mjs', () => {
       error = caught;
     }
     expect(error?.stdout.toString()).toContain('Не найден итоговый маршрут /offer');
+  });
+
+  it.each([
+    ['missing shared legal version', { 'packages/shared/src/legal.ts': '' }, 'Не найдена единая версия пакета 1.0'],
+    ['legacy routes', { 'apps/frontend/src/App.tsx': `${finalRoutes.map((route) => `path="${route}"`).join('\n')}\n/legal/terms` }, 'Найдена устаревшая ссылка /legal/terms'],
+    ['terms consent checkbox', { 'apps/frontend/src/pages/HostAuth.tsx': 'personal-data-consent-checkbox\ntermsAccepted\npersonalDataConsentAccepted' }, 'Не найдено регистрационное согласие terms-checkbox'],
+    ['cookie settings', { 'apps/frontend/src/components/Footer.tsx': '' }, 'Не найдены настройки cookie'],
+    ['required environment variable', { '.env.example': 'VITE_YANDEX_METRIKA_ID=\nPAYMENTS_ENABLED=false' }, 'В .env.example отсутствует REGISTRATION_ENABLED=false'],
+  ])('fails strict mode for %s', (_name, overrides, expectedError) => {
+    const root = path.join(FIXTURES_DIR, `strict-${_name.replaceAll(' ', '-')}`);
+    createStrictFixture(root, overrides);
+
+    expect(strictFailure(root)).toContain(expectedError);
   });
 });
