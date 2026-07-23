@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { BillingModal } from '../BillingModal';
 import { api } from '../../services/api';
 
@@ -15,8 +15,6 @@ vi.mock('../../services/api', () => ({
 }));
 
 describe('BillingModal', () => {
-  const mockOnActivated = vi.fn();
-
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -25,7 +23,7 @@ describe('BillingModal', () => {
     // Return a never-resolving promise to simulate loading
     (api.getBillingStatus as any).mockReturnValue(new Promise(() => {}));
     
-    render(<BillingModal onActivated={mockOnActivated} />);
+    render(<BillingModal />);
     
     const checkoutButton = screen.getByRole('button', { name: /Проверка/i });
     expect(checkoutButton).toBeDisabled();
@@ -40,7 +38,7 @@ describe('BillingModal', () => {
       checkoutAvailable: true
     });
     
-    render(<BillingModal onActivated={mockOnActivated} />);
+    render(<BillingModal />);
     
     await waitFor(() => {
       const checkoutButton = screen.getByRole('button', { name: /Оплатить подписку/i });
@@ -56,7 +54,7 @@ describe('BillingModal', () => {
       checkoutAvailable: false
     });
     
-    render(<BillingModal onActivated={mockOnActivated} />);
+    render(<BillingModal />);
     
     await waitFor(() => {
       const checkoutButton = screen.getByRole('button', { name: /Оплата временно недоступна/i });
@@ -68,7 +66,7 @@ describe('BillingModal', () => {
   it('disables checkout button on API error', async () => {
     (api.getBillingStatus as any).mockRejectedValue(new Error('Network error'));
     
-    render(<BillingModal onActivated={mockOnActivated} />);
+    render(<BillingModal />);
     
     await waitFor(() => {
       const checkoutButton = screen.getByRole('button', { name: /Оплата временно недоступна/i });
@@ -86,12 +84,32 @@ describe('BillingModal', () => {
       checkoutAvailable: false
     });
     
-    render(<BillingModal onActivated={mockOnActivated} />);
+    render(<BillingModal />);
     
     await waitFor(() => {
       expect(api.getBillingStatus).toHaveBeenCalled();
       const checkoutButton = screen.getByRole('button', { name: /Оплата временно недоступна/i });
       expect(checkoutButton).toBeDisabled();
+    });
+  });
+
+  it('activates free access and refreshes the cabinet', async () => {
+    (api.getBillingStatus as any).mockResolvedValue({
+      paymentsEnabled: false,
+      providerConfigured: false,
+      checkoutAvailable: false,
+    });
+    (api.activateFreeTrial as any).mockResolvedValue({ success: true });
+    const onActivated = vi.fn();
+
+    render(<BillingModal onActivated={onActivated} />);
+
+    await waitFor(() => expect(api.getBillingStatus).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: /Активировать бесплатно на 30 дней/i }));
+
+    await waitFor(() => {
+      expect(api.activateFreeTrial).toHaveBeenCalledTimes(1);
+      expect(onActivated).toHaveBeenCalledTimes(1);
     });
   });
 });

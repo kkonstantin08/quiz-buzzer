@@ -415,7 +415,9 @@ authRouter.delete('/avatar', requireAuth, async (req: AuthRequest, res) => {
 });
 
 authRouter.post('/register', registerLimiter, async (req, res) => {
-  if (process.env.REGISTRATION_ENABLED === 'false') {
+  const registrationEnabled = process.env.REGISTRATION_ENABLED === 'true'
+    || (process.env.NODE_ENV === 'development' && process.env.REGISTRATION_ENABLED !== 'false');
+  if (!registrationEnabled) {
     return res.status(503).json({
       code: 'REGISTRATION_DISABLED',
       message: 'Регистрация временно недоступна'
@@ -423,7 +425,7 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
   }
 
   try {
-    const { email, password, termsAccepted, displayedTermsVersion } = req.body;
+    const { email, password, termsAccepted, displayedTermsVersion, personalDataConsentAccepted, displayedPersonalDataConsentVersion } = req.body;
     const normalizedEmail = normalizeEmail(email);
 
     if (!normalizedEmail.ok || typeof password !== 'string' || password.length === 0) {
@@ -434,12 +436,27 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Необходимо принять Пользовательское соглашение' });
     }
 
+    if (!personalDataConsentAccepted) {
+      return res.status(400).json({ error: 'Необходимо дать согласие на обработку персональных данных' });
+    }
+
     const serverTermsVersion = legalBackendConfig.versions[LegalDocumentType.TERMS];
     if (displayedTermsVersion !== serverTermsVersion) {
       return res.status(409).json({
         code: 'DOCUMENT_VERSION_MISMATCH',
+        documentType: LegalDocumentType.TERMS,
         message: 'Версия документа изменилась. Обновите страницу и повторите действие.',
         currentVersion: serverTermsVersion
+      });
+    }
+
+    const serverPersonalDataConsentVersion = legalBackendConfig.versions[LegalDocumentType.PERSONAL_DATA_CONSENT];
+    if (displayedPersonalDataConsentVersion !== serverPersonalDataConsentVersion) {
+      return res.status(409).json({
+        code: 'DOCUMENT_VERSION_MISMATCH',
+        documentType: LegalDocumentType.PERSONAL_DATA_CONSENT,
+        message: 'Версия документа изменилась. Обновите страницу и повторите действие.',
+        currentVersion: serverPersonalDataConsentVersion
       });
     }
 
@@ -479,18 +496,25 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
         }
       });
 
-      // Explicitly use server version instead of client version
-      const serverVersion = legalBackendConfig.versions[LegalDocumentType.TERMS];
-
-      await tx.legalAcceptance.create({
-        data: {
-          hostUserId: createdUser.id,
-          documentType: LegalDocumentType.TERMS,
-          documentVersion: serverVersion,
-          acceptanceSource: LegalAcceptanceSource.REGISTRATION,
-          ipAddress,
-          userAgent,
-        }
+      await tx.legalAcceptance.createMany({
+        data: [
+          {
+            hostUserId: createdUser.id,
+            documentType: LegalDocumentType.TERMS,
+            documentVersion: serverTermsVersion,
+            acceptanceSource: LegalAcceptanceSource.REGISTRATION,
+            ipAddress,
+            userAgent,
+          },
+          {
+            hostUserId: createdUser.id,
+            documentType: LegalDocumentType.PERSONAL_DATA_CONSENT,
+            documentVersion: serverPersonalDataConsentVersion,
+            acceptanceSource: LegalAcceptanceSource.REGISTRATION,
+            ipAddress,
+            userAgent,
+          },
+        ],
       });
 
       return { user: createdUser, session: createdSession };

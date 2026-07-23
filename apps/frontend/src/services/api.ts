@@ -65,11 +65,11 @@ export const api = {
     return res.json();
   },
 
-  async register(email: string, password: string, legalContext?: { termsAccepted: boolean; displayedTermsVersion: string }) {
+  async register(email: string, password: string, legalContext?: { termsAccepted: boolean; displayedTermsVersion: string; personalDataConsentAccepted: boolean; displayedPersonalDataConsentVersion: string }) {
     const res = await customFetch(`${API_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, termsAccepted: legalContext?.termsAccepted, displayedTermsVersion: legalContext?.displayedTermsVersion }),
+      body: JSON.stringify({ email, password, ...legalContext }),
     });
     if (!res.ok) {
       try {
@@ -79,6 +79,7 @@ export const api = {
            // We can attach the code to the error object so the UI can check it
            const err: any = new Error(errObj.message || errObj.error || 'Registration failed');
            err.code = errObj.code;
+           err.documentType = errObj.documentType;
            throw err;
         }
         const errorMsg = errObj.error || errObj.message || 'Registration failed';
@@ -265,21 +266,6 @@ export const api = {
     return res.json();
   },
 
-  async activateFreeTrial() {
-    const res = await customFetch(`${API_URL}/billing/activate-free`, {
-      method: 'POST',
-    });
-    if (!res.ok) {
-      let errorMsg = 'Failed to activate';
-      try {
-        const error = await res.json();
-        errorMsg = error.error || errorMsg;
-      } catch (e) {}
-      throw new Error(translateError(errorMsg));
-    }
-    return res.json();
-  },
-
   async getBillingStatus() {
     try {
       const res = await customFetch(`${API_URL}/billing/status`);
@@ -297,6 +283,19 @@ export const api = {
       try {
         const error = await res.json();
         errorMsg = error.message || error.error || errorMsg;
+      } catch (e) {}
+      throw new Error(translateError(errorMsg));
+    }
+    return res.json();
+  },
+
+  async activateFreeTrial() {
+    const res = await customFetch(`${API_URL}/billing/activate-free`, { method: 'POST' });
+    if (!res.ok) {
+      let errorMsg = 'Failed to activate';
+      try {
+        const error = await res.json();
+        errorMsg = error.error || errorMsg;
       } catch (e) {}
       throw new Error(translateError(errorMsg));
     }

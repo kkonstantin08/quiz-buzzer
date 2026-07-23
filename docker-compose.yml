@@ -16,6 +16,7 @@ services:
       - TRUST_PROXY=172.30.0.10
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
       - PAYMENTS_ENABLED=${PAYMENTS_ENABLED:-false}
+      - REGISTRATION_ENABLED=${REGISTRATION_ENABLED:-false}
     # ports are intentionally NOT exposed — access only through nginx
     volumes:
       - backend_data:/app/prisma
@@ -35,6 +36,7 @@ services:
       dockerfile: apps/frontend/Dockerfile
       args:
         - VITE_API_URL=/api
+        - VITE_YANDEX_METRIKA_ID=${VITE_YANDEX_METRIKA_ID:-}
     restart: unless-stopped
     # ports are intentionally NOT exposed — access only through nginx
     depends_on:

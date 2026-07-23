@@ -54,6 +54,7 @@ import { z } from 'zod';
 import * as schemas from './schemas';
 
 export * from './schemas';
+export * from './legal';
 
 // Infer types from Zod schemas
 export type RoomJoinPayload = z.infer<typeof schemas.RoomJoinSchema>;

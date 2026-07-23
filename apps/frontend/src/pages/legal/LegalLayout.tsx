@@ -1,6 +1,5 @@
 import React from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { LegalDraftNotice } from './LegalDraftNotice';
 import { Footer } from '../../components/Footer';
 import { Target, ArrowLeft } from 'lucide-react';
 
@@ -12,12 +11,13 @@ const LogoIcon = () => (
 
 const NAV_LINKS = [
   { path: '/legal/details', label: 'Реквизиты' },
-  { path: '/legal/offer', label: 'Публичная оферта' },
-  { path: '/legal/terms', label: 'Пользовательское соглашение' },
-  { path: '/legal/privacy', label: 'Политика конфиденциальности' },
-  { path: '/legal/cookies', label: 'Политика Cookie' },
-  { path: '/legal/subscription', label: 'Условия подписки' },
-  { path: '/legal/refunds', label: 'Правила возврата' },
+  { path: '/offer', label: 'Публичная оферта' },
+  { path: '/terms', label: 'Пользовательское соглашение' },
+  { path: '/privacy', label: 'Политика конфиденциальности' },
+  { path: '/cookies', label: 'Политика Cookie' },
+  { path: '/subscription', label: 'Условия доступа' },
+  { path: '/refunds', label: 'Политика возвратов' },
+  { path: '/consent', label: 'Согласие на обработку данных' },
 ];
 
 export function LegalLayout() {
@@ -25,8 +25,6 @@ export function LegalLayout() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-      <LegalDraftNotice />
-      
       <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-md">
@@ -59,7 +57,7 @@ export function LegalLayout() {
           </nav>
         </aside>
 
-        <main className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-10 prose prose-slate max-w-none prose-headings:font-bold prose-h1:text-3xl prose-h2:text-xl prose-a:text-primary hover:prose-a:text-primary/80">
+        <main id="main-content" tabIndex={-1} className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-10 prose prose-slate max-w-none prose-headings:font-bold prose-h1:text-3xl prose-h2:text-xl prose-a:text-primary hover:prose-a:text-primary/80">
           <Outlet />
         </main>
       </div>

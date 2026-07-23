@@ -16,6 +16,7 @@ RUN npm ci --include=dev
 # Copy source code
 COPY packages/shared ./packages/shared
 COPY apps/frontend ./apps/frontend
+COPY ["Документы КвизПульт/Markdown", "./Документы КвизПульт/Markdown"]
 
 # Build shared package
 RUN npm run build -w shared
@@ -24,8 +25,10 @@ RUN npm run build -w shared
 WORKDIR /app/apps/frontend
 ARG VITE_API_URL
 ARG VITE_APP_PUBLIC_URL
+ARG VITE_YANDEX_METRIKA_ID
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_APP_PUBLIC_URL=$VITE_APP_PUBLIC_URL
+ENV VITE_YANDEX_METRIKA_ID=$VITE_YANDEX_METRIKA_ID
 RUN npm run build
 
 # Nginx to serve static files

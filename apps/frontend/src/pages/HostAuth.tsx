@@ -23,6 +23,7 @@ export function HostAuth({ defaultIsLogin = true }: { defaultIsLogin?: boolean }
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [termsAccepted, setTermsAccepted] = useState(false);
+  const [personalDataConsentAccepted, setPersonalDataConsentAccepted] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isLogin, setIsLogin] = useState(defaultIsLogin);
   const [loading, setLoading] = useState(false);
@@ -61,17 +62,29 @@ export function HostAuth({ defaultIsLogin = true }: { defaultIsLogin?: boolean }
         setLoading(false);
         return;
       }
+      if (!personalDataConsentAccepted) {
+        setError('Необходимо дать согласие на обработку персональных данных');
+        setLoading(false);
+        return;
+      }
     }
 
     try {
       isLogin
         ? await api.login(email, password)
-        : await api.register(email, password, { termsAccepted, displayedTermsVersion: legalConfig.versions.terms });
+        : await api.register(email, password, {
+          termsAccepted,
+          displayedTermsVersion: legalConfig.versions.terms,
+          personalDataConsentAccepted,
+          displayedPersonalDataConsentVersion: legalConfig.versions.consent,
+        });
       // Cookie is set server-side; just navigate
       navigate('/dashboard', { replace: true });
     } catch (err: any) {
       if (err.code === 'DOCUMENT_VERSION_MISMATCH') {
-        setError('Версия Пользовательского соглашения изменилась. Обновите страницу, ознакомьтесь с новой редакцией и повторите регистрацию.');
+        setError(err.documentType === 'PERSONAL_DATA_CONSENT'
+          ? 'Версия Согласия на обработку персональных данных изменилась. Обновите страницу, ознакомьтесь с новой редакцией и повторите регистрацию.'
+          : 'Версия Пользовательского соглашения изменилась. Обновите страницу, ознакомьтесь с новой редакцией и повторите регистрацию.');
       } else if (err.code === 'REGISTRATION_DISABLED') {
         setError('Регистрация временно недоступна до публикации окончательной редакции Пользовательского соглашения');
       } else {
@@ -187,14 +200,23 @@ export function HostAuth({ defaultIsLogin = true }: { defaultIsLogin?: boolean }
                         id="terms-checkbox"
                         checked={termsAccepted}
                         onChange={(e) => setTermsAccepted(e.target.checked)}
-                        className="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                        className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 text-primary focus:ring-primary"
                       />
                       <Label htmlFor="terms-checkbox" className="text-sm font-normal text-slate-600 leading-snug">
-                        Я принимаю <Link to="/legal/terms" className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">Пользовательское соглашение</Link>.
+                        Я принимаю <Link to={legalConfig.urls.terms} className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">Пользовательское соглашение</Link>.
                       </Label>
                     </div>
-                    <div className="text-sm text-slate-500 leading-snug pl-6">
-                      Регистрируясь, вы подтверждаете, что ознакомились с <Link to="/legal/privacy" className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">Политикой обработки персональных данных</Link>.
+                    <div className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        id="personal-data-consent-checkbox"
+                        checked={personalDataConsentAccepted}
+                        onChange={(e) => setPersonalDataConsentAccepted(e.target.checked)}
+                        className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 text-primary focus:ring-primary"
+                      />
+                      <Label htmlFor="personal-data-consent-checkbox" className="text-sm font-normal text-slate-600 leading-snug">
+                        «Даю отдельное согласие ИП Тумакину Алексею Анатольевичу на обработку моих персональных данных на условиях <Link to={legalConfig.urls.consent} className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">Согласия</Link> и <Link to={legalConfig.urls.privacy} className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">Политики обработки персональных данных</Link>».
+                      </Label>
                     </div>
                   </div>
                 </>

@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Target, Rocket, QrCode, Crown } from 'lucide-react';
+import { ArrowRight, Target, Rocket, QrCode, Crown } from 'lucide-react';
 import { Footer } from '../components/Footer';
 
 const LogoIcon = () => (
@@ -23,6 +23,9 @@ export function LandingPage() {
               <span className="text-xl font-black text-slate-800 tracking-tight group-hover:text-primary transition-colors">КвизПульт</span>
             </div>
             <div className="flex items-center gap-3 sm:gap-4">
+              <Button variant="ghost" className="hidden sm:flex text-slate-600 hover:text-slate-900 font-medium" onClick={() => navigate('/tariff')}>
+                Тарифы
+              </Button>
               <Button variant="ghost" className="hidden sm:flex text-slate-600 hover:text-slate-900 font-medium" onClick={() => navigate('/login')}>
                 Вход
               </Button>

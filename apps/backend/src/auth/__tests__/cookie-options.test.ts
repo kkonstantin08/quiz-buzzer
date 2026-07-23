@@ -30,7 +30,10 @@ function expectCookieOptions(cookie: string, secure: boolean) {
 }
 
 describe('hostToken cookie options', () => {
+  const originalRegistrationEnabled = process.env.REGISTRATION_ENABLED;
+
   beforeAll(async () => {
+    process.env.REGISTRATION_ENABLED = 'true';
     await prisma.hostUser.create({
       data: { email: testEmail, passwordHash: await bcrypt.hash(testPassword, 10) },
     });
@@ -45,6 +48,8 @@ describe('hostToken cookie options', () => {
         await prisma.hostUser.delete({ where: { id: user.id } });
       }
     }
+    if (originalRegistrationEnabled === undefined) delete process.env.REGISTRATION_ENABLED;
+    else process.env.REGISTRATION_ENABLED = originalRegistrationEnabled;
     await prisma.$disconnect();
   });
 
@@ -57,6 +62,8 @@ describe('hostToken cookie options', () => {
       password: testPassword,
       termsAccepted: true,
       displayedTermsVersion: legalBackendConfig.versions[LegalDocumentType.TERMS],
+      personalDataConsentAccepted: true,
+      displayedPersonalDataConsentVersion: '1.0',
     }).expect(200);
     const logout = await request(app).post('/auth/logout').set('Cookie', hostCookie(login)).expect(200);
     const clearSession = await request(app).post('/auth/clear-session').expect(200);

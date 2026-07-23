@@ -248,7 +248,7 @@ export function HostSettings() {
       subscriptionEndDate={subscriptionEndDate}
       onLogout={handleLogout}
       onCreateRoom={handleCreateRoom}
-      onActivated={() => loadData()}
+      onActivated={loadData}
       onProfileUpdated={(newName, newEmail, newAvatarUrl) => {
         if (newName !== undefined) setName(newName);
         if (newEmail !== undefined) setEmail(newEmail);

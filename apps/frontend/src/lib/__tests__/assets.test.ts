@@ -20,6 +20,6 @@ describe('resolveAssetUrl', () => {
   });
 
   it('does not add an API prefix to non-upload URLs', () => {
-    expect(resolveAssetUrl('/legal/privacy', development)).toBe('/legal/privacy');
+    expect(resolveAssetUrl('/privacy', development)).toBe('/privacy');
   });
 });
