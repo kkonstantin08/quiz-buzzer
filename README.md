@@ -112,6 +112,28 @@ PAYMENTS_ENABLED=false
 
 `COOKIE_SECURE=false` сохраняет локальное HTTP-тестирование. Для внешнего HTTPS задайте `COOKIE_SECURE=true` явно после настройки домена и TLS: приложение не включает HTTPS автоматически и не выводит этот флаг из request headers. При отсутствии `COOKIE_SECURE` временно поддерживается `USE_HTTPS=true`; `COOKIE_SECURE` всегда имеет приоритет.
 
+### Восстановление пароля и Resend
+
+В production для отправки ссылок восстановления обязательны следующие backend-переменные. Не добавляйте реальный API key в Git, `.env.example` или клиентскую сборку:
+
+```env
+RESEND_API_KEY=re_...
+MAIL_FROM=КвизПульт <noreply@qbuz.ru>
+APP_PUBLIC_URL=https://qbuz.ru
+PASSWORD_RESET_TOKEN_TTL_MINUTES=30
+```
+
+`APP_PUBLIC_URL` — публичный origin frontend без завершающего `/`; ссылка имеет вид `https://qbuz.ru/reset-password?token=...`. TTL принимает целое число от 1 до 1440 минут, по умолчанию — 30.
+
+Ручная настройка перед включением отправки:
+
+1. В Resend откройте **API Keys**, создайте ключ только для отправки и сохраните его в секретах production-окружения как `RESEND_API_KEY`.
+2. В Resend → **Domains** добавьте `qbuz.ru`. Скопируйте точные DNS-записи, показанные Resend для выбранного региона.
+3. В REG.RU откройте DNS-зону `qbuz.ru` и добавьте только новые записи из Resend (обычно SPF/MX для поддомена отправки и DKIM TXT). Не изменяйте существующие A/AAAA/CNAME/MX/TXT-записи сайта и не заменяйте существующий SPF на корне домена.
+4. Вернитесь в Resend и запустите проверку DNS. После статуса **Verified** `noreply@qbuz.ru` доступен как отправитель. Тесты используют мок SDK и не требуют настоящего ключа или DNS.
+
+Resend публикует точный список записей для домена и рекомендует сверять значения без ручной замены: [управление доменами](https://resend.com/docs/dashboard/domains/introduction), [проверка DNS](https://resend.com/docs/knowledge-base/what-if-my-domain-is-not-verifying).
+
 ### Проверка healthcheck
 
 Healthcheck проверяет не только доступность порта, но и соединение с базой данных:

@@ -24,6 +24,7 @@ model HostUser {
   settings        HostSettings?
   gameHistory     GameHistory[]
   sessions        Session[]
+  passwordResetTokens PasswordResetToken[]
   legalAcceptances LegalAcceptance[]
   payments        Payment[]
   paymentMethods  PaymentMethod[]
@@ -36,6 +37,19 @@ model Session {
   createdAt  DateTime  @default(now())
   expiresAt  DateTime
   revokedAt  DateTime?
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      HostUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, usedAt, expiresAt])
+  @@index([expiresAt])
 }
 
 model Subscription {

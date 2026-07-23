@@ -47,7 +47,41 @@ function parseTrustProxy(value: string | undefined): TrustProxy {
   return trustedProxies.length > 0 && trustedProxies.every(isTrustedProxyAddress) ? trustedProxies : false;
 }
 
+function requiredString(env: NodeJS.ProcessEnv, name: string, fallback: string | undefined, production: boolean) {
+  const value = env[name]?.trim() || fallback;
+  if (production && !env[name]?.trim()) throw new Error(`FATAL ERROR: ${name} environment variable is required in production.`);
+  return value;
+}
+
+function parsePublicUrl(value: string | undefined, production: boolean) {
+  const publicUrl = requiredString({ APP_PUBLIC_URL: value }, 'APP_PUBLIC_URL', 'http://localhost:5173', production)!;
+  try {
+    const parsed = new URL(publicUrl);
+    if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error();
+  } catch {
+    throw new Error('FATAL ERROR: APP_PUBLIC_URL must be an absolute HTTP(S) URL.');
+  }
+  return publicUrl.replace(/\/+$/, '');
+}
+
+function parseMailFrom(value: string | undefined, production: boolean) {
+  const mailFrom = requiredString({ MAIL_FROM: value }, 'MAIL_FROM', 'КвизПульт <noreply@qbuz.ru>', production)!;
+  if (!/^.+\s<[^<>\s@]+@[^<>\s@]+\.[^<>\s@]+>$/.test(mailFrom)) {
+    throw new Error('FATAL ERROR: MAIL_FROM must use the format Name <email@example.com>.');
+  }
+  return mailFrom;
+}
+
+function parsePasswordResetTtl(value: string | undefined) {
+  const ttl = Number(value ?? 30);
+  if (!Number.isInteger(ttl) || ttl < 1 || ttl > 1440) {
+    throw new Error('FATAL ERROR: PASSWORD_RESET_TOKEN_TTL_MINUTES must be an integer between 1 and 1440.');
+  }
+  return ttl;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
+  const production = env.NODE_ENV === 'production';
   const cookieSecure = env.COOKIE_SECURE === undefined
     ? env.USE_HTTPS === 'true'
     : env.COOKIE_SECURE === 'true';
@@ -55,13 +89,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
   return {
     port: env.PORT || 3001,
     jwtSecret: env.JWT_SECRET || 'change_me_only_in_dev',
-    corsOrigin: env.NODE_ENV === 'production'
+    corsOrigin: production
       ? (env.CORS_ORIGIN || 'http://localhost:5173')
     : defaultCors,
     uploadDir: env.UPLOAD_DIR || path.join(__dirname, '../../uploads'),
     paymentsEnabled: env.PAYMENTS_ENABLED === 'true',
     trustProxy: parseTrustProxy(env.TRUST_PROXY),
     cookieSecure,
+    resendApiKey: requiredString(env, 'RESEND_API_KEY', undefined, production),
+    mailFrom: parseMailFrom(env.MAIL_FROM, production),
+    appPublicUrl: parsePublicUrl(env.APP_PUBLIC_URL, production),
+    passwordResetTokenTtlMinutes: parsePasswordResetTtl(env.PASSWORD_RESET_TOKEN_TTL_MINUTES),
   };
 }
 

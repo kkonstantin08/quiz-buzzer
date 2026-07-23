@@ -15,6 +15,10 @@ services:
       - NODE_ENV=production
       - TRUST_PROXY=172.30.0.10
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      - RESEND_API_KEY=${RESEND_API_KEY:?RESEND_API_KEY environment variable is required}
+      - MAIL_FROM=${MAIL_FROM:?MAIL_FROM environment variable is required}
+      - APP_PUBLIC_URL=${APP_PUBLIC_URL:?APP_PUBLIC_URL environment variable is required}
+      - PASSWORD_RESET_TOKEN_TTL_MINUTES=${PASSWORD_RESET_TOKEN_TTL_MINUTES:-30}
       - PAYMENTS_ENABLED=${PAYMENTS_ENABLED:-false}
       - REGISTRATION_ENABLED=${REGISTRATION_ENABLED:-false}
     # ports are intentionally NOT exposed — access only through nginx

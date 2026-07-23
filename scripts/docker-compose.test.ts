@@ -20,6 +20,10 @@ describe('docker compose', () => {
         COMPOSE_PROJECT_NAME: 'quiz-buzzer-test',
         JWT_SECRET: 'ci-test-jwt-secret-at-least-32-characters',
         NGINX_PORT: '8080',
+        RESEND_API_KEY: 're_test',
+        MAIL_FROM: 'КвизПульт <noreply@qbuz.ru>',
+        APP_PUBLIC_URL: 'http://localhost',
+        PASSWORD_RESET_TOKEN_TTL_MINUTES: '30',
       },
       stdio: ['ignore', 'pipe', 'ignore'],
     }));

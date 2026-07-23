@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { createHash, randomBytes } from 'crypto';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { Prisma } from '@prisma/client';
 import { countUploadReferences, InvalidUploadError, receiveUpload, saveUploadedFile, deleteUploadedFile, withUploadLock } from '../utils/upload';
@@ -10,7 +11,11 @@ import { requireAuth, AuthRequest } from './middleware';
 import { appEvents } from '../events';
 import { LegalDocumentType, LegalAcceptanceSource, legalBackendConfig } from '../legal/config';
 import { normalizeEmail, normalizeName } from './validation';
+import { sendPasswordResetEmail } from './passwordResetEmail';
 export const authRouter = Router();
+
+const passwordResetConfirmation = 'Если аккаунт с таким email существует, мы отправили инструкции по восстановлению пароля';
+const invalidResetTokenMessage = 'Ссылка недействительна или срок её действия истёк';
 
 const hostCookieOptions = () => ({
   httpOnly: true,
@@ -51,9 +56,32 @@ export const createPasswordVerificationLimiter = () => rateLimit({
   legacyHeaders: false,
 });
 
+export const createPasswordResetIpLimiter = () => rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: { error: 'Слишком много запросов на восстановление пароля. Попробуйте позже.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(req.ip ?? '0.0.0.0'),
+});
+
+export const createPasswordResetEmailLimiter = () => rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  message: { error: 'Слишком много запросов на восстановление пароля. Попробуйте позже.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const email = normalizeEmail(req.body?.email);
+    return email.ok ? email.value : 'invalid-email';
+  },
+});
+
 const loginLimiter = createLoginLimiter();
 const registerLimiter = createRegisterLimiter();
 const passwordVerificationLimiter = createPasswordVerificationLimiter();
+const passwordResetIpLimiter = createPasswordResetIpLimiter();
+const passwordResetEmailLimiter = createPasswordResetEmailLimiter();
 
 function isUniqueConstraintError(error: unknown) {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002';
@@ -101,6 +129,10 @@ async function hasCurrentSensitiveState(
     && session?.userId === userId
     && session.revokedAt === null
     && session.expiresAt > new Date();
+}
+
+function hashResetToken(token: string) {
+  return createHash('sha256').update(token).digest('hex');
 }
 
 authRouter.post('/login', loginLimiter, async (req, res) => {
@@ -169,6 +201,77 @@ authRouter.post('/login', loginLimiter, async (req, res) => {
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+authRouter.post('/forgot-password', passwordResetIpLimiter, passwordResetEmailLimiter, async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    if (email.ok) {
+      const userId = await resolveLoginUserId(prisma, req.body.email.trim(), email.value);
+      if (userId) {
+        const token = randomBytes(32).toString('base64url');
+        const now = new Date();
+        const expiresAt = new Date(now.getTime() + config.passwordResetTokenTtlMinutes * 60 * 1000);
+        await prisma.$transaction(async (tx) => {
+          await tx.passwordResetToken.updateMany({ where: { userId, usedAt: null }, data: { usedAt: now } });
+          await tx.passwordResetToken.create({ data: { userId, tokenHash: hashResetToken(token), expiresAt } });
+        });
+
+        const sent = await sendPasswordResetEmail(email.value, `${config.appPublicUrl}/reset-password?token=${encodeURIComponent(token)}`);
+        if (sent === false) console.error('Password reset email failed');
+      }
+    }
+  } catch {
+    console.error('Password reset request failed');
+  }
+  return res.json({ message: passwordResetConfirmation });
+});
+
+authRouter.post('/reset-password', async (req, res) => {
+  const { token, newPassword } = req.body ?? {};
+  if (typeof token !== 'string' || token.length === 0) {
+    return res.status(400).json({ error: invalidResetTokenMessage });
+  }
+  if (typeof newPassword !== 'string' || newPassword.length < 8 || newPassword.length > 128) {
+    return res.status(400).json({ error: 'Пароль должен содержать от 8 до 128 символов' });
+  }
+
+  try {
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    const now = new Date();
+    const reset = await prisma.$transaction(async (tx) => {
+      const resetToken = await tx.passwordResetToken.findFirst({
+        where: { tokenHash: hashResetToken(token), usedAt: null, expiresAt: { gt: now } },
+        include: { user: { select: { passwordHash: true } } },
+      });
+      if (!resetToken) return { kind: 'invalid-token' as const };
+      if (await bcrypt.compare(newPassword, resetToken.user.passwordHash)) return { kind: 'invalid-password' as const };
+
+      const claimed = await tx.passwordResetToken.updateMany({
+        where: { id: resetToken.id, usedAt: null, expiresAt: { gt: now } },
+        data: { usedAt: now },
+      });
+      if (claimed.count !== 1) return { kind: 'invalid-token' as const };
+
+      await tx.hostUser.update({ where: { id: resetToken.userId }, data: { passwordHash } });
+      await tx.passwordResetToken.updateMany({
+        where: { userId: resetToken.userId, id: { not: resetToken.id }, usedAt: null },
+        data: { usedAt: now },
+      });
+      const sessions = await tx.session.findMany({ where: { userId: resetToken.userId, revokedAt: null }, select: { id: true } });
+      await tx.session.updateMany({ where: { id: { in: sessions.map((session) => session.id) }, revokedAt: null }, data: { revokedAt: now } });
+      return { kind: 'reset' as const, revokedSessionIds: sessions.map((session) => session.id) };
+    });
+
+    if (reset.kind === 'invalid-token') return res.status(400).json({ error: invalidResetTokenMessage });
+    if (reset.kind === 'invalid-password') return res.status(400).json({ error: 'Новый пароль должен отличаться от текущего' });
+
+    if (reset.revokedSessionIds.length > 0) appEvents.emit('host_sessions_revoked', reset.revokedSessionIds);
+    res.clearCookie('hostToken', hostCookieOptions());
+    return res.json({ success: true });
+  } catch {
+    return res.status(500).json({ error: 'Password reset failed' });
   }
 });
 
