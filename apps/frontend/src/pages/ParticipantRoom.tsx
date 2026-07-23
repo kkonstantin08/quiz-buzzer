@@ -597,7 +597,7 @@ export function ParticipantRoom() {
               </div>
               <p className="text-xs text-slate-500 text-center leading-relaxed mt-2">
                 Не указывайте фамилию, телефон и другие лишние персональные данные.{' '}
-                <a href="/legal/privacy" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Политика обработки данных</a>
+                <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Политика обработки данных</a>
               </p>
               <Button
                 type="submit"

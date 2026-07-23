@@ -23,6 +23,9 @@ export function LandingPage() {
               <span className="text-xl font-black text-slate-800 tracking-tight group-hover:text-primary transition-colors">КвизПульт</span>
             </div>
             <div className="flex items-center gap-3 sm:gap-4">
+              <Button variant="ghost" className="hidden sm:flex text-slate-600 hover:text-slate-900 font-medium" onClick={() => navigate('/tariff')}>
+                Тарифы
+              </Button>
               <Button variant="ghost" className="hidden sm:flex text-slate-600 hover:text-slate-900 font-medium" onClick={() => navigate('/login')}>
                 Вход
               </Button>
@@ -52,10 +55,6 @@ export function LandingPage() {
               </Button>
             </Link>
           </div>
-          <Link to="/tariff" className="inline-flex items-center gap-1 text-sm font-semibold text-slate-600 hover:text-primary transition-colors">
-            Доступ ведущего: 500 ₽ / 30 дней
-            <ArrowRight size={16} />
-          </Link>
 
           <div className="pt-4 lg:pt-8 grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-2xl mx-auto lg:mx-0">
             {/* Card 1 */}

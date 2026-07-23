@@ -26,7 +26,7 @@ export function Footer() {
               <li><Link to={legalConfig.urls.offer} className="hover:text-white transition-colors">Публичная оферта</Link></li>
               <li><Link to={legalConfig.urls.terms} className="hover:text-white transition-colors">Пользовательское соглашение</Link></li>
               <li><Link to={legalConfig.urls.privacy} className="hover:text-white transition-colors">Политика конфиденциальности</Link></li>
-              <li><Link to={legalConfig.urls.subscription} className="hover:text-white transition-colors">Условия подписки</Link></li>
+              <li><Link to={legalConfig.urls.subscription} className="hover:text-white transition-colors">Условия доступа</Link></li>
               <li><Link to={legalConfig.urls.consent} className="hover:text-white transition-colors">Согласие на обработку персональных данных</Link></li>
             </ul>
           </div>

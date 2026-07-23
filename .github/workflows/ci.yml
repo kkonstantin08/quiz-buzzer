@@ -42,7 +42,7 @@ jobs:
       - name: Run script tests
         run: npm run test:scripts
       - name: Run legal check
-        run: npm run legal:check
+        run: npm run legal:check:strict
 
   backend:
     name: CI / Backend
@@ -113,6 +113,7 @@ jobs:
           echo "CORS_ORIGIN=http://localhost:8080" >> .env
           echo "PORT=3001" >> .env
           echo "DATABASE_URL=file:/app/prisma/dev.db" >> .env
+          echo "REGISTRATION_ENABLED=true" >> .env
       - name: Build Docker images
         run: docker compose build
       - name: Verify Quick Tunnel is not running
@@ -151,7 +152,7 @@ jobs:
           PNG
           curl -f -sS -c "$cookie_jar" \
             -H 'Content-Type: application/json' \
-            --data '{"email":"docker-upload-smoke@example.test","password":"password123","termsAccepted":true,"displayedTermsVersion":"1.0"}' \
+            --data '{"email":"docker-upload-smoke@example.test","password":"password123","termsAccepted":true,"displayedTermsVersion":"1.0","personalDataConsentAccepted":true,"displayedPersonalDataConsentVersion":"1.0"}' \
             "$NGINX_URL/api/auth/register" > /dev/null
           upload=$(curl -f -sS -b "$cookie_jar" -F "avatar=@$image_file;type=image/png;filename=image.html" "$NGINX_URL/api/auth/avatar")
           upload_path=$(node -e 'const value = JSON.parse(process.argv[1]).avatarUrl; if (!/^\/uploads\/[a-f0-9]{32}\.png$/.test(value || "")) process.exit(1); process.stdout.write(value)' "$upload")

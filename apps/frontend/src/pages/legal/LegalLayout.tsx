@@ -57,7 +57,7 @@ export function LegalLayout() {
           </nav>
         </aside>
 
-        <main className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-10 prose prose-slate max-w-none prose-headings:font-bold prose-h1:text-3xl prose-h2:text-xl prose-a:text-primary hover:prose-a:text-primary/80">
+        <main id="main-content" tabIndex={-1} className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-10 prose prose-slate max-w-none prose-headings:font-bold prose-h1:text-3xl prose-h2:text-xl prose-a:text-primary hover:prose-a:text-primary/80">
           <Outlet />
         </main>
       </div>

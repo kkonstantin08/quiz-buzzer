@@ -1,84 +1,83 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('Legal Pages', () => {
-  test('should display draft notice in production preview (simulated)', async ({ page }) => {
-    // To simulate production view of the document, we can intercept and inject PROD env or just rely on the test above.
-    // However, the test above dynamically checks.
-    // Let's just remove the old test as it was testing the old draft notice component.
-  });
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('quiz_cookie_notice_acknowledgement', JSON.stringify({
+    noticeVersion: '1.0',
+    decidedAt: '2026-07-23T00:00:00.000Z',
+    categories: { necessary: true, analytics: false },
+  })));
+});
 
-  test('should link to all legal documents from footer', async ({ page }) => {
-    await page.goto('/');
-
-    // Check footer links
-    const footerLinks = [
-      'Пользовательское соглашение',
-      'Публичная оферта',
-      'Возврат средств',
-      'Политика конфиденциальности',
-      'Реквизиты',
-      'Условия подписки',
-      'Политика Cookie'
-    ];
-
-    for (const linkText of footerLinks) {
-      const link = page.getByRole('link', { name: linkText });
-      await expect(link).toBeVisible();
-    }
-  });
-
-  test('should display legal pages content in dev or draft notice in prod', async ({ page }) => {
+test.describe('Published legal pages', () => {
+  test('renders every final route without draft markers', async ({ page }) => {
     const pages = [
-      { url: '/legal/terms', title: 'Пользовательское соглашение' },
-      { url: '/legal/offer', title: 'Публичная оферта' },
-      { url: '/legal/privacy', title: 'Политика конфиденциальности' },
-      { url: '/legal/refunds', title: 'Политика возвратов' },
-      { url: '/legal/subscription', title: 'Условия подписки и рекуррентных платежей' },
-      { url: '/legal/cookies', title: 'Политика использования файлов cookie' },
-      { url: '/legal/details', title: 'Реквизиты ИП' },
-    ];
+      ['/offer', 'ПУБЛИЧНАЯ ОФЕРТА'],
+      ['/terms', 'ПОЛЬЗОВАТЕЛЬСКОЕ СОГЛАШЕНИЕ'],
+      ['/privacy', 'ПОЛИТИКА В ОТНОШЕНИИ ОБРАБОТКИ ПЕРСОНАЛЬНЫХ ДАННЫХ'],
+      ['/cookies', 'ПОЛИТИКА ИСПОЛЬЗОВАНИЯ COOKIE И ЛОКАЛЬНОГО ХРАНИЛИЩА'],
+      ['/subscription', 'УСЛОВИЯ ПРЕДОСТАВЛЕНИЯ ДОСТУПА'],
+      ['/refunds', 'ПОЛИТИКА ВОЗВРАТОВ'],
+      ['/consent', 'СОГЛАСИЕ НА ОБРАБОТКУ ПЕРСОНАЛЬНЫХ ДАННЫХ'],
+      ['/legal/details', 'РЕКВИЗИТЫ И КОНТАКТНАЯ ИНФОРМАЦИЯ'],
+      ['/tariff', 'Проводите квизы без физических кнопок'],
+    ] as const;
 
-    for (const p of pages) {
-      await page.goto(p.url);
-      
-      // Title should always be visible
-      await expect(page.getByRole('heading', { name: p.title })).toBeVisible();
-
-      // Check if we are in production preview mode based on some heuristics or env. 
-      // Easiest is just to expect one of the two possible renders without crashing.
-      const isProdTextVisible = await page.getByText('Документ находится в подготовке. Приём платежей отключён.').isVisible();
-      const isTodoVisible = await page.getByText('TODO_LEGAL', { exact: false }).first().isVisible();
-      const isNotProseDetails = await page.locator('.not-prose').isVisible(); // DetailsPage doesn't have TODO_LEGAL
-
-      expect(isProdTextVisible || isTodoVisible || isNotProseDetails).toBeTruthy();
+    for (const [url, heading] of pages) {
+      await page.goto(url);
+      await expect(page.getByRole('heading', { name: heading })).toBeVisible();
+      await expect(page.locator('body')).not.toContainText('TODO_LEGAL');
+      await expect(page.locator('body')).not.toContainText('Документ находится в подготовке');
     }
   });
 
-  test('Host registration should require terms acceptance', async ({ page }) => {
-    await page.goto('/login');
+  test('footer links point to the published documents', async ({ page }) => {
+    await page.goto('/');
+    for (const [name, href] of [
+      ['Публичная оферта', '/offer'],
+      ['Пользовательское соглашение', '/terms'],
+      ['Политика конфиденциальности', '/privacy'],
+      ['Условия доступа', '/subscription'],
+      ['Согласие на обработку персональных данных', '/consent'],
+      ['Реквизиты', '/legal/details'],
+      ['Политика Cookie', '/cookies'],
+      ['Возврат средств', '/refunds'],
+    ] as const) {
+      await expect(page.getByRole('link', { name }).last()).toHaveAttribute('href', href);
+    }
+  });
 
-    // Click register tab
-    await page.getByRole('button', { name: /Нет аккаунта\? Зарегистрируйтесь/i }).click();
+  test('registration requires each separate consent and exposes its documents', async ({ page }) => {
+    await page.goto('/register');
+    await page.getByLabel('Email').fill('legal-playwright@example.test');
+    await page.getByRole('textbox', { name: 'Пароль', exact: true }).fill('password123');
+    await page.getByRole('textbox', { name: 'Повторите пароль' }).fill('password123');
 
-    // Fill registration form
-    await page.getByPlaceholder('Email').fill('testplaywright@example.com');
-    await page.getByPlaceholder('Пароль', { exact: true }).fill('password123');
-    await page.getByPlaceholder('Повторите пароль').fill('password123');
+    const checkboxes = page.getByRole('checkbox');
+    await expect(checkboxes).toHaveCount(2);
+    await expect(checkboxes.nth(0)).not.toBeChecked();
+    await expect(checkboxes.nth(1)).not.toBeChecked();
+    await expect(checkboxes.nth(0)).toHaveClass(/h-4/);
+    await expect(checkboxes.nth(1)).toHaveClass(/h-4/);
 
-    // The checkbox should be visible
-    const checkbox = page.getByRole('checkbox', { name: /Я принимаю/i });
-    await expect(checkbox).toBeVisible();
-    await expect(checkbox).not.toBeChecked();
+    await page.getByRole('button', { name: 'Зарегистрироваться' }).click();
+    await expect(page.getByRole('alert')).toContainText('Необходимо принять Пользовательское соглашение');
+    await checkboxes.nth(0).check();
+    await page.getByRole('button', { name: 'Зарегистрироваться' }).click();
+    await expect(page.getByRole('alert')).toContainText('Необходимо дать согласие на обработку персональных данных');
 
-    // Cannot submit if not checked (we mock API or just assert on UI validation)
-    await page.getByRole('button', { name: /Зарегистрироваться/i }).click();
-    
-    // There should be an error (either HTML5 validation or our error message)
-    // Wait for error text
-    await expect(page.getByText('Необходимо принять Пользовательское соглашение')).toBeVisible();
+    const form = page.locator('#main-content');
+    await expect(form.getByRole('link', { name: 'Пользовательское соглашение' })).toHaveAttribute('href', '/terms');
+    await expect(form.getByRole('link', { name: 'Согласия' })).toHaveAttribute('href', '/consent');
+    await expect(form.getByRole('link', { name: 'Политики обработки персональных данных' })).toHaveAttribute('href', '/privacy');
+  });
 
-    // Check it
-    await checkbox.check();
-    await expect(checkbox).toBeChecked();
+  test('skip link focuses the legal page main content', async ({ page }) => {
+    await page.goto('/terms');
+    await page.locator('#main-content').waitFor({ state: 'visible' });
+    await page.keyboard.press('Tab');
+    const skipLink = page.getByRole('link', { name: 'Перейти к основному содержимому' });
+    await expect(skipLink).toBeFocused();
+    await skipLink.press('Enter');
+    await expect(page.locator('#main-content')).toBeFocused();
   });
 });

@@ -70,11 +70,27 @@ describe('legal-check.mjs', () => {
     fs.writeFileSync(path.join(ignoredRoot, 'docs/legal-readiness-todo.md'), 'TODO_LEGAL(documentation)');
     fs.writeFileSync(path.join(ignoredRoot, 'scripts/legal-check.test.ts'), 'TODO_LEGAL(test source)');
 
-    const result = execSync(`node ${path.join(__dirname, 'legal-check.mjs')} --strict`, {
+    const result = execSync(`node ${path.join(__dirname, 'legal-check.mjs')}`, {
       env: { ...process.env, LEGAL_CHECK_ROOT: ignoredRoot },
       encoding: 'utf8'
     });
 
     expect(result).toContain('Проверка пройдена');
+  });
+
+  it('reports missing strict publication requirements from a fixture', () => {
+    const strictFixture = path.join(FIXTURES_DIR, 'strict-missing-requirements');
+    fs.mkdirSync(strictFixture, { recursive: true });
+
+    let error: any;
+    try {
+      execSync(`node ${path.join(__dirname, 'legal-check.mjs')} --strict 2>&1`, {
+        env: { ...process.env, LEGAL_CHECK_ROOT: strictFixture },
+        encoding: 'utf8',
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error?.stdout.toString()).toContain('Не найден итоговый маршрут /offer');
   });
 });

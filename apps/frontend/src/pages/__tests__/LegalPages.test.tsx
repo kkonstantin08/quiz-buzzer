@@ -17,7 +17,9 @@ describe('Published legal documents', () => {
       refunds: '/refunds',
       consent: '/consent',
     });
-    expect(new Set(Object.values(legalConfig.dates))).toEqual(new Set(['18 июля 2026 года']));
+    expect(legalConfig.documentVersion).toBe('1.0');
+    expect(legalConfig.effectiveDate).toBe('18 июля 2026 года');
+    expect(new Set(Object.values(legalConfig.dates))).toEqual(new Set([legalConfig.effectiveDate]));
   });
 
   it('renders the final terms and cookie policy fragments', () => {
@@ -30,5 +32,16 @@ describe('Published legal documents', () => {
 
     render(<CookiesPage />);
     expect(screen.getByText(/До согласия посетителя код Метрики/i)).toBeInTheDocument();
+  });
+
+  it('updates document metadata and restores it after leaving the page', () => {
+    document.title = 'КвизПульт';
+    const view = render(<TermsPage />);
+
+    expect(document.title).toBe('Пользовательское соглашение | КвизПульт');
+    expect(document.querySelector('meta[name="description"]')).toHaveAttribute('content', 'Пользовательское соглашение сервиса «КвизПульт».');
+
+    view.unmount();
+    expect(document.title).toBe('КвизПульт');
   });
 });

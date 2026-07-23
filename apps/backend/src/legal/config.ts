@@ -1,3 +1,5 @@
+import { LEGAL_DOCUMENT_VERSION } from 'shared';
+
 export enum LegalDocumentType {
   TERMS = 'TERMS',
   OFFER = 'OFFER',
@@ -16,11 +18,11 @@ export enum LegalAcceptanceSource {
 
 export const legalBackendConfig = {
   versions: {
-    [LegalDocumentType.TERMS]: '1.0',
-    [LegalDocumentType.OFFER]: '1.0',
-    [LegalDocumentType.RECURRING_PAYMENT]: '1.0',
-    [LegalDocumentType.MARKETING]: '1.0',
-    [LegalDocumentType.PRIVACY_ACKNOWLEDGEMENT]: '1.0',
-    [LegalDocumentType.PERSONAL_DATA_CONSENT]: '1.0',
+    [LegalDocumentType.TERMS]: LEGAL_DOCUMENT_VERSION,
+    [LegalDocumentType.OFFER]: LEGAL_DOCUMENT_VERSION,
+    [LegalDocumentType.RECURRING_PAYMENT]: LEGAL_DOCUMENT_VERSION,
+    [LegalDocumentType.MARKETING]: LEGAL_DOCUMENT_VERSION,
+    [LegalDocumentType.PRIVACY_ACKNOWLEDGEMENT]: LEGAL_DOCUMENT_VERSION,
+    [LegalDocumentType.PERSONAL_DATA_CONSENT]: LEGAL_DOCUMENT_VERSION,
   }
 };

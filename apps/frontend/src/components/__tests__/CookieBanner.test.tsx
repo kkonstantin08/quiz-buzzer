@@ -82,4 +82,12 @@ describe("CookieBanner", () => {
     expect(controls).toHaveClass("flex-col");
     expect(controls).not.toHaveClass("sm:flex-row");
   });
+
+  it("has a non-modal dialog role labelled by its heading", () => {
+    render(<MemoryRouter><CookieBanner /></MemoryRouter>);
+    act(() => vi.advanceTimersByTime(1000));
+
+    expect(screen.getByRole("dialog", { name: "Настройки cookie" })).toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
 });

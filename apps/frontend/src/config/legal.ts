@@ -6,23 +6,27 @@ import privacy from '../../../../Документы КвизПульт/Markdown/
 import refunds from '../../../../Документы КвизПульт/Markdown/Политика возвратов КвизПульт.md?raw';
 import subscription from '../../../../Документы КвизПульт/Markdown/Условия предоставления доступа КвизПульт.md?raw';
 import terms from '../../../../Документы КвизПульт/Markdown/Пользовательское соглашение КвизПульт.md?raw';
+import { LEGAL_DOCUMENT_VERSION } from 'shared';
 
 const effectiveDate = '18 июля 2026 года';
+const documentVersion = LEGAL_DOCUMENT_VERSION;
 
 const documents = {
-  details: { id: 'DETAILS', route: '/legal/details', version: '1.0', effectiveDate, markdown: details },
-  offer: { id: 'OFFER', route: '/offer', version: '1.0', effectiveDate, markdown: offer },
-  terms: { id: 'TERMS', route: '/terms', version: '1.0', effectiveDate, markdown: terms },
-  privacy: { id: 'PRIVACY', route: '/privacy', version: '1.0', effectiveDate, markdown: privacy },
-  cookies: { id: 'COOKIES', route: '/cookies', version: '1.0', effectiveDate, markdown: cookies },
-  subscription: { id: 'SUBSCRIPTION', route: '/subscription', version: '1.0', effectiveDate, markdown: subscription },
-  refunds: { id: 'REFUNDS', route: '/refunds', version: '1.0', effectiveDate, markdown: refunds },
-  consent: { id: 'PERSONAL_DATA_CONSENT', route: '/consent', version: '1.0', effectiveDate, markdown: consent },
+  details: { id: 'DETAILS', route: '/legal/details', version: documentVersion, effectiveDate, title: 'Реквизиты и контактная информация | КвизПульт', description: 'Реквизиты и контактная информация сервиса «КвизПульт».', markdown: details },
+  offer: { id: 'OFFER', route: '/offer', version: documentVersion, effectiveDate, title: 'Публичная оферта | КвизПульт', description: 'Публичная оферта на предоставление доступа к сервису «КвизПульт».', markdown: offer },
+  terms: { id: 'TERMS', route: '/terms', version: documentVersion, effectiveDate, title: 'Пользовательское соглашение | КвизПульт', description: 'Пользовательское соглашение сервиса «КвизПульт».', markdown: terms },
+  privacy: { id: 'PRIVACY', route: '/privacy', version: documentVersion, effectiveDate, title: 'Политика обработки персональных данных | КвизПульт', description: 'Политика обработки персональных данных сервиса «КвизПульт».', markdown: privacy },
+  cookies: { id: 'COOKIES', route: '/cookies', version: documentVersion, effectiveDate, title: 'Политика Cookie | КвизПульт', description: 'Политика использования cookie сервиса «КвизПульт».', markdown: cookies },
+  subscription: { id: 'SUBSCRIPTION', route: '/subscription', version: documentVersion, effectiveDate, title: 'Условия предоставления доступа | КвизПульт', description: 'Условия предоставления доступа к сервису «КвизПульт».', markdown: subscription },
+  refunds: { id: 'REFUNDS', route: '/refunds', version: documentVersion, effectiveDate, title: 'Политика возвратов | КвизПульт', description: 'Политика возвратов сервиса «КвизПульт».', markdown: refunds },
+  consent: { id: 'PERSONAL_DATA_CONSENT', route: '/consent', version: documentVersion, effectiveDate, title: 'Согласие на обработку персональных данных | КвизПульт', description: 'Согласие на обработку персональных данных для сервиса «КвизПульт».', markdown: consent },
 } as const;
 
 export type LegalDocument = typeof documents[keyof typeof documents];
 
 export const legalConfig = {
+  documentVersion,
+  effectiveDate,
   productName: "КвизПульт",
   merchantName: "Индивидуальный предприниматель Тумакин Алексей Анатольевич",
   inn: "344211197773",
