@@ -27,6 +27,7 @@ jest.mock('../../prisma', () => ({
 import { rooms, socketToRoom, usedRoomCodes, createRoom, deleteRoom } from '../../rooms';
 import {
   hostDisconnectTimers,
+  closeRoomAfterHostTimeout,
   reconnectTimeoutLoader,
   startHostReconnectTimeout,
 } from '../host-reconnect';
@@ -73,6 +74,7 @@ function makeMockPrisma(onSave?: () => void) {
 // ── setup / teardown ─────────────────────────────────────────────────────────
 
 beforeEach(() => {
+  mockPrismaCreate.mockReset().mockResolvedValue({});
   rooms.clear();
   socketToRoom.clear();
   usedRoomCodes.clear();
@@ -92,7 +94,7 @@ describe('Room Lifecycle', () => {
   it('1. Finished room is deleted 5 minutes after ROOM_FINISH', () => {
     jest.useFakeTimers();
     const io = makeMockIo();
-    const buzzBuffers = new Map<string, any>();
+    const buzzBuffers = new Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>();
     const room = createRoom('host-1', 'sock-1');
     room.roundState = RoomState.FINISHED;
 
@@ -125,6 +127,8 @@ describe('Room Lifecycle', () => {
     jest.advanceTimersByTime(24 * 60 * 60 * 1000);
 
     // Flush promises so the async saveGameHistory gets executed and its internal await resolves
+    await Promise.resolve();
+    await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
 
@@ -198,6 +202,8 @@ describe('Room Lifecycle', () => {
     rejectPromise!(new Error('DB Error'));
     await Promise.resolve();
     await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
     await Promise.resolve(); // Flush microtasks
 
     // Error was thrown inside, caught, and finally deleteRoom was executed
@@ -223,6 +229,9 @@ describe('Room Lifecycle', () => {
 
     expect(rooms.has(room.roomId)).toBe(true);
     resolveSave?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
 
@@ -369,34 +378,91 @@ describe('Room Lifecycle', () => {
     expect(callCount).toBe(2); // Two attempts were made
   });
 
-  // ── 9. 10-minute host timeout clears participant disconnect timers ────────
-  it('9. 10-minute host reconnect timeout closes the room and participant disconnect timers', () => {
+  // ── 9. Host timeout finishes, persists, then clears every room resource ──
+  it('9. Host reconnect timeout saves the final result once before deleting room state', async () => {
     jest.useFakeTimers();
     const capturedTimers: { cb: () => void; ms: number }[] = [];
     jest.spyOn(reconnectTimeoutLoader, 'setTimeout').mockImplementation((cb, ms) => {
       capturedTimers.push({ cb, ms });
       return setTimeout(() => {}, 99999);
     });
+    let resolveSave: (() => void) | undefined;
+    mockPrismaCreate.mockImplementationOnce(() => new Promise<void>(resolve => {
+      resolveSave = resolve;
+    }));
 
     const io = makeMockIo();
     const room = createRoom('host-1', 'sock-1');
     const roomId = room.roomId;
     room.participants.push({
-      id: 'participant-1', displayName: 'Alice', socketId: 'sock-p1', joinedAt: 1, isConnected: false, score: 0,
+      id: 'participant-0', displayName: 'Bob', socketId: 'sock-p0', joinedAt: 1, isConnected: true, score: 3,
     });
+    room.participants.push({
+      id: 'participant-1', displayName: 'Alice', socketId: '', joinedAt: 1, isConnected: false, score: 7,
+    });
+    socketToRoom.set('sock-1', roomId);
+    socketToRoom.set('sock-p0', roomId);
+    const buzzBuffers = new Map<string, any>();
+    buzzBuffers.set(roomId, { timer: setTimeout(() => {}, 99999), buzzes: [] });
     const participantDisconnectTimers = new Map<string, NodeJS.Timeout>();
     participantDisconnectTimers.set(`${roomId}_participant-1`, setTimeout(() => {}, 99999));
 
-    startHostReconnectTimeout(roomId, io, undefined, undefined, participantDisconnectTimers);
+    startHostReconnectTimeout(roomId, io, buzzBuffers, undefined, participantDisconnectTimers);
 
     const tenMin = capturedTimers.find(t => t.ms === 10 * 60 * 1000);
     expect(tenMin).toBeDefined();
 
-    // Fire the timeout
+    // Repeated delivery must not create a duplicate history record.
     tenMin!.cb();
+    const finalization = closeRoomAfterHostTimeout(roomId, io, buzzBuffers, undefined, participantDisconnectTimers);
+    const repeatedFinalization = closeRoomAfterHostTimeout(roomId, io, buzzBuffers, undefined, participantDisconnectTimers);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(rooms.has(roomId)).toBe(true);
+    expect(mockPrismaCreate).toHaveBeenCalledTimes(1);
 
+    resolveSave?.();
+    await Promise.all([finalization, repeatedFinalization]);
+
+    expect(mockPrismaCreate).toHaveBeenCalledTimes(1);
+    expect(mockPrismaCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        result: GameResult.WINNER,
+        winnerName: 'Alice',
+        winnerScore: 7,
+        participants: 2,
+      }),
+    }));
+    expect(room.roundState).toBe(RoomState.FINISHED);
     expect(rooms.has(roomId)).toBe(false);
+    expect(socketToRoom.has('sock-1')).toBe(false);
+    expect(socketToRoom.has('sock-p0')).toBe(false);
+    expect(buzzBuffers.has(roomId)).toBe(false);
     expect(participantDisconnectTimers.has(`${roomId}_participant-1`)).toBe(false);
+
+    io.close();
+    jest.useRealTimers();
+  });
+
+  it('10. Host timeout deletes the room when history persistence fails', async () => {
+    jest.useFakeTimers();
+    const capturedTimers: { cb: () => void; ms: number }[] = [];
+    jest.spyOn(reconnectTimeoutLoader, 'setTimeout').mockImplementation((cb, ms) => {
+      capturedTimers.push({ cb, ms });
+      return setTimeout(() => {}, 99999);
+    });
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockPrismaCreate.mockRejectedValueOnce(new Error('database unavailable'));
+
+    const io = makeMockIo();
+    const room = createRoom('host-error', 'sock-error');
+    startHostReconnectTimeout(room.roomId, io, new Map(), []);
+
+    capturedTimers.find(t => t.ms === 10 * 60 * 1000)!.cb();
+    await closeRoomAfterHostTimeout(room.roomId, io, new Map(), []);
+
+    expect(rooms.has(room.roomId)).toBe(false);
+    expect(errorSpy).toHaveBeenCalledWith('Error saving history on host timeout:', expect.any(Error));
 
     io.close();
     jest.useRealTimers();

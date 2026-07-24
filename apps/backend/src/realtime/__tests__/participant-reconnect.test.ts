@@ -3,7 +3,7 @@ import { io as Client, Socket as ClientSocket } from 'socket.io-client';
 import { prisma } from '../../prisma';
 import jwt from 'jsonwebtoken';
 import { config } from '../../config';
-import { rooms, getRoomByCode } from '../../rooms';
+import { rooms, getRoomByCode, socketToRoom } from '../../rooms';
 import { participantDisconnectTimers } from '../index';
 import { describe, it, expect, beforeAll, afterAll, afterEach, jest } from '@jest/globals';
 
@@ -237,5 +237,33 @@ describe('Participant Reconnect', () => {
     });
 
     newSocket.disconnect();
+  });
+
+  it('keeps a disconnected participant score after reconnect grace expires but revokes rejoin data', async () => {
+    const { code, p1ParticipantId } = await setupRoom();
+    const room = getRoomByCode(code)!;
+    room.participants[0].score = 4;
+    const disconnectedSocketId = p1Socket.id!;
+    const timerSpy = jest.spyOn(global, 'setTimeout');
+
+    p1Socket.disconnect();
+    await sleep(50);
+
+    const graceTimer = timerSpy.mock.calls.find(([, delay]) => delay === 5 * 60 * 1000)?.[0] as (() => void) | undefined;
+    expect(graceTimer).toBeDefined();
+    clearTimeout(participantDisconnectTimers.get(`${room.roomId}_${p1ParticipantId}`)!);
+    graceTimer!();
+
+    expect(room.participants).toEqual([expect.objectContaining({
+      id: p1ParticipantId,
+      displayName: 'P1',
+      score: 4,
+      isConnected: false,
+      socketId: '',
+      reconnectTokenHash: undefined,
+    })]);
+    expect(socketToRoom.has(disconnectedSocketId)).toBe(false);
+    expect(participantDisconnectTimers.has(`${room.roomId}_${p1ParticipantId}`)).toBe(false);
+    timerSpy.mockRestore();
   });
 });
