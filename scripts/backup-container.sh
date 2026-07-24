@@ -11,10 +11,19 @@ die() {
   exit 1
 }
 
-require_inputs() {
-  [ -f "$DATA_DIR/dev.db" ] || die "SQLite database is missing: $DATA_DIR/dev.db"
-  [ -d "$UPLOAD_DIR" ] || die "Uploads directory is missing: $UPLOAD_DIR"
+require_sqlite() {
   command -v "$SQLITE3_BIN" >/dev/null 2>&1 || die "sqlite3 is unavailable"
+}
+
+require_backup_inputs() {
+  mkdir -p "$UPLOAD_DIR"
+  [ -f "$DATA_DIR/dev.db" ] || die "SQLite database is missing: $DATA_DIR/dev.db"
+  require_sqlite
+}
+
+require_restore_inputs() {
+  mkdir -p "$DATA_DIR" "$UPLOAD_DIR"
+  require_sqlite
 }
 
 verify_archive() (
@@ -63,7 +72,7 @@ rotate_backups() {
 create_backup() (
   tag=${1:-backup}
   case "$tag" in ''|*[!A-Za-z0-9_-]*) die "backup tag contains unsafe characters" ;; esac
-  require_inputs
+  require_backup_inputs
   mkdir -p "$BACKUP_DIR"
   stage=$(mktemp -d "$BACKUP_DIR/.backup.XXXXXX")
   trap 'rm -rf "$stage"' EXIT
@@ -88,7 +97,7 @@ create_backup() (
 
 restore_backup() (
   archive=${BACKUP_ARCHIVE:?BACKUP_ARCHIVE is required}
-  require_inputs
+  require_restore_inputs
   verify_archive "$archive"
   stage=$(mktemp -d "$DATA_DIR/.restore.XXXXXX")
   trap 'rm -rf "$stage"' EXIT

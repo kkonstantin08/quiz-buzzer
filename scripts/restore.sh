@@ -59,12 +59,34 @@ trap on_exit EXIT
 
 docker compose stop backend
 stopped=1
-emergency_output=$(compose_backup /scripts/backup-container.sh create emergency)
-printf '%s\n' "$emergency_output"
-emergency_path=$(printf '%s\n' "$emergency_output" | sed -n 's/^BACKUP_PATH=//p')
+if emergency_output=$(compose_backup /scripts/backup-container.sh create emergency); then
+  printf '%s\n' "$emergency_output"
+  emergency_container_path=$(printf '%s\n' "$emergency_output" | sed -n 's/^BACKUP_PATH=//p')
+  case "$emergency_container_path" in
+    /backups/*) emergency_path="$backup_dir/${emergency_container_path#/backups/}" ;;
+    *) echo "Warning: emergency backup path could not be mapped to BACKUP_DIR." >&2 ;;
+  esac
+else
+  echo "Warning: emergency backup could not be created; continuing with the validated target backup." >&2
+fi
 compose_restore /scripts/backup-container.sh restore
 docker compose up -d backend
 stopped=0
-health=$(docker compose exec -T backend wget -qO- http://localhost:3001/api/health)
-printf '%s' "$health" | grep -q '"status":"ok"'
+healthy=0
+attempt=1
+while [ "$attempt" -le 30 ]; do
+  health=$(docker compose exec -T backend wget -qO- http://localhost:3001/api/health 2>/dev/null || true)
+  if printf '%s' "$health" | grep -q '"status":"ok"' && printf '%s' "$health" | grep -q '"database":"connected"'; then
+    healthy=1
+    break
+  fi
+  [ "$attempt" -eq 30 ] || sleep 2
+  attempt=$((attempt + 1))
+done
+[ "$healthy" -eq 1 ] || {
+  echo "Backend did not become healthy after restore." >&2
+  docker compose ps >&2 || true
+  docker compose logs backend >&2 || true
+  exit 1
+}
 echo "Restore completed. Emergency backup retained: $emergency_path"
