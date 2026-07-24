@@ -30,6 +30,41 @@ services:
       retries: 3
       start_period: 10s
 
+  backup:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    profiles:
+      - maintenance
+    entrypoint: ["/bin/sh"]
+    environment:
+      - BACKUP_DATA_DIR=/data
+      - BACKUP_UPLOAD_DIR=/uploads
+      - BACKUP_DIR=/backups
+      - BACKUP_RETENTION_COUNT=${BACKUP_RETENTION_COUNT:-14}
+    volumes:
+      - backend_data:/data:ro
+      - backend_uploads:/uploads:ro
+      - ${BACKUP_DIR:-./backups}:/backups
+      - ./scripts:/scripts:ro
+
+  restore:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    profiles:
+      - maintenance
+    entrypoint: ["/bin/sh"]
+    environment:
+      - BACKUP_DATA_DIR=/data
+      - BACKUP_UPLOAD_DIR=/uploads
+      - BACKUP_DIR=/backups
+    volumes:
+      - backend_data:/data
+      - backend_uploads:/uploads
+      - ${BACKUP_DIR:-./backups}:/backups:ro
+      - ./scripts:/scripts:ro
+
   frontend:
     build:
       context: .

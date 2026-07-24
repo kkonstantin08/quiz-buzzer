@@ -180,10 +180,7 @@ docker compose logs cloudflared | grep trycloudflare
 
 ### Резервное копирование
 
-Данные SQLite лежат в volume `backend_data`, а картинки в `backend_uploads`.
-Чтобы сделать бэкап:
-1. Остановите базу данных: `docker compose stop backend`
-2. Скопируйте файлы из volume (например, смонтировав в другой контейнер).
+Инструкции по автоматическому созданию, проверке, ротации и безопасному восстановлению: [docs/backups.md](docs/backups.md).
 
 ## 🤖 Continuous Integration (GitHub Actions)
 
