@@ -75,7 +75,7 @@ stopped=0
 healthy=0
 attempt=1
 while [ "$attempt" -le 30 ]; do
-  health=$(docker compose exec -T backend wget -qO- http://localhost:3001/api/health 2>/dev/null || true)
+  health=$(docker compose exec -T backend node -e 'fetch("http://localhost:3001/api/health").then(async (response) => { if (!response.ok) process.exit(1); process.stdout.write(await response.text()); }).catch(() => process.exit(1))' 2>/dev/null || true)
   if printf '%s' "$health" | grep -q '"status":"ok"' && printf '%s' "$health" | grep -q '"database":"connected"'; then
     healthy=1
     break

@@ -187,5 +187,6 @@ describe('backup-container.sh', () => {
     const output = runHostRestore(paths, result, { HEALTH_RETRY: '1' });
     expect(output).toContain(`Emergency backup retained: ${fs.realpathSync(paths.backups)}/quiz-buzzer-emergency-`);
     expect(Number(fs.readFileSync(path.join(paths.root, 'health-count'), 'utf8'))).toBe(2);
+    expect(fs.readFileSync(path.join(paths.root, 'docker.log'), 'utf8')).toContain('exec -T backend node -e');
   });
 });
