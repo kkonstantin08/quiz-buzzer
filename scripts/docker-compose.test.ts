@@ -1,5 +1,9 @@
 import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+
+const composeFile = fs.readFileSync(path.resolve(process.cwd(), 'docker-compose.yml'), 'utf8');
 
 const dockerAvailable = (() => {
   try {
@@ -11,6 +15,10 @@ const dockerAvailable = (() => {
 })();
 
 describe('docker compose', () => {
+  it('uses Node fetch for the backend healthcheck', () => {
+    expect(composeFile).toContain("fetch('http://localhost:3001/api/health')");
+  });
+
   it.skipIf(!dockerAvailable)('uses NGINX_PORT for the nginx host port', () => {
     const config = JSON.parse(execFileSync('docker', ['compose', '--profile', 'tunnel', 'config', '--format', 'json'], {
       cwd: process.cwd(),

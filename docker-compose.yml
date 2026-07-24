@@ -24,11 +24,46 @@ services:
     networks:
       proxy_network:
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/api/health"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/api/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  backup:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    profiles:
+      - maintenance
+    entrypoint: ["/bin/sh"]
+    environment:
+      - BACKUP_DATA_DIR=/data
+      - BACKUP_UPLOAD_DIR=/uploads
+      - BACKUP_DIR=/backups
+      - BACKUP_RETENTION_COUNT=${BACKUP_RETENTION_COUNT:-14}
+    volumes:
+      - backend_data:/data:ro
+      - backend_uploads:/uploads:ro
+      - ${BACKUP_DIR:-./backups}:/backups
+      - ./scripts:/scripts:ro
+
+  restore:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    profiles:
+      - maintenance
+    entrypoint: ["/bin/sh"]
+    environment:
+      - BACKUP_DATA_DIR=/data
+      - BACKUP_UPLOAD_DIR=/uploads
+      - BACKUP_DIR=/backups
+    volumes:
+      - backend_data:/data
+      - backend_uploads:/uploads
+      - ${BACKUP_DIR:-./backups}:/backups:ro
+      - ./scripts:/scripts:ro
 
   frontend:
     build:

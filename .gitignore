@@ -15,6 +15,7 @@ coverage/
 *.sqlite
 *.sqlite-*
 apps/backend/uploads/
+backups/
 # Playwright screenshots and traces are test output, not fixtures.
 screenshots/
 traces/
