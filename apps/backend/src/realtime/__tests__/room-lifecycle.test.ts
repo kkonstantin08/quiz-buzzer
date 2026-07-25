@@ -55,6 +55,14 @@ function realSleep(ms: number) {
   });
 }
 
+async function flushMicrotasksUntil(condition: () => boolean) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (condition()) return;
+    await Promise.resolve();
+  }
+  throw new Error('Condition was not reached while flushing microtasks');
+}
+
 function makeMockIo(): Server {
   const httpServer = createServer();
   return new Server(httpServer);
@@ -126,11 +134,7 @@ describe('Room Lifecycle', () => {
     // Fast-forward
     jest.advanceTimersByTime(24 * 60 * 60 * 1000);
 
-    // Flush promises so the async saveGameHistory gets executed and its internal await resolves
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushMicrotasksUntil(() => !rooms.has(room.roomId));
 
     expect(rooms.has(room.roomId)).toBe(false);
     expect(mockPrismaCreate).toHaveBeenCalled();
@@ -200,11 +204,7 @@ describe('Room Lifecycle', () => {
     
     // Now reject the promise
     rejectPromise!(new Error('DB Error'));
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve(); // Flush microtasks
+    await flushMicrotasksUntil(() => !rooms.has(room.roomId));
 
     // Error was thrown inside, caught, and finally deleteRoom was executed
     expect(rooms.has(room.roomId)).toBe(false);
@@ -225,15 +225,11 @@ describe('Room Lifecycle', () => {
     const room = createRoom('host-deferred', 'sock-deferred');
     scheduleMaxLifetimeCleanup(room.roomId, io, new Map(), []);
     jest.advanceTimersByTime(24 * 60 * 60 * 1000);
-    await Promise.resolve();
+    await flushMicrotasksUntil(() => resolveSave !== undefined);
 
     expect(rooms.has(room.roomId)).toBe(true);
-    resolveSave?.();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    resolveSave!();
+    await flushMicrotasksUntil(() => !rooms.has(room.roomId));
 
     expect(rooms.has(room.roomId)).toBe(false);
     expect(room.historySaved).toBe(true);

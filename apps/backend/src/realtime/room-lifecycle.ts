@@ -10,6 +10,7 @@ import { prisma } from '../prisma';
 export const postFinishTimers = new Map<string, NodeJS.Timeout>();
 export const maxLifetimeTimers = new Map<string, NodeJS.Timeout>();
 const roomFinalizationPromises = new Map<string, Promise<void>>();
+const historySavePromises = new Map<string, Promise<void>>();
 
 // Mockable timer loader (allows fake timers in tests without freezing Socket.io)
 export const lifecycleTimerLoader = {
@@ -51,7 +52,8 @@ export async function saveGameHistory(
 ): Promise<void> {
   if (room.historySaved) return; // Already saved — skip
 
-  room.historySaved = true;
+  const ongoing = historySavePromises.get(room.roomId);
+  if (ongoing) return ongoing;
 
   let winnerScore = 0;
   if (room.participants.length > 0) {
@@ -59,23 +61,30 @@ export async function saveGameHistory(
     winnerScore = sorted[0].score;
   }
 
-  try {
-    await prisma.gameHistory.create({
-      data: {
-        hostUserId: room.hostUserId,
-        roomCode: room.roomCode,
-        result: room.gameResult || 'NO_WINNER',
-        winnerName: room.winnerName,
-        winnerScore,
-        participants: room.participants.length,
-      },
+  const data = {
+    hostUserId: room.hostUserId,
+    roomCode: room.roomCode,
+    result: room.gameResult || 'NO_WINNER',
+    winnerName: room.winnerName,
+    winnerScore,
+    participants: room.participants.length,
+  };
+  const savePromise = Promise.resolve()
+    .then(() => prisma.gameHistory.create({ data }))
+    .then(() => {
+      room.historySaved = true;
+    })
+    .catch(err => {
+      room.historySaved = false;
+      console.error('Failed to save game history:', err);
+      throw err;
+    })
+    .finally(() => {
+      historySavePromises.delete(room.roomId);
     });
-  } catch (err) {
-    console.error('Failed to save game history:', err);
-    // Reset flag so a retry is possible on transient DB errors
-    room.historySaved = false;
-    throw err;
-  }
+
+  historySavePromises.set(room.roomId, savePromise);
+  return savePromise;
 }
 
 export async function finishRoom(room: InternalRoomData): Promise<void> {

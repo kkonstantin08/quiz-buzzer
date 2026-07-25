@@ -3,8 +3,9 @@ import { io as Client, Socket as ClientSocket } from 'socket.io-client';
 import { prisma } from '../../prisma';
 import jwt from 'jsonwebtoken';
 import { config } from '../../config';
-import { rooms } from '../../rooms';
+import { rooms, socketToRoom } from '../../rooms';
 import { postFinishTimers, maxLifetimeTimers } from '../room-lifecycle';
+import { closeRoomAfterHostTimeout, hostDisconnectTimers } from '../host-reconnect';
 import { describe, it, expect, beforeAll, afterAll, afterEach, jest } from '@jest/globals';
 import { RoomState } from 'shared';
 
@@ -237,21 +238,37 @@ describe('State Machine Transitions', () => {
     const unhandledRejection = jest.fn();
     process.on('unhandledRejection', unhandledRejection);
     let successfulHistoryWrites = 0;
+    let rejectFirstWrite: ((error: Error) => void) | undefined;
+    let markFirstWriteStarted: (() => void) | undefined;
+    const firstWriteStarted = new Promise<void>(resolve => {
+      markFirstWriteStarted = resolve;
+    });
     (prisma.gameHistory.create as jest.Mock)
-      .mockRejectedValueOnce(new Error('DB unavailable') as never)
+      .mockImplementationOnce(() => {
+        markFirstWriteStarted?.();
+        return new Promise((_, reject) => {
+          rejectFirstWrite = reject;
+        }) as never;
+      })
       .mockImplementationOnce(async () => {
         successfulHistoryWrites += 1;
         return {} as never;
       });
 
     try {
-      const first = await new Promise<{ success: boolean; error?: string }>(resolve => {
+      const firstResult = new Promise<{ success: boolean; error?: string }>(resolve => {
         hostSocket.emit('ROOM_FINISH', resolve);
       });
+      await firstWriteStarted;
+      const historySavedWhilePending = room.historySaved;
+      rejectFirstWrite?.(new Error('DB unavailable'));
+      const first = await firstResult;
       await new Promise<void>(resolve => setImmediate(resolve));
 
+      expect(historySavedWhilePending).toBe(false);
       expect(first).toEqual({ success: false, error: 'Не удалось сохранить результаты игры' });
       expect(snapshots).not.toContain(RoomState.FINISHED);
+      expect(room.historySaved).toBe(false);
 
       const finishedSnapshot = new Promise<void>(resolve => {
         hostSocket.once('ROOM_STATE_UPDATED', snapshot => {
@@ -270,6 +287,124 @@ describe('State Machine Transitions', () => {
       expect(unhandledRejection).not.toHaveBeenCalled();
     } finally {
       process.off('unhandledRejection', unhandledRejection);
+    }
+  });
+
+  it('shares one pending history write between ROOM_FINISH and host timeout before cleanup', async () => {
+    await new Promise<void>((resolve, reject) => setupRoom(error => error ? reject(error) : resolve()));
+    const room = Array.from(rooms.values()).find(r => r.roomCode === createdRoomCode);
+    if (!room) throw new Error('Room not found');
+
+    room.participants.push(
+      { id: 'p1', displayName: 'Alice', socketId: 'p1-socket', joinedAt: 1, isConnected: true, score: 7 },
+      { id: 'p2', displayName: 'Bob', socketId: 'p2-socket', joinedAt: 2, isConnected: false, score: 3 },
+    );
+    socketToRoom.set('p1-socket', room.roomId);
+    const buzzBuffers = new Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>();
+    buzzBuffers.set(room.roomId, { timer: setTimeout(() => undefined, 60_000), buzzes: [] });
+    const participantTimers = new Map<string, NodeJS.Timeout>();
+    participantTimers.set(`${room.roomId}_p2`, setTimeout(() => undefined, 60_000));
+    hostDisconnectTimers.set(room.roomId, setTimeout(() => undefined, 60_000));
+
+    let resolveWrite: (() => void) | undefined;
+    let markWriteStarted: (() => void) | undefined;
+    const writeStarted = new Promise<void>(resolve => {
+      markWriteStarted = resolve;
+    });
+    (prisma.gameHistory.create as jest.Mock).mockReset().mockImplementationOnce(() => {
+      markWriteStarted?.();
+      return new Promise<void>(resolve => {
+        resolveWrite = resolve;
+      }) as never;
+    });
+
+    const finishResult = new Promise<{ success: boolean }>(resolve => hostSocket.emit('ROOM_FINISH', resolve));
+    await writeStarted;
+    const timeoutResult = closeRoomAfterHostTimeout(room.roomId, io, buzzBuffers, undefined, participantTimers);
+    let timeoutFinished = false;
+    void timeoutResult.then(() => {
+      timeoutFinished = true;
+    });
+    await new Promise<void>(resolve => setImmediate(resolve));
+    const roomExistedWhilePending = rooms.has(room.roomId);
+    const historySavedWhilePending = room.historySaved;
+    const timeoutFinishedWhilePending = timeoutFinished;
+
+    resolveWrite?.();
+    const [finish] = await Promise.all([finishResult, timeoutResult]);
+
+    expect(roomExistedWhilePending).toBe(true);
+    expect(historySavedWhilePending).toBe(false);
+    expect(timeoutFinishedWhilePending).toBe(false);
+    expect(timeoutFinished).toBe(true);
+    expect(finish).toEqual({ success: true });
+    expect(prisma.gameHistory.create).toHaveBeenCalledTimes(1);
+    expect(prisma.gameHistory.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        result: 'WINNER',
+        winnerName: 'Alice',
+        winnerScore: 7,
+        participants: 2,
+      }),
+    }));
+    expect(room.historySaved).toBe(true);
+    expect(rooms.has(room.roomId)).toBe(false);
+    expect(socketToRoom.has(hostSocket.id!)).toBe(false);
+    expect(socketToRoom.has('p1-socket')).toBe(false);
+    expect(buzzBuffers.has(room.roomId)).toBe(false);
+    expect(participantTimers.has(`${room.roomId}_p2`)).toBe(false);
+    expect(hostDisconnectTimers.has(room.roomId)).toBe(false);
+    expect(postFinishTimers.has(room.roomId)).toBe(false);
+    expect(maxLifetimeTimers.has(room.roomId)).toBe(false);
+  });
+
+  it('shares a rejected ROOM_FINISH write with timeout and still clears the room without an unhandled rejection', async () => {
+    await new Promise<void>((resolve, reject) => setupRoom(error => error ? reject(error) : resolve()));
+    const room = Array.from(rooms.values()).find(r => r.roomCode === createdRoomCode);
+    if (!room) throw new Error('Room not found');
+
+    const buzzBuffers = new Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>();
+    buzzBuffers.set(room.roomId, { timer: setTimeout(() => undefined, 60_000), buzzes: [] });
+    hostDisconnectTimers.set(room.roomId, setTimeout(() => undefined, 60_000));
+    let rejectWrite: ((error: Error) => void) | undefined;
+    let markWriteStarted: (() => void) | undefined;
+    const writeStarted = new Promise<void>(resolve => {
+      markWriteStarted = resolve;
+    });
+    (prisma.gameHistory.create as jest.Mock).mockReset().mockImplementationOnce(() => {
+      markWriteStarted?.();
+      return new Promise((_, reject) => {
+        rejectWrite = reject;
+      }) as never;
+    });
+    const unhandledRejection = jest.fn();
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    process.on('unhandledRejection', unhandledRejection);
+
+    try {
+      const finishResult = new Promise<{ success: boolean; error?: string }>(resolve => hostSocket.emit('ROOM_FINISH', resolve));
+      await writeStarted;
+      const timeoutResult = closeRoomAfterHostTimeout(room.roomId, io, buzzBuffers);
+      await new Promise<void>(resolve => setImmediate(resolve));
+      const roomExistedWhilePending = rooms.has(room.roomId);
+
+      rejectWrite?.(new Error('DB unavailable'));
+      const [finish] = await Promise.all([finishResult, timeoutResult]);
+      await new Promise<void>(resolve => setImmediate(resolve));
+
+      expect(roomExistedWhilePending).toBe(true);
+      expect(finish).toEqual({ success: false, error: 'Не удалось сохранить результаты игры' });
+      expect(prisma.gameHistory.create).toHaveBeenCalledTimes(1);
+      expect(room.historySaved).toBe(false);
+      expect(rooms.has(room.roomId)).toBe(false);
+      expect(socketToRoom.has(hostSocket.id!)).toBe(false);
+      expect(buzzBuffers.has(room.roomId)).toBe(false);
+      expect(hostDisconnectTimers.has(room.roomId)).toBe(false);
+      expect(errorSpy).toHaveBeenCalledWith('Error saving history on host timeout:', expect.any(Error));
+      expect(unhandledRejection).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandledRejection);
+      errorSpy.mockRestore();
     }
   });
 });

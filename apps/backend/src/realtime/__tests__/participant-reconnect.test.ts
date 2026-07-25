@@ -239,8 +239,8 @@ describe('Participant Reconnect', () => {
     newSocket.disconnect();
   });
 
-  it('keeps a disconnected participant score after reconnect grace expires but revokes rejoin data', async () => {
-    const { code, p1ParticipantId } = await setupRoom();
+  it('keeps a disconnected participant score after reconnect grace expires but rejects the old token', async () => {
+    const { code, p1ParticipantId, p1Token } = await setupRoom();
     const room = getRoomByCode(code)!;
     room.participants[0].score = 4;
     const disconnectedSocketId = p1Socket.id!;
@@ -265,5 +265,26 @@ describe('Participant Reconnect', () => {
     expect(socketToRoom.has(disconnectedSocketId)).toBe(false);
     expect(participantDisconnectTimers.has(`${room.roomId}_${p1ParticipantId}`)).toBe(false);
     timerSpy.mockRestore();
+
+    const newSocket = createClient();
+    newSocket.connect();
+    const rejoinResult = await new Promise<{ success: boolean; error?: string }>(resolve => {
+      newSocket.on('connect', () => {
+        newSocket.emit('PARTICIPANT_REJOIN', {
+          roomCode: code,
+          participantId: p1ParticipantId,
+          reconnectToken: p1Token,
+        }, resolve);
+      });
+    });
+    const buzzResult = await new Promise<{ success: boolean }>(resolve => {
+      newSocket.emit('BUZZ_SUBMIT', { clientPressedAt: Date.now() }, resolve);
+    });
+
+    expect(rejoinResult).toEqual({ success: false, error: 'Участник не найден или недействителен' });
+    expect(buzzResult.success).toBe(false);
+    expect(socketToRoom.has(newSocket.id!)).toBe(false);
+    expect(room.participants[0]).toMatchObject({ displayName: 'P1', score: 4, isConnected: false });
+    newSocket.disconnect();
   });
 });
