@@ -158,6 +158,24 @@ jobs:
           upload_path=$(node -e 'const value = JSON.parse(process.argv[1]).avatarUrl; if (!/^\/uploads\/[a-f0-9]{32}\.png$/.test(value || "")) process.exit(1); process.stdout.write(value)' "$upload")
           curl -f -sSI "$NGINX_URL$upload_path" | grep -qi '^content-type: image/png'
           curl -f -sSI "$NGINX_URL$upload_path" | grep -qi '^x-content-type-options: nosniff'
+      - name: Backup and restore smoke
+        run: |
+          docker compose exec -T backend sqlite3 /app/prisma/dev.db "CREATE TABLE backup_smoke (value TEXT); INSERT INTO backup_smoke VALUES ('before-backup');"
+          docker compose exec -T backend sh -c 'printf before-backup > /app/uploads/backup-smoke.txt'
+          ./scripts/backup.sh
+          archive=$(find backups -maxdepth 1 -type f -name 'quiz-buzzer-backup-*.tar.gz' -print -quit)
+          test -s "$archive"
+          test -f "$archive.sha256"
+          archive_name=$(basename "$archive")
+          docker compose --profile maintenance run --rm --no-deps -e "BACKUP_ARCHIVE=/backups/$archive_name" restore /scripts/backup-container.sh verify
+          tar -tzf "$archive" | grep -qx 'database.sqlite'
+          tar -tzf "$archive" | grep -q '^uploads/'
+          tar -tzf "$archive" | grep -qx 'metadata.json'
+          docker compose exec -T backend sqlite3 /app/prisma/dev.db "UPDATE backup_smoke SET value = 'after-backup';"
+          docker compose exec -T backend sh -c 'printf after-backup > /app/uploads/backup-smoke.txt'
+          ./scripts/restore.sh "$archive" --yes
+          test "$(docker compose exec -T backend sqlite3 /app/prisma/dev.db 'SELECT value FROM backup_smoke;')" = before-backup
+          test "$(docker compose exec -T backend cat /app/uploads/backup-smoke.txt)" = before-backup
       - name: Check migrations and seed
         run: |
           logs=$(docker compose logs backend)
