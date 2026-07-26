@@ -48,6 +48,7 @@ function runHostRestore(paths: ReturnType<typeof fixture>, result: string, env: 
   fs.mkdirSync(bin);
   fs.writeFileSync(path.join(bin, 'sleep'), '#!/bin/sh\nexit 0\n');
   fs.writeFileSync(path.join(bin, 'docker'), `#!/bin/sh
+if [ "$*" = "compose version --short" ]; then echo v2.40.3; exit 0; fi
 printf '%s\\n' "$*" >> "$DOCKER_LOG"
 case "$*" in
   *" backup /scripts/backup-container.sh create emergency")

@@ -82,6 +82,14 @@
 Проект использует **SQLite** как базу данных. Файл базы данных хранится в именованном Docker volume (`backend_data`), смонтированном в `/app/prisma/`.
 Загруженные файлы (логотипы, фоны, аватарки) хранятся в volume (`backend_uploads`), смонтированном в `/app/uploads/` (настраивается через `UPLOAD_DIR` в `.env`).
 
+Для operator scripts требуется Docker Compose **v2**. Команда ниже проверяет major version и всегда использует явное имя проекта `quiz-buzzer` (либо `COMPOSE_PROJECT_NAME`):
+
+```bash
+./scripts/compose.sh version
+```
+
+Полная безопасная последовательность production deployment и rollback: [docs/production-deployment.md](docs/production-deployment.md).
+
 ### Первый запуск
 
 Обычный запуск (без туннеля, доступно локально через nginx на порту 80):
@@ -109,6 +117,8 @@ PAYMENTS_ENABLED=false
 ```
 
 Без `TRUST_PROXY` backend игнорирует клиентский `X-Forwarded-For`. Docker Compose запускает nginx и backend в выделенной внутренней сети: backend доверяет только фиксированному IP nginx (`172.30.0.10`). Nginx принимает `CF-Connecting-IP` и `X-Forwarded-Proto` только от фиксированного контейнера `cloudflared` (`172.30.0.11`); для protocol допускаются только `http` и `https`, иначе используется локальный `$scheme`. Для API, Socket.IO и uploads nginx перезаписывает `Host`, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto` и `X-Forwarded-Host`, поэтому произвольный forwarded-заголовок клиента не передаётся дальше.
+
+Repository nginx остаётся HTTP-only для local deployment. Он добавляет короткий HSTS `max-age=86400` только когда HTTPS подтверждён доверенным Cloudflare Tunnel; прямой HTTP не получает HSTS. Production с direct TLS использует отдельный server-only nginx config, описанный в runbook.
 
 `COOKIE_SECURE=false` сохраняет локальное HTTP-тестирование. Для внешнего HTTPS задайте `COOKIE_SECURE=true` явно после настройки домена и TLS: приложение не включает HTTPS автоматически и не выводит этот флаг из request headers. При отсутствии `COOKIE_SECURE` временно поддерживается `USE_HTTPS=true`; `COOKIE_SECURE` всегда имеет приоритет.
 
@@ -151,8 +161,8 @@ SEED_ADMIN_EMAIL=admin@example.com SEED_ADMIN_PASSWORD=strongpassword npm run db
 # 1. Создать новую миграцию (разработка)
 cd apps/backend && npx prisma migrate dev --name <название_изменения>
 
-# 2. Задеплоить (production) — выполняется автоматически при перезапуске контейнера
-docker compose up -d --no-deps --build backend
+# 2. Production deployment
+# Используйте backup/build/migrate/recreate последовательность из runbook.
 ```
 
 ### Сброс и удаление
@@ -162,10 +172,7 @@ docker compose up -d --no-deps --build backend
 docker compose down
 ```
 
-Остановка с удалением данных (ДАННЫЕ БУДУТ ПОТЕРЯНЫ):
-```bash
-docker compose down -v
-```
+Production volumes не удаляются operator scripts автоматически. Команды `down -v` и `docker volume rm` в production запрещены.
 
 ### Просмотр логов
 
@@ -180,7 +187,7 @@ docker compose logs cloudflared | grep trycloudflare
 
 ### Резервное копирование
 
-Инструкции по автоматическому созданию, проверке, ротации и безопасному восстановлению: [docs/backups.md](docs/backups.md).
+Инструкции по автоматическому созданию, проверке, ротации и безопасному восстановлению: [docs/backups.md](docs/backups.md). Восстановление production требует отдельного подтверждения владельца.
 
 ## 🤖 Continuous Integration (GitHub Actions)
 
