@@ -5,11 +5,10 @@ import { rooms, socketToRoom, createRoom, getRoomByCode } from '../rooms';
 import { BuzzSubmitResult, ClientToServerEvents, InternalRoomData, PublicRoomData, RoomCreateResult, RoomState, ServerToClientEvents, SocketErrorResult, GameResult } from 'shared';
 import xss from 'xss';
 import { reattachHostToRoom, startHostReconnectTimeout } from './host-reconnect';
-import { saveGameHistory, schedulePostFinishCleanup, scheduleMaxLifetimeCleanup, postFinishTimers, maxLifetimeTimers } from './room-lifecycle';
+import { finishAndDeleteRoom, finishRoom, schedulePostFinishCleanup, scheduleMaxLifetimeCleanup, postFinishTimers, maxLifetimeTimers } from './room-lifecycle';
 import { hostDisconnectTimers } from './host-reconnect';
 import crypto from 'crypto';
 import { appEvents } from '../events';
-import { deleteRoom } from '../rooms';
 import { withValidation, cleanupValidationRateLimits } from './validation';
 import {
   SyncTimeSchema, SyncAckSchema, HostRejoinRoomSchema,
@@ -163,28 +162,15 @@ export function setupSocketIO(io: RealtimeServer) {
         if (roomId) {
           const room = rooms.get(roomId);
           if (room) {
-            (async () => {
-              try {
-                if (room.roundState !== RoomState.FINISHED) {
-                  room.roundState = RoomState.FINISHED;
-                  const { calculateGameResult } = require('./room-lifecycle');
-                  calculateGameResult(room);
-                }
-                const { saveGameHistory } = require('./room-lifecycle');
-                await saveGameHistory(room, prisma);
-              } catch (err) {
-                console.error('Error saving history on host logout:', err);
-              } finally {
-                deleteRoom(
-                  roomId,
-                  'Ведущий завершил сессию',
-                  io,
-                  buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>,
-                  [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers],
-                  participantDisconnectTimers
-                );
-              }
-            })();
+            void finishAndDeleteRoom(
+              roomId,
+              'Ведущий завершил сессию',
+              'Error saving history on host logout:',
+              io,
+              buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>,
+              [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers],
+              participantDisconnectTimers,
+            );
           }
         }
         socket.disconnect(true);
@@ -681,13 +667,8 @@ export function setupSocketIO(io: RealtimeServer) {
       const prevGameResult = room.gameResult;
       const prevWinnerName = room.winnerName;
 
-      room.roundState = RoomState.FINISHED;
-      const { calculateGameResult } = require('./room-lifecycle');
-      calculateGameResult(room);
-
       try {
-        // Save to history (idempotent)
-        await saveGameHistory(room, prisma);
+        await finishRoom(room);
       } catch (err) {
         // Revert temporary state
         room.roundState = prevRoundState;
@@ -734,8 +715,10 @@ export function setupSocketIO(io: RealtimeServer) {
         const timerKey = `${roomId}_${participant.id}`;
         const timer = setTimeout(() => {
           const currentRoom = rooms.get(roomId);
-          if (currentRoom) {
-            currentRoom.participants = currentRoom.participants.filter(p => p.id !== participant.id);
+          const currentParticipant = currentRoom?.participants.find(p => p.id === participant.id);
+          if (currentRoom && currentParticipant && !currentParticipant.isConnected) {
+            currentParticipant.socketId = '';
+            currentParticipant.reconnectTokenHash = undefined;
             emitRoomState(io, currentRoom);
           }
           participantDisconnectTimers.delete(timerKey);
