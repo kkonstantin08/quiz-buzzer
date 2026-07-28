@@ -162,8 +162,8 @@ describe('Room Lifecycle', () => {
     expect(room.historySaved).toBe(true);
   });
 
-  // ── 3b. Empty game is saved as NO_WINNER ─────────────────────────────────
-  it('3b. Empty game is saved as NO_WINNER', async () => {
+  // ── 3b. Empty game is not saved to history ─────────────────────────────────
+  it('3b. Empty game is not saved to history', async () => {
     const prisma = makeMockPrisma();
     const room = createRoom('host-1', 'sock-1');
     room.participants = [];
@@ -171,13 +171,8 @@ describe('Room Lifecycle', () => {
 
     await saveGameHistory(room, prisma);
 
-    expect(prisma.gameHistory.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
-        result: GameResult.NO_WINNER,
-        winnerScore: 0,
-        participants: 0,
-      }),
-    }));
+    expect(prisma.gameHistory.create).not.toHaveBeenCalled();
+    expect(room.historySaved).toBe(true);
   });
 
   // ── 3c. DB error is caught and does not cause unhandled rejection ────────
@@ -193,6 +188,7 @@ describe('Room Lifecycle', () => {
     jest.mocked(require('../../prisma').prisma.gameHistory.create).mockImplementation(mockCreate);
 
     const room = createRoom('host-error', 'sock-err');
+    room.participants = [{ id: 'p1', displayName: 'P1', score: 10, isConnected: true, joinedAt: Date.now() }];
     scheduleMaxLifetimeCleanup(room.roomId, io, new Map(), []);
 
     jest.advanceTimersByTime(24 * 60 * 60 * 1000);
@@ -223,6 +219,7 @@ describe('Room Lifecycle', () => {
     }));
 
     const room = createRoom('host-deferred', 'sock-deferred');
+    room.participants = [{ id: 'p1', displayName: 'P1', score: 10, isConnected: true, joinedAt: Date.now() }];
     scheduleMaxLifetimeCleanup(room.roomId, io, new Map(), []);
     jest.advanceTimersByTime(24 * 60 * 60 * 1000);
     await flushMicrotasksUntil(() => resolveSave !== undefined);
@@ -452,6 +449,7 @@ describe('Room Lifecycle', () => {
 
     const io = makeMockIo();
     const room = createRoom('host-error', 'sock-error');
+    room.participants = [{ id: 'p1', displayName: 'P1', score: 10, isConnected: true, joinedAt: Date.now() }];
     startHostReconnectTimeout(room.roomId, io, new Map(), []);
 
     capturedTimers.find(t => t.ms === 10 * 60 * 1000)!.cb();
