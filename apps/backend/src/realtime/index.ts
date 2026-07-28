@@ -114,6 +114,8 @@ export function toPublicRoomData(room: InternalRoomData): PublicRoomData {
     bgTheme: room.bgTheme,
     unlockAt: room.unlockAt,
     isHostConnected: room.isHostConnected,
+    gameResult: room.gameResult,
+    winnerName: room.winnerName,
   };
 }
 

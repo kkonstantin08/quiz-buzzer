@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { z } from 'zod';
 import { expect, describe, it, jest } from '@jest/globals';
-import { RoomState, type InternalRoomData } from 'shared';
+import { GameResult, RoomState, type InternalRoomData } from 'shared';
 import { emitRoomState, toPublicRoomData } from '../index';
 import { withValidation } from '../validation';
 
@@ -96,8 +96,34 @@ describe('Socket.IO protocol contract', () => {
     expect(snapshot).not.toHaveProperty('hostSocketId');
     expect(snapshot).not.toHaveProperty('hostUserId');
     expect(snapshot).not.toHaveProperty('roundId');
+    expect(snapshot).not.toHaveProperty('historySaved');
     expect(snapshot.participants[0]).not.toHaveProperty('socketId');
     expect(snapshot.participants[0]).not.toHaveProperty('reconnectTokenHash');
+    expect(snapshot.gameResult).toBeUndefined();
+    expect(snapshot.winnerName).toBeUndefined();
+  });
+
+  it.each([
+    [GameResult.WINNER, 'Alice'],
+    [GameResult.DRAW, null],
+    [GameResult.NO_WINNER, null],
+  ])('preserves the calculated %s result in public state', (gameResult, winnerName) => {
+    const internalRoom: InternalRoomData = {
+      roomId: 'room-finished', roomCode: 'FIN123', hostUserId: 'host-1', hostSocketId: 'host-socket',
+      participants: [{
+        id: 'participant-1', displayName: 'Participant', socketId: 'participant-socket', joinedAt: 1,
+        isConnected: true, score: 0, reconnectTokenHash: 'secret',
+      }],
+      roundState: RoomState.FINISHED, firstBuzzerId: null, createdAt: 1,
+      roundId: 'round-secret', historySaved: true, isHostConnected: true,
+      gameResult, winnerName,
+    };
+
+    expect(toPublicRoomData(internalRoom)).toMatchObject({
+      roundState: RoomState.FINISHED,
+      gameResult,
+      winnerName,
+    });
   });
 
   it('emits the shared ERROR_EVENT object when validation fails without a callback', () => {

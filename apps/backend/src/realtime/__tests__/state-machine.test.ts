@@ -7,7 +7,7 @@ import { rooms, socketToRoom } from '../../rooms';
 import { postFinishTimers, maxLifetimeTimers } from '../room-lifecycle';
 import { closeRoomAfterHostTimeout, hostDisconnectTimers } from '../host-reconnect';
 import { describe, it, expect, beforeAll, afterAll, afterEach, jest } from '@jest/globals';
-import { RoomState } from 'shared';
+import { GameResult, RoomState, type PublicRoomData } from 'shared';
 
 jest.mock('../../prisma', () => ({
   prisma: {
@@ -318,6 +318,11 @@ describe('State Machine Transitions', () => {
       }) as never;
     });
 
+    const finishedSnapshot = new Promise<PublicRoomData>(resolve => {
+      hostSocket.on('ROOM_STATE_UPDATED', snapshot => {
+        if (snapshot.roundState === RoomState.FINISHED) resolve(snapshot);
+      });
+    });
     const finishResult = new Promise<{ success: boolean }>(resolve => hostSocket.emit('ROOM_FINISH', resolve));
     await writeStarted;
     const timeoutResult = closeRoomAfterHostTimeout(room.roomId, io, buzzBuffers, undefined, participantTimers);
@@ -331,13 +336,18 @@ describe('State Machine Transitions', () => {
     const timeoutFinishedWhilePending = timeoutFinished;
 
     resolveWrite?.();
-    const [finish] = await Promise.all([finishResult, timeoutResult]);
+    const [finish, snapshot] = await Promise.all([finishResult, finishedSnapshot, timeoutResult]);
 
     expect(roomExistedWhilePending).toBe(true);
     expect(historySavedWhilePending).toBe(false);
     expect(timeoutFinishedWhilePending).toBe(false);
     expect(timeoutFinished).toBe(true);
     expect(finish).toEqual({ success: true });
+    expect(snapshot).toMatchObject({
+      roundState: RoomState.FINISHED,
+      gameResult: GameResult.WINNER,
+      winnerName: 'Alice',
+    });
     expect(prisma.gameHistory.create).toHaveBeenCalledTimes(1);
     expect(prisma.gameHistory.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
