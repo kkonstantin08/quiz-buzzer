@@ -182,7 +182,7 @@ describe('State Machine Transitions', () => {
   it('should not mark room as FINISHED and should return error if saveGameHistory fails', (done) => {
     setupRoom(() => {
       const room = Array.from(rooms.values()).find((r: any) => r.roomCode === createdRoomCode);
-      if (room) room.participants = [{ id: 'p1', displayName: 'P1', score: 10, isConnected: true, joinedAt: Date.now() }];
+      if (room) room.participants = [{ id: 'p1', displayName: 'P1', socketId: 'sock-p1', score: 10, isConnected: true, joinedAt: Date.now() }];
       // Mock prisma create to fail
       const mockCreate = jest.fn().mockRejectedValueOnce(new Error('DB failure') as never);
       jest.mocked(require('../../prisma').prisma.gameHistory.create).mockImplementation(mockCreate);
@@ -204,7 +204,7 @@ describe('State Machine Transitions', () => {
     setupRoom(() => {
       const room = Array.from(rooms.values()).find(r => r.roomCode === createdRoomCode);
       if (!room) return done(new Error('Room not found'));
-      room.participants = [{ id: 'p1', displayName: 'P1', score: 10, isConnected: true, joinedAt: Date.now() }];
+      room.participants = [{ id: 'p1', displayName: 'P1', socketId: 'sock-p1', score: 10, isConnected: true, joinedAt: Date.now() }];
 
       // 1. Mock DB failure
       (prisma.gameHistory.create as jest.Mock).mockRejectedValueOnce(new Error('DB Timeout') as never);
@@ -234,7 +234,7 @@ describe('State Machine Transitions', () => {
     await new Promise<void>((resolve, reject) => setupRoom(error => error ? reject(error) : resolve()));
     const room = Array.from(rooms.values()).find(r => r.roomCode === createdRoomCode);
     if (!room) throw new Error('Room not found');
-    room.participants = [{ id: 'p1', displayName: 'P1', score: 10, isConnected: true, joinedAt: Date.now() }];
+    room.participants = [{ id: 'p1', displayName: 'P1', socketId: 'sock-p1', score: 10, isConnected: true, joinedAt: Date.now() }];
 
     (prisma.gameHistory.create as jest.Mock).mockReset();
     const snapshots: RoomState[] = [];
@@ -366,7 +366,7 @@ describe('State Machine Transitions', () => {
     await new Promise<void>((resolve, reject) => setupRoom(error => error ? reject(error) : resolve()));
     const room = Array.from(rooms.values()).find(r => r.roomCode === createdRoomCode);
     if (!room) throw new Error('Room not found');
-    room.participants = [{ id: 'p1', displayName: 'P1', score: 10, isConnected: true, joinedAt: Date.now() }];
+    room.participants = [{ id: 'p1', displayName: 'P1', socketId: 'sock-p1', score: 10, isConnected: true, joinedAt: Date.now() }];
 
     const buzzBuffers = new Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>();
     buzzBuffers.set(room.roomId, { timer: setTimeout(() => undefined, 60_000), buzzes: [] });
