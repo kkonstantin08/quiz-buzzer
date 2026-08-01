@@ -554,7 +554,7 @@ export function HostRoom() {
             </DialogTrigger>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
-                <DialogTitle className="text-red-600 flex items-center gap-2">
+                <DialogTitle className="text-red-600 flex items-center justify-center gap-2 text-center">
                   <LogOut size={20} />
                   Завершить игру?
                 </DialogTitle>
@@ -679,7 +679,13 @@ export function HostRoom() {
         }`}>
           <CardHeader className="flex flex-row items-center justify-between gap-3">
             <CardTitle className={isDarkTheme ? "text-white" : ""}>Участники ({room.participants.length})</CardTitle>
-            <Button variant="outline" size="sm" onClick={handleClearScoreboard} disabled={pendingAction !== null}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleClearScoreboard}
+              disabled={pendingAction !== null}
+              className={isDarkTheme ? "!bg-transparent border-slate-700 text-white hover:bg-slate-800 hover:text-white" : ""}
+            >
               {pendingAction === 'HOST_CLEAR_SCORES' ? 'Очистка...' : 'Очистить счёт'}
             </Button>
           </CardHeader>

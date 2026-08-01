@@ -86,7 +86,8 @@ git log --oneline -10
 - Create an issue before non-trivial new work.
 - Use `.github/ISSUE_TEMPLATE/` when available.
 - Branch format: `<issue-number>-short-description`.
-- Never implement directly on `main`.
+- Never implement directly on `main`. **Always create and checkout a new branch before writing any code.**
+- Do not push to `main` under any circumstances.
 - Keep commits focused and use concise imperative messages.
 - Run `git diff --check` before committing.
 - Do not push, create a PR, merge, rebase published history, or force-push without explicit human approval.
@@ -199,8 +200,8 @@ Uploads are runtime data:
 
 ## Testing and CI
 
-- Add a regression test for every fixed defect.
-- Test behavior, not only source strings.
+- **DO NOT create or modify any tests unless explicitly requested by the user.** (This overrides standard testing practices).
+- When explicitly asked to test: Test behavior, not only source strings.
 - Test successful and rejected authorization paths.
 - Test reconnect, replacement socket, stale timers, and public-state serialization when relevant.
 - Verify callbacks run no more than once.
