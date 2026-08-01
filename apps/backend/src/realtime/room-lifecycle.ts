@@ -52,6 +52,12 @@ export async function saveGameHistory(
 ): Promise<void> {
   if (room.historySaved) return; // Already saved — skip
 
+  // Do not save to history if there were no participants
+  if (room.participants.length === 0) {
+    room.historySaved = true;
+    return;
+  }
+
   const ongoing = historySavePromises.get(room.roomId);
   if (ongoing) return ongoing;
 
