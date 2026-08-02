@@ -74,8 +74,8 @@ function parseMailFrom(value: string | undefined, production: boolean) {
 
 function parsePasswordResetTtl(value: string | undefined) {
   const ttl = Number(value ?? 30);
-  if (!Number.isInteger(ttl) || ttl < 1 || ttl > 1440) {
-    throw new Error('FATAL ERROR: PASSWORD_RESET_TOKEN_TTL_MINUTES must be an integer between 1 and 1440.');
+  if (!Number.isInteger(ttl) || ttl < 1 || ttl > 30) {
+    throw new Error('FATAL ERROR: PASSWORD_RESET_TOKEN_TTL_MINUTES must be an integer between 1 and 30.');
   }
   return ttl;
 }

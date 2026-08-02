@@ -17,5 +17,6 @@ describe('development CORS configuration', () => {
     expect(loadConfig(env).passwordResetTokenTtlMinutes).toBe(30);
     expect(() => loadConfig({ ...env, MAIL_FROM: 'invalid' })).toThrow('MAIL_FROM');
     expect(() => loadConfig({ ...env, PASSWORD_RESET_TOKEN_TTL_MINUTES: '0' })).toThrow('PASSWORD_RESET_TOKEN_TTL_MINUTES');
+    expect(() => loadConfig({ ...env, PASSWORD_RESET_TOKEN_TTL_MINUTES: '31' })).toThrow('PASSWORD_RESET_TOKEN_TTL_MINUTES');
   });
 });

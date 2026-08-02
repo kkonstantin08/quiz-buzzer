@@ -6,7 +6,7 @@ Let a host reset a forgotten password without revealing whether an email address
 
 ## Design
 
-`POST /api/auth/forgot-password` normalizes the supplied email and always returns the same Russian confirmation message unless the request is rate limited. The limiter applies a combined key of client IP and normalized email, and a separate IP-only limiter prevents an attacker from cycling addresses. A matched user receives a 32-byte random base64url token; only its SHA-256 hash is persisted. A new request invalidates that user's active reset tokens before storing the new one. The token expires after the validated configured TTL, defaulting to 30 minutes.
+`POST /api/auth/forgot-password` normalizes the supplied email and always returns the same Russian confirmation message unless the request is rate limited. Independent limiters allow at most 3 requests per normalized email and 10 requests per IP each hour. A matched user receives a 32-byte random base64url token; only its SHA-256 hash is persisted. A new request invalidates that user's active reset tokens before storing the new one. The token expires after the validated configured TTL, defaulting to 30 minutes.
 
 `POST /api/auth/reset-password` accepts a raw token and a new password. It uses one Prisma transaction to conditionally claim exactly one unexpired, unused token, update the bcrypt password hash, mark all remaining active reset tokens used, and revoke every active session. The route emits the existing session-revocation event and clears `hostToken`. Invalid, expired, and previously used tokens return one identical error.
 

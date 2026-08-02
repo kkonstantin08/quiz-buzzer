@@ -9,7 +9,7 @@ import { config } from '../../config';
 import { prisma } from '../../prisma';
 import { authRouter, createPasswordResetEmailLimiter, createPasswordResetIpLimiter } from '../index';
 
-const mockSend = jest.fn<(message: { text?: string }) => Promise<{ data: { id: string }; error: null }>>();
+const mockSend = jest.fn<(message: { text?: string }) => Promise<{ data: unknown; error: unknown }>>();
 jest.mock('resend', () => ({ Resend: jest.fn() }));
 
 const app = express();
@@ -105,6 +105,46 @@ describe('password reset', () => {
     }));
   });
 
+  it('normalizes email casing before finding the account and sending mail', async () => {
+    const user = await createUser('password-reset-normalized@example.com');
+
+    await requestReset('  PASSWORD-RESET-NORMALIZED@EXAMPLE.COM  ').expect(200);
+
+    expect(await prisma.passwordResetToken.count({ where: { userId: user.id } })).toBe(1);
+    expect(mockSend).toHaveBeenCalledWith(expect.objectContaining({ to: [user.email] }));
+  });
+
+  it('keeps the public response neutral when Resend returns an error', async () => {
+    const user = await createUser();
+    mockSend.mockResolvedValueOnce({ data: null, error: { message: 'Resend unavailable' } });
+    const errorLog = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const response = await requestReset(user.email).expect(200);
+
+    expect(response.body).toEqual({ message: 'Если аккаунт с таким email существует, мы отправили инструкции по восстановлению пароля' });
+    errorLog.mockRestore();
+  });
+
+  it('returns the neutral response without waiting for Resend', async () => {
+    const user = await createUser();
+    mockSend.mockReturnValueOnce(new Promise(() => {}));
+
+    const response = await requestReset(user.email).timeout({ deadline: 500 }).expect(200);
+
+    expect(response.body).toEqual({ message: 'Если аккаунт с таким email существует, мы отправили инструкции по восстановлению пароля' });
+  });
+
+  it('invalidates earlier active tokens when issuing a new one', async () => {
+    const user = await createUser();
+    await requestReset(user.email).expect(200);
+    const oldToken = resetUrlToken();
+    await requestReset(user.email).expect(200);
+    const currentToken = resetUrlToken();
+
+    await request(app).post('/auth/reset-password').send({ token: oldToken, newPassword: 'old-link-password123' }).expect(400);
+    await request(app).post('/auth/reset-password').send({ token: currentToken, newPassword: 'current-link-password123' }).expect(200);
+  });
+
   it('rejects expired and reused tokens without changing the password', async () => {
     const user = await createUser();
     await requestReset(user.email).expect(200);
@@ -120,6 +160,15 @@ describe('password reset', () => {
     await request(app).post('/auth/reset-password').send({ token: validToken, newPassword: 'another-password123' }).expect(400);
   });
 
+  it('rejects an invalid token before hashing a password', async () => {
+    const hashPassword = jest.spyOn(bcrypt, 'hash');
+
+    await request(app).post('/auth/reset-password').send({ token: 'invalid-token', newPassword: 'new-password123' }).expect(400);
+
+    expect(hashPassword).not.toHaveBeenCalled();
+    hashPassword.mockRestore();
+  });
+
   it('revokes every session and clears the auth cookie after a successful reset', async () => {
     const user = await createUser();
     await request(app).post('/auth/login').send({ email: user.email, password: 'password123' }).expect(200);
@@ -131,6 +180,25 @@ describe('password reset', () => {
     await expect(bcrypt.compare('new-password123', (await prisma.hostUser.findUniqueOrThrow({ where: { id: user.id } })).passwordHash)).resolves.toBe(true);
     expect(await prisma.session.count({ where: { userId: user.id, revokedAt: null } })).toBe(0);
     expect(await prisma.passwordResetToken.count({ where: { userId: user.id, usedAt: null } })).toBe(0);
+  });
+
+  it('allows only one of two concurrent requests to consume a token', async () => {
+    const user = await createUser();
+    await requestReset(user.email).expect(200);
+    const token = resetUrlToken();
+
+    const responses = await Promise.all([
+      request(app).post('/auth/reset-password').send({ token, newPassword: 'first-password123' }),
+      request(app).post('/auth/reset-password').send({ token, newPassword: 'second-password123' }),
+    ]);
+
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 400]);
+    const passwordHash = (await prisma.hostUser.findUniqueOrThrow({ where: { id: user.id } })).passwordHash;
+    const matches = await Promise.all([
+      bcrypt.compare('first-password123', passwordHash),
+      bcrypt.compare('second-password123', passwordHash),
+    ]);
+    expect(matches.filter(Boolean)).toHaveLength(1);
   });
 
   it('limits both requests from one IP and repeated normalized email requests', async () => {

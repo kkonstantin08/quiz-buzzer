@@ -218,8 +218,9 @@ authRouter.post('/forgot-password', passwordResetIpLimiter, passwordResetEmailLi
           await tx.passwordResetToken.create({ data: { userId, tokenHash: hashResetToken(token), expiresAt } });
         });
 
-        const sent = await sendPasswordResetEmail(email.value, `${config.appPublicUrl}/reset-password?token=${encodeURIComponent(token)}`);
-        if (sent === false) console.error('Password reset email failed');
+        void sendPasswordResetEmail(email.value, `${config.appPublicUrl}/reset-password?token=${encodeURIComponent(token)}`)
+          .then((sent) => { if (sent === false) console.error('Password reset email failed'); })
+          .catch(() => console.error('Password reset email failed'));
       }
     }
   } catch {
@@ -238,34 +239,35 @@ authRouter.post('/reset-password', async (req, res) => {
   }
 
   try {
-    const passwordHash = await bcrypt.hash(newPassword, 10);
     const now = new Date();
+    const resetToken = await prisma.passwordResetToken.findFirst({
+      where: { tokenHash: hashResetToken(token), usedAt: null, expiresAt: { gt: now } },
+      include: { user: { select: { passwordHash: true } } },
+    });
+    if (!resetToken) return res.status(400).json({ error: invalidResetTokenMessage });
+    if (await bcrypt.compare(newPassword, resetToken.user.passwordHash)) {
+      return res.status(400).json({ error: 'Новый пароль должен отличаться от текущего' });
+    }
+    const passwordHash = await bcrypt.hash(newPassword, 10);
     const reset = await prisma.$transaction(async (tx) => {
-      const resetToken = await tx.passwordResetToken.findFirst({
-        where: { tokenHash: hashResetToken(token), usedAt: null, expiresAt: { gt: now } },
-        include: { user: { select: { passwordHash: true } } },
-      });
-      if (!resetToken) return { kind: 'invalid-token' as const };
-      if (await bcrypt.compare(newPassword, resetToken.user.passwordHash)) return { kind: 'invalid-password' as const };
-
+      const claimedAt = new Date();
       const claimed = await tx.passwordResetToken.updateMany({
-        where: { id: resetToken.id, usedAt: null, expiresAt: { gt: now } },
-        data: { usedAt: now },
+        where: { id: resetToken.id, usedAt: null, expiresAt: { gt: claimedAt } },
+        data: { usedAt: claimedAt },
       });
       if (claimed.count !== 1) return { kind: 'invalid-token' as const };
 
       await tx.hostUser.update({ where: { id: resetToken.userId }, data: { passwordHash } });
       await tx.passwordResetToken.updateMany({
         where: { userId: resetToken.userId, id: { not: resetToken.id }, usedAt: null },
-        data: { usedAt: now },
+        data: { usedAt: claimedAt },
       });
       const sessions = await tx.session.findMany({ where: { userId: resetToken.userId, revokedAt: null }, select: { id: true } });
-      await tx.session.updateMany({ where: { id: { in: sessions.map((session) => session.id) }, revokedAt: null }, data: { revokedAt: now } });
+      await tx.session.updateMany({ where: { id: { in: sessions.map((session) => session.id) }, revokedAt: null }, data: { revokedAt: claimedAt } });
       return { kind: 'reset' as const, revokedSessionIds: sessions.map((session) => session.id) };
     });
 
     if (reset.kind === 'invalid-token') return res.status(400).json({ error: invalidResetTokenMessage });
-    if (reset.kind === 'invalid-password') return res.status(400).json({ error: 'Новый пароль должен отличаться от текущего' });
 
     if (reset.revokedSessionIds.length > 0) appEvents.emit('host_sessions_revoked', reset.revokedSessionIds);
     res.clearCookie('hostToken', hostCookieOptions());

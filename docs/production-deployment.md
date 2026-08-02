@@ -100,6 +100,17 @@ docker image tag "$(./scripts/compose.sh images -q nginx)" "quiz-buzzer_nginx:ro
 - `REGISTRATION_ENABLED=true`, `PAYMENTS_ENABLED=false`;
 - secure cookie и canonical production CORS origin.
 
+До deployment восстановления пароля добавьте в приватный production env:
+
+```env
+RESEND_API_KEY=<production key>
+MAIL_FROM=КвизПульт <noreply@qbuz.ru>
+APP_PUBLIC_URL=https://qbuz.ru
+PASSWORD_RESET_TOKEN_TTL_MINUTES=30
+```
+
+Не храните ключ в Git или клиентской сборке. Перед отправкой писем подтвердите `qbuz.ru` в Resend: добавьте только выданные Resend DNS-записи, не заменяя существующие записи домена, и дождитесь статуса `Verified`. Без ключа production backend намеренно не запускается; локальные тесты и CI используют только заглушки и mock SDK.
+
 Direct TLS nginx является единственным владельцем HSTS. В HTTPS server нужны:
 
 ```nginx

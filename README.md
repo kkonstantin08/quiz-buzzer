@@ -133,7 +133,7 @@ APP_PUBLIC_URL=https://qbuz.ru
 PASSWORD_RESET_TOKEN_TTL_MINUTES=30
 ```
 
-`APP_PUBLIC_URL` — публичный origin frontend без завершающего `/`; ссылка имеет вид `https://qbuz.ru/reset-password?token=...`. TTL принимает целое число от 1 до 1440 минут, по умолчанию — 30.
+`APP_PUBLIC_URL` — публичный origin frontend без завершающего `/`; ссылка имеет вид `https://qbuz.ru/reset-password?token=...`. TTL принимает целое число от 1 до 30 минут, по умолчанию — 30.
 
 Ручная настройка перед включением отправки:
 
