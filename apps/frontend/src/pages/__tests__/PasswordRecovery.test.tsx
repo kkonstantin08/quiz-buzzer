@@ -18,6 +18,8 @@ function LoginMessage() {
   return <p>{(location.state as { message?: string } | null)?.message}</p>;
 }
 
+const validResetToken = 'A'.repeat(43);
+
 describe('password recovery pages', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -55,7 +57,7 @@ describe('password recovery pages', () => {
 
   it('rejects mismatched passwords without calling the API', async () => {
     const { api } = await import('../../services/api');
-    window.history.replaceState(null, '', '/reset-password#token=valid');
+    window.history.replaceState(null, '', `/reset-password#token=${validResetToken}`);
     render(<MemoryRouter initialEntries={['/reset-password']}><ResetPassword /></MemoryRouter>);
     fireEvent.change(screen.getByLabelText('Новый пароль'), { target: { value: 'new-password123' } });
     fireEvent.change(screen.getByLabelText('Повторите новый пароль'), { target: { value: 'different-password123' } });
@@ -68,7 +70,7 @@ describe('password recovery pages', () => {
 
   it('rejects a password shorter than eight characters', async () => {
     const { api } = await import('../../services/api');
-    window.history.replaceState(null, '', '/reset-password#token=valid');
+    window.history.replaceState(null, '', `/reset-password#token=${validResetToken}`);
     render(<MemoryRouter initialEntries={['/reset-password']}><ResetPassword /></MemoryRouter>);
     fireEvent.change(screen.getByLabelText('Новый пароль'), { target: { value: 'short' } });
     fireEvent.change(screen.getByLabelText('Повторите новый пароль'), { target: { value: 'short' } });
@@ -82,7 +84,7 @@ describe('password recovery pages', () => {
   it('shows a loading state while resetting the password', async () => {
     const { api } = await import('../../services/api');
     vi.mocked(api.resetPassword).mockReturnValue(new Promise(() => {}));
-    window.history.replaceState(null, '', '/reset-password#token=valid');
+    window.history.replaceState(null, '', `/reset-password#token=${validResetToken}`);
     render(<MemoryRouter initialEntries={['/reset-password']}><ResetPassword /></MemoryRouter>);
     fireEvent.change(screen.getByLabelText('Новый пароль'), { target: { value: 'new-password123' } });
     fireEvent.change(screen.getByLabelText('Повторите новый пароль'), { target: { value: 'new-password123' } });
@@ -92,7 +94,7 @@ describe('password recovery pages', () => {
     expect(await screen.findByRole('button', { name: 'Изменяем...' })).toBeDisabled();
   });
 
-  it.each(['', '#other=valid', '#token='])('disables reset and explains a missing or malformed fragment (%s)', (fragment) => {
+  it.each(['', '#other=valid', '#token=', '#token=%', `#token=${'A'.repeat(42)}`, `#token=${validResetToken}&extra=1`])('disables reset and explains a missing or malformed fragment (%s)', (fragment) => {
     window.history.replaceState(null, '', `/reset-password${fragment}`);
     render(<MemoryRouter initialEntries={['/reset-password']}><ResetPassword /></MemoryRouter>);
 
@@ -104,7 +106,7 @@ describe('password recovery pages', () => {
   it('shows an invalid token error returned by the reset endpoint', async () => {
     const { api } = await import('../../services/api');
     vi.mocked(api.resetPassword).mockRejectedValue(new Error('Ссылка недействительна или срок её действия истёк'));
-    window.history.replaceState(null, '', '/reset-password#token=expired');
+    window.history.replaceState(null, '', `/reset-password#token=${'B'.repeat(43)}`);
     render(<MemoryRouter initialEntries={['/reset-password']}><ResetPassword /></MemoryRouter>);
     fireEvent.change(screen.getByLabelText('Новый пароль'), { target: { value: 'new-password123' } });
     fireEvent.change(screen.getByLabelText('Повторите новый пароль'), { target: { value: 'new-password123' } });
@@ -114,7 +116,7 @@ describe('password recovery pages', () => {
   });
 
   it('redirects to login with the requested success message', async () => {
-    window.history.replaceState(null, '', '/reset-password#token=valid');
+    window.history.replaceState(null, '', `/reset-password#token=${validResetToken}`);
     render(
       <MemoryRouter initialEntries={['/reset-password']}>
         <Routes>
@@ -132,14 +134,18 @@ describe('password recovery pages', () => {
 
   it('clears the fragment immediately and keeps the token only in page state', async () => {
     const { api } = await import('../../services/api');
-    const token = 'fragment-only-token';
+    const token = validResetToken;
     window.history.replaceState(null, '', `/reset-password#token=${token}`);
 
     render(<MemoryRouter initialEntries={['/reset-password']}><ResetPassword /></MemoryRouter>);
 
     expect(window.location.href).toBe('http://localhost:3000/reset-password');
-    expect(Array.from({ length: localStorage.length }, (_, index) => localStorage.getItem(localStorage.key(index)!))).not.toContain(token);
-    expect(Array.from({ length: sessionStorage.length }, (_, index) => sessionStorage.getItem(sessionStorage.key(index)!))).not.toContain(token);
+    const stored = (storage: Storage) => Array.from({ length: storage.length }, (_, index) => {
+      const key = storage.key(index)!;
+      return `${key}=${storage.getItem(key)}`;
+    }).join('\n');
+    expect(stored(localStorage)).not.toContain(token);
+    expect(stored(sessionStorage)).not.toContain(token);
     expect(document.cookie).not.toContain(token);
 
     fireEvent.change(screen.getByLabelText('Новый пароль'), { target: { value: 'new-password123' } });

@@ -52,7 +52,7 @@ describe('YandexMetrika', () => {
 
     expect(document.getElementById(SCRIPT_ID)).toHaveAttribute('src', 'https://mc.yandex.ru/metrika/tag.js');
     expect(queuedCalls()).toEqual([
-      ['123456', 'init', expect.objectContaining({ defer: true })],
+      ['123456', 'init', { defer: true }],
       ['123456', 'hit', '/'],
     ]);
   });
@@ -71,7 +71,12 @@ describe('YandexMetrika', () => {
     expect(queuedCalls().filter((call) => call[1] === 'hit' && call[2] === '/tariff')).toHaveLength(1);
   });
 
-  it.each(['/forgot-password?email=host@example.com', '/reset-password#token=secret'])('does not initialize or hit on %s', (url) => {
+  it.each([
+    '/forgot-password?email=host@example.com',
+    '/forgot-password/',
+    '/RESET-PASSWORD#token=secret',
+    '/reset-password/',
+  ])('does not initialize or hit on %s', (url) => {
     vi.stubEnv('VITE_YANDEX_METRIKA_ID', '123456');
     acknowledgeCookieNotice(true);
 

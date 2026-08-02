@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { matchPath, useLocation } from 'react-router-dom';
 import { COOKIE_PREFERENCES_CHANGED_EVENT, getCookiePreferences } from '@/lib/cookieNoticeStorage';
 
 const SCRIPT_ID = 'yandex-metrika-script';
@@ -30,7 +30,7 @@ export function YandexMetrika() {
   const [analyticsAllowed, setAnalyticsAllowed] = useState(() => getCookiePreferences()?.categories.analytics === true);
   const activeRef = useRef(false);
   const lastHitRef = useRef<string | null>(null);
-  const trackingAllowed = analyticsAllowed && pathname !== '/forgot-password' && pathname !== '/reset-password';
+  const trackingAllowed = analyticsAllowed && !matchPath('/forgot-password', pathname) && !matchPath('/reset-password', pathname);
 
   useEffect(() => {
     const updatePreferences = () => setAnalyticsAllowed(getCookiePreferences()?.categories.analytics === true);
@@ -57,7 +57,7 @@ export function YandexMetrika() {
       document.head.appendChild(script);
     }
     if (!activeRef.current) {
-      ym(id, 'init', { defer: true, clickmap: true, trackLinks: true });
+      ym(id, 'init', { defer: true });
       activeRef.current = true;
     }
   }, [trackingAllowed]);

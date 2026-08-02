@@ -13,7 +13,8 @@ export function ResetPassword() {
   const navigate = useNavigate();
   const [token] = useState(() => {
     const params = new URLSearchParams(window.location.hash.slice(1));
-    return params.size === 1 ? params.get('token') ?? '' : '';
+    const value = params.size === 1 ? params.get('token') ?? '' : '';
+    return /^[A-Za-z0-9_-]{43}$/.test(value) ? value : '';
   });
   const [newPassword, setNewPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
