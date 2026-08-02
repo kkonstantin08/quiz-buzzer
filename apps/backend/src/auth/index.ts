@@ -218,7 +218,7 @@ authRouter.post('/forgot-password', passwordResetIpLimiter, passwordResetEmailLi
           await tx.passwordResetToken.create({ data: { userId, tokenHash: hashResetToken(token), expiresAt } });
         });
 
-        void sendPasswordResetEmail(email.value, `${config.appPublicUrl}/reset-password?token=${encodeURIComponent(token)}`)
+        void sendPasswordResetEmail(email.value, `${config.appPublicUrl}/reset-password#token=${encodeURIComponent(token)}`)
           .then((sent) => { if (sent === false) console.error('Password reset email failed'); })
           .catch(() => console.error('Password reset email failed'));
       }

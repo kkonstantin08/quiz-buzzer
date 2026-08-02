@@ -45,7 +45,7 @@ function requestReset(address: string) {
 
 function resetUrlToken() {
   const message = mockSend.mock.calls.at(-1)?.[0];
-  const token = typeof message?.text === 'string' ? message.text.match(/token=([^\s]+)/)?.[1] : undefined;
+  const token = typeof message?.text === 'string' ? message.text.match(/#token=([^\s]+)/)?.[1] : undefined;
   if (!token) throw new Error('Expected reset token in email');
   return decodeURIComponent(token);
 }
@@ -102,7 +102,9 @@ describe('password reset', () => {
       from: 'КвизПульт <noreply@qbuz.ru>',
       to: [user.email],
       subject: 'Восстановление пароля — КвизПульт',
+      text: expect.stringContaining('https://qbuz.ru/reset-password#token='),
     }));
+    expect(mockSend.mock.calls.at(-1)?.[0].text).not.toContain('/reset-password?token=');
   });
 
   it('normalizes email casing before finding the account and sending mail', async () => {
