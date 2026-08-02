@@ -10,6 +10,8 @@ import { useFocusOnNavigation } from './lib/useFocusOnNavigation';
 const LandingPage = React.lazy(() => import('./pages/LandingPage').then(m => ({ default: m.LandingPage })));
 const TariffPage = React.lazy(() => import('./pages/TariffPage').then(m => ({ default: m.TariffPage })));
 const HostAuth = React.lazy(() => import('./pages/HostAuth').then(m => ({ default: m.HostAuth })));
+const ForgotPassword = React.lazy(() => import('./pages/ForgotPassword').then(m => ({ default: m.ForgotPassword })));
+const ResetPassword = React.lazy(() => import('./pages/ResetPassword').then(m => ({ default: m.ResetPassword })));
 const HostDashboard = React.lazy(() => import('./pages/HostDashboard').then(m => ({ default: m.HostDashboard })));
 const HostSettings = React.lazy(() => import('./pages/HostSettings').then(m => ({ default: m.HostSettings })));
 const HostRoom = React.lazy(() => import('./pages/HostRoom').then(m => ({ default: m.HostRoom })));
@@ -65,6 +67,8 @@ export default function App() {
             <Route path="/room/:roomCode" element={<ParticipantRoom />} />
             <Route path="/login" element={<HostAuth defaultIsLogin={true} />} />
             <Route path="/register" element={<HostAuth defaultIsLogin={false} />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/dashboard" element={<HostDashboard />} />
             <Route path="/settings" element={<HostSettings />} />
             <Route path="/host/room/:roomId" element={<HostRoom />} />

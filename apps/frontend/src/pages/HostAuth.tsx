@@ -28,11 +28,17 @@ export function HostAuth({ defaultIsLogin = true }: { defaultIsLogin?: boolean }
   const [isLogin, setIsLogin] = useState(defaultIsLogin);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
   // Update local state if the route changes (e.g., user clicked between /login and /register)
   useEffect(() => {
     setIsLogin(defaultIsLogin);
   }, [defaultIsLogin]);
+
+  useEffect(() => {
+    const message = location.state as { message?: string } | null;
+    setNotice(message?.message ?? '');
+  }, [location.state]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -127,6 +133,7 @@ export function HostAuth({ defaultIsLogin = true }: { defaultIsLogin?: boolean }
                 <span>{error}</span>
               </div>
             )}
+            {notice && <div role="status" className="mb-4 flex items-center gap-2 rounded-lg border border-green-100 bg-green-50/80 p-3 text-sm font-medium text-green-700"><span>{notice}</span></div>}
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="auth-email" className="sr-only">Email</Label>
@@ -166,6 +173,7 @@ export function HostAuth({ defaultIsLogin = true }: { defaultIsLogin?: boolean }
                   {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>
               </div>
+              {isLogin && <Link to="/forgot-password" className="block text-right text-sm font-medium text-primary hover:underline">Забыли пароль?</Link>}
               {!isLogin && (
                 <>
                   <div className="relative">

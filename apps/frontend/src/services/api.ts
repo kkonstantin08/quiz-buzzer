@@ -148,6 +148,32 @@ export const api = {
     return res.json();
   },
 
+  async forgotPassword(email: string) {
+    const res = await customFetch(`${API_URL}/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}));
+      throw new Error(translateError(error.error || 'Не удалось отправить инструкции'));
+    }
+    return res.json();
+  },
+
+  async resetPassword(token: string, newPassword: string) {
+    const res = await customFetch(`${API_URL}/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, newPassword }),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}));
+      throw new Error(translateError(error.error || 'Не удалось изменить пароль'));
+    }
+    return res.json();
+  },
+
   async uploadAvatar(file: File) {
     const formData = new FormData();
     formData.append('avatar', file);

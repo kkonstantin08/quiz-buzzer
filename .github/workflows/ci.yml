@@ -53,6 +53,10 @@ jobs:
       DATABASE_URL: file:./ci-test.db
       CORS_ORIGIN: http://localhost:5173
       PORT: 0
+      RESEND_API_KEY: re_ci_test
+      MAIL_FROM: КвизПульт <noreply@qbuz.ru>
+      APP_PUBLIC_URL: http://localhost:5173
+      PASSWORD_RESET_TOKEN_TTL_MINUTES: 30
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node.js 22
@@ -114,6 +118,10 @@ jobs:
           echo "PORT=3001" >> .env
           echo "DATABASE_URL=file:/app/prisma/dev.db" >> .env
           echo "REGISTRATION_ENABLED=true" >> .env
+          echo "RESEND_API_KEY=re_ci_test" >> .env
+          echo "MAIL_FROM=КвизПульт <noreply@qbuz.ru>" >> .env
+          echo "APP_PUBLIC_URL=http://localhost" >> .env
+          echo "PASSWORD_RESET_TOKEN_TTL_MINUTES=30" >> .env
       - name: Build Docker images
         run: docker compose build
       - name: Verify Quick Tunnel is not running
