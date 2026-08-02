@@ -45,4 +45,14 @@ describe('nginx proxy headers', () => {
     expect(nginxConfig).toContain('proxy_hide_header Strict-Transport-Security;');
     expect(nginxConfig.match(/add_header Strict-Transport-Security \$hsts_header always;/g)).toHaveLength(2);
   });
+
+  it('allows only the documented Yandex Metrica origins in CSP', () => {
+    const csp = nginxConfig.match(/add_header Content-Security-Policy "([^"]+)" always;/)?.[1] ?? '';
+
+    expect(csp).toContain("script-src 'self' 'unsafe-inline' https://mc.yandex.ru https://yastatic.net;");
+    expect(csp).toContain("img-src 'self' data: blob: https://mc.yandex.ru;");
+    expect(csp).toContain("connect-src 'self' wss: ws: https://mc.yandex.ru;");
+    expect(csp).not.toContain('*');
+    expect(csp).not.toContain("'unsafe-eval'");
+  });
 });

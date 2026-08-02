@@ -26,10 +26,11 @@ function ensureQueue(): YmQueue {
 }
 
 export function YandexMetrika() {
-  const { pathname, search } = useLocation();
+  const { pathname } = useLocation();
   const [analyticsAllowed, setAnalyticsAllowed] = useState(() => getCookiePreferences()?.categories.analytics === true);
   const activeRef = useRef(false);
   const lastHitRef = useRef<string | null>(null);
+  const trackingAllowed = analyticsAllowed && pathname !== '/forgot-password' && pathname !== '/reset-password';
 
   useEffect(() => {
     const updatePreferences = () => setAnalyticsAllowed(getCookiePreferences()?.categories.analytics === true);
@@ -40,7 +41,7 @@ export function YandexMetrika() {
   useEffect(() => {
     const id = counterId();
     if (!id) return;
-    if (!analyticsAllowed) {
+    if (!trackingAllowed) {
       if (activeRef.current) ensureQueue()(id, 'destruct');
       activeRef.current = false;
       lastHitRef.current = null;
@@ -59,15 +60,14 @@ export function YandexMetrika() {
       ym(id, 'init', { defer: true, clickmap: true, trackLinks: true });
       activeRef.current = true;
     }
-  }, [analyticsAllowed]);
+  }, [trackingAllowed]);
 
   useEffect(() => {
     const id = counterId();
-    const url = `${pathname}${search}`;
-    if (!id || !analyticsAllowed || !activeRef.current || lastHitRef.current === url) return;
-    ensureQueue()(id, 'hit', url);
-    lastHitRef.current = url;
-  }, [analyticsAllowed, pathname, search]);
+    if (!id || !trackingAllowed || !activeRef.current || lastHitRef.current === pathname) return;
+    ensureQueue()(id, 'hit', pathname);
+    lastHitRef.current = pathname;
+  }, [pathname, trackingAllowed]);
 
   return null;
 }

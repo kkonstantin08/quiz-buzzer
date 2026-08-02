@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import React, { useLayoutEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,12 +11,18 @@ const invalidToken = 'Ссылка недействительна или сро�
 
 export function ResetPassword() {
   const navigate = useNavigate();
-  const [params] = useSearchParams();
-  const token = params.get('token') ?? '';
+  const [token] = useState(() => {
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    return params.size === 1 ? params.get('token') ?? '' : '';
+  });
   const [newPassword, setNewPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(token ? '' : invalidToken);
+
+  useLayoutEffect(() => {
+    window.history.replaceState(window.history.state, '', window.location.pathname);
+  }, []);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
