@@ -1,8 +1,8 @@
 import { DefaultEventsMap, Socket, Server } from 'socket.io';
 import { ClientToServerEvents, InternalRoomData, RoomState, ServerToClientEvents } from 'shared';
-import { rooms, socketToRoom, deleteRoom } from '../rooms';
+import { rooms, socketToRoom } from '../rooms';
 import { CustomSocketData } from './index';
-import { postFinishTimers, maxLifetimeTimers, cancelRoomLifecycleTimers } from './room-lifecycle';
+import { finishAndDeleteRoom, postFinishTimers, maxLifetimeTimers } from './room-lifecycle';
 
 // Maps roomId to the NodeJS Timeout
 export const hostDisconnectTimers = new Map<string, NodeJS.Timeout>();
@@ -70,7 +70,7 @@ export function startHostReconnectTimeout(
   const timeoutMs = 10 * 60 * 1000; // 10 minutes
 
   const timer = reconnectTimeoutLoader.setTimeout(() => {
-    closeRoomAfterHostTimeout(roomId, io, buzzBuffers, extraTimers, participantDisconnectTimers);
+    void closeRoomAfterHostTimeout(roomId, io, buzzBuffers, extraTimers, participantDisconnectTimers);
   }, timeoutMs);
 
   hostDisconnectTimers.set(roomId, timer);
@@ -91,16 +91,15 @@ export function closeRoomAfterHostTimeout(
   extraTimers?: Map<string, NodeJS.Timeout>[],
   participantDisconnectTimers?: Map<string, NodeJS.Timeout>
 ) {
-  cancelRoomLifecycleTimers(roomId);
-  
   const allTimers = [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers];
   if (extraTimers) {
     allTimers.push(...extraTimers);
   }
-  
-  deleteRoom(
+
+  return finishAndDeleteRoom(
     roomId,
     'ведущий не вернулся',
+    'Error saving history on host timeout:',
     io,
     buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }> | undefined,
     allTimers,

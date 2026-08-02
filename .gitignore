@@ -15,6 +15,14 @@ coverage/
 *.sqlite
 *.sqlite-*
 apps/backend/uploads/
+backups/
+# Local document and archive exports.
+*.docx
+*.zip
+deployment-report-*.md
+functional-smoke-*.md
+operations-hardening-report-*.md
+staging-smoke-report-*.md
 # Playwright screenshots and traces are test output, not fixtures.
 screenshots/
 traces/

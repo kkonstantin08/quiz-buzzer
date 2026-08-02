@@ -12,6 +12,15 @@ function forwardedProto(remoteAddress: string, protocol: string, scheme: string)
   return rule ?? scheme;
 }
 
+function hstsHeader(protocol: string) {
+  const map = nginxConfig.match(/map \$forwarded_proto \$hsts_header \{([\s\S]*?)\n    \}/)?.[1];
+  if (!map) throw new Error('HSTS map is missing');
+
+  const rule = new RegExp(`^\\s*${protocol}\\s+"([^"]*)";`, 'm').exec(map)?.[1];
+  const fallback = /^\s*default\s+"([^"]*)";/m.exec(map)?.[1];
+  return rule ?? fallback;
+}
+
 describe('nginx proxy headers', () => {
   it('accepts X-Forwarded-Proto only from cloudflared and only for http or https', () => {
     expect(forwardedProto('172.30.0.11', 'https', 'http')).toBe('https');
@@ -28,5 +37,12 @@ describe('nginx proxy headers', () => {
     expect(block).toContain('proxy_set_header X-Forwarded-For $remote_addr;');
     expect(block).toContain('proxy_set_header X-Forwarded-Proto $forwarded_proto;');
     expect(block).toContain('proxy_set_header X-Forwarded-Host $host;');
+  });
+
+  it('adds short-lived HSTS only for trusted HTTPS and suppresses upstream HSTS', () => {
+    expect(hstsHeader('https')).toBe('max-age=86400');
+    expect(hstsHeader('http')).toBe('');
+    expect(nginxConfig).toContain('proxy_hide_header Strict-Transport-Security;');
+    expect(nginxConfig.match(/add_header Strict-Transport-Security \$hsts_header always;/g)).toHaveLength(2);
   });
 });

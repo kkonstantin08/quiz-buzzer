@@ -393,7 +393,7 @@ export function HostSettings() {
                     type="button"
                     variant="outline"
                     onClick={() => handleBgThemeChange('light')}
-                    className={`h-12 font-medium transition-all flex items-center justify-center gap-1.5 ${
+                    className={`h-auto min-h-12 whitespace-normal py-2 font-medium transition-all flex items-center justify-center gap-1.5 ${
                       bgTheme === 'light' && !customBgUrl
                         ? "ring-2 ring-primary ring-offset-2 opacity-100 font-bold border-primary"
                         : "opacity-60 hover:opacity-90"
@@ -406,7 +406,7 @@ export function HostSettings() {
                     type="button"
                     variant="outline"
                     onClick={() => handleBgThemeChange('dark')}
-                    className={`h-12 font-medium bg-slate-900 text-white hover:bg-slate-800 hover:text-white transition-all flex items-center justify-center gap-1.5 ${
+                    className={`h-auto min-h-12 whitespace-normal py-2 font-medium bg-slate-900 text-white hover:bg-slate-800 hover:text-white transition-all flex items-center justify-center gap-1.5 ${
                       bgTheme === 'dark' && !customBgUrl
                         ? "ring-2 ring-slate-900 ring-offset-2 opacity-100 font-bold"
                         : "opacity-60 hover:opacity-90"
@@ -419,7 +419,7 @@ export function HostSettings() {
                     type="button"
                     variant="outline"
                     onClick={() => handleBgThemeChange('violet-fuchsia')}
-                    className={`h-12 font-medium bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white hover:text-white transition-all flex items-center justify-center gap-1.5 ${
+                    className={`h-auto min-h-12 whitespace-normal py-2 font-medium bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white hover:text-white transition-all flex items-center justify-center gap-1.5 ${
                       bgTheme === 'violet-fuchsia' && !customBgUrl
                         ? "ring-2 ring-violet-600 ring-offset-2 opacity-100 font-bold"
                         : "opacity-60 hover:opacity-90"
