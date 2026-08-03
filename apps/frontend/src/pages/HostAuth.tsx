@@ -211,7 +211,7 @@ export function HostAuth({ defaultIsLogin = true }: { defaultIsLogin?: boolean }
                         className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 text-primary focus:ring-primary"
                       />
                       <Label htmlFor="terms-checkbox" className="text-sm font-normal text-slate-600 leading-snug">
-                        Я принимаю <Link to={legalConfig.urls.terms} className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">Пользовательское соглашение</Link>.
+                        Я принимаю <Link to={legalConfig.urls.terms} className="text-primary underline underline-offset-2" target="_blank" rel="noopener noreferrer">Пользовательское соглашение</Link>.
                       </Label>
                     </div>
                     <div className="flex items-start gap-2">
@@ -223,7 +223,7 @@ export function HostAuth({ defaultIsLogin = true }: { defaultIsLogin?: boolean }
                         className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 text-primary focus:ring-primary"
                       />
                       <Label htmlFor="personal-data-consent-checkbox" className="text-sm font-normal text-slate-600 leading-snug">
-                        «Даю отдельное согласие ИП Тумакину Алексею Анатольевичу на обработку моих персональных данных на условиях <Link to={legalConfig.urls.consent} className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">Согласия</Link> и <Link to={legalConfig.urls.privacy} className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">Политики обработки персональных данных</Link>».
+                        «Даю отдельное согласие ИП Тумакину Алексею Анатольевичу на обработку моих персональных данных на условиях <Link to={legalConfig.urls.consent} className="text-primary underline underline-offset-2" target="_blank" rel="noopener noreferrer">Согласия</Link> и <Link to={legalConfig.urls.privacy} className="text-primary underline underline-offset-2" target="_blank" rel="noopener noreferrer">Политики обработки персональных данных</Link>».
                       </Label>
                     </div>
                   </div>
