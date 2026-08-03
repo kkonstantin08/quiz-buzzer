@@ -45,8 +45,8 @@ export function ResetPassword() {
     <PasswordRecoveryLayout title="Новый пароль" description="Придумайте пароль длиной не менее 8 символов">
       <form onSubmit={submit} className="space-y-4">
         {error && <p role="alert" className="flex gap-2 rounded-lg border border-red-100 bg-red-50 p-3 text-sm font-medium text-red-600"><AlertCircle className="h-5 w-5 shrink-0" />{error}</p>}
-        <div className="space-y-2"><Label htmlFor="reset-password">Новый пароль</Label><Input id="reset-password" type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required /></div>
-        <div className="space-y-2"><Label htmlFor="reset-confirmation">Повторите новый пароль</Label><Input id="reset-confirmation" type="password" autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} onPaste={(event) => event.preventDefault()} required /></div>
+        <div className="space-y-2"><Label htmlFor="reset-password">Новый пароль</Label><Input id="reset-password" type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} disabled={!token} required /></div>
+        <div className="space-y-2"><Label htmlFor="reset-confirmation">Повторите новый пароль</Label><Input id="reset-confirmation" type="password" autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} onPaste={(event) => event.preventDefault()} disabled={!token} required /></div>
         <Button type="submit" className="w-full" disabled={loading || !token}>{loading ? 'Изменяем...' : 'Изменить пароль'}</Button>
       </form>
     </PasswordRecoveryLayout>

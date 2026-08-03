@@ -22,6 +22,23 @@ const NAV_LINKS = [
 
 export function LegalLayout() {
   const location = useLocation();
+  const activeLink = NAV_LINKS.find(link => link.path === location.pathname) ?? NAV_LINKS[0];
+  const documentLinks = NAV_LINKS.map(link => {
+    const isActive = location.pathname === link.path;
+    return (
+      <Link
+        key={link.path}
+        to={link.path}
+        className={`px-3 py-2 rounded-lg text-sm transition-colors ${
+          isActive
+            ? 'bg-primary/10 text-primary font-medium'
+            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+        }`}
+      >
+        {link.label}
+      </Link>
+    );
+  });
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
@@ -36,24 +53,18 @@ export function LegalLayout() {
 
       <div className="flex-1 max-w-5xl mx-auto w-full px-4 py-8 md:py-12 flex flex-col md:flex-row gap-8">
         <aside className="w-full md:w-64 shrink-0">
-          <nav className="flex flex-col gap-1 sticky top-24">
+          <details key={location.pathname} className="rounded-xl border border-slate-200 bg-white shadow-sm md:hidden">
+            <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+              Документы: <span className="font-medium text-slate-600">{activeLink.label}</span>
+            </summary>
+            <nav className="flex flex-col gap-1 border-t border-slate-200 p-2">
+              {documentLinks}
+            </nav>
+          </details>
+
+          <nav className="sticky top-24 hidden flex-col gap-1 md:flex">
             <h2 className="font-semibold text-slate-900 mb-3 px-3 uppercase tracking-wider text-xs">Документы</h2>
-            {NAV_LINKS.map(link => {
-              const isActive = location.pathname === link.path;
-              return (
-                <Link
-                  key={link.path}
-                  to={link.path}
-                  className={`px-3 py-2 rounded-lg text-sm transition-colors ${
-                    isActive 
-                      ? 'bg-primary/10 text-primary font-medium' 
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  {link.label}
-                </Link>
-              );
-            })}
+            {documentLinks}
           </nav>
         </aside>
 

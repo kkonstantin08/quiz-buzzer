@@ -49,7 +49,7 @@ export function CookieBanner() {
               Мы используем обязательные технические cookie для авторизации, безопасности и работы сервиса. С вашего разрешения мы также будем использовать Яндекс Метрику для анализа посещаемости.
             </p>
             <p className="text-xs text-slate-500">
-              Подробнее — в <Link to="/cookies" className="text-primary hover:underline">Политике Cookie</Link>.
+              Подробнее — в <Link to="/cookies" className="text-primary underline underline-offset-2">Политике Cookie</Link>.
             </p>
           </div>
           <div className="flex w-full flex-col gap-2 mt-2">
