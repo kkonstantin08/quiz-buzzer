@@ -696,20 +696,20 @@ export function HostRoom() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <Table>
+                <Table className="table-fixed">
                   <TableHeader>
                     <TableRow className={isDarkTheme ? "border-slate-800/80 hover:bg-transparent" : ""}>
-                      <TableHead className={`w-12 ${isDarkTheme ? "text-slate-400" : ""}`}>#</TableHead>
-                      <TableHead className={isDarkTheme ? "text-slate-400" : ""}>Имя</TableHead>
-                      <TableHead className={`text-right ${isDarkTheme ? "text-slate-400" : ""}`}>Баллы</TableHead>
+                      <TableHead className={`w-10 px-2 sm:w-12 sm:px-4 ${isDarkTheme ? "text-slate-400" : ""}`}>#</TableHead>
+                      <TableHead className={`px-2 sm:px-4 ${isDarkTheme ? "text-slate-400" : ""}`}>Имя</TableHead>
+                      <TableHead className={`w-20 px-2 text-right sm:px-4 ${isDarkTheme ? "text-slate-400" : ""}`}>Баллы</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {room.participants.map((p, i) => (
                       <TableRow key={p.id} className={isDarkTheme ? "border-slate-800/80 hover:bg-slate-800/30" : ""}>
-                        <TableCell className={`font-medium ${isDarkTheme ? "text-slate-400" : "text-slate-600"}`}>{i + 1}</TableCell>
-                        <TableCell className={`font-semibold ${isDarkTheme ? "text-slate-200" : "text-slate-900"}`}>{p.displayName}</TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className={`w-10 px-2 font-medium sm:w-12 sm:p-4 ${isDarkTheme ? "text-slate-400" : "text-slate-600"}`}>{i + 1}</TableCell>
+                        <TableCell className={`break-words px-2 font-semibold sm:p-4 ${isDarkTheme ? "text-slate-200" : "text-slate-900"}`}>{p.displayName}</TableCell>
+                        <TableCell className="w-20 px-2 text-right sm:p-4">
                           <Badge
                             variant={p.score > 0 ? "default" : "secondary"}
                             className={`text-sm px-3 py-1 ${
