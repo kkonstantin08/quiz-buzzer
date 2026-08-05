@@ -12,6 +12,7 @@ import { appEvents } from '../events';
 import { LegalDocumentType, LegalAcceptanceSource, legalBackendConfig } from '../legal/config';
 import { normalizeEmail, normalizeName } from './validation';
 import { sendPasswordResetEmail } from './passwordResetEmail';
+import { sessionMetadata } from './session';
 export const authRouter = Router();
 
 const passwordResetConfirmation = 'Если аккаунт с таким email существует, мы отправили инструкции по восстановлению пароля';
@@ -164,6 +165,7 @@ authRouter.post('/login', loginLimiter, async (req, res) => {
 
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
+    const metadata = sessionMetadata(req);
 
     const login = await prisma.$transaction(async (tx) => {
       const currentUser = await tx.hostUser.findUnique({
@@ -173,7 +175,7 @@ authRouter.post('/login', loginLimiter, async (req, res) => {
       const currentUserId = await resolveLoginUserId(tx, trimmedEmail, normalizedEmail.value);
       if (!currentUser || currentUser.passwordHash !== user.passwordHash || currentUserId !== user.id) return null;
 
-      const session = await tx.session.create({ data: { userId: user.id, expiresAt } });
+      const session = await tx.session.create({ data: { userId: user.id, expiresAt, ...metadata } });
       return { user: currentUser, session };
     });
     if (!login) return res.status(401).json({ error: 'Invalid credentials' });
@@ -580,10 +582,7 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 10);
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
-
-    // Get client IP and User-Agent
-    const ipAddress = req.ip || req.socket.remoteAddress || null;
-    const userAgent = req.headers['user-agent'] || null;
+    const metadata = sessionMetadata(req);
 
     // Use transaction for atomic creation
     const { user, session } = await prisma.$transaction(async (tx) => {
@@ -598,6 +597,7 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
         data: {
           userId: createdUser.id,
           expiresAt,
+          ...metadata,
         }
       });
 
@@ -608,16 +608,16 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
             documentType: LegalDocumentType.TERMS,
             documentVersion: serverTermsVersion,
             acceptanceSource: LegalAcceptanceSource.REGISTRATION,
-            ipAddress,
-            userAgent,
+            ipAddress: metadata.ipAddress,
+            userAgent: metadata.userAgent,
           },
           {
             hostUserId: createdUser.id,
             documentType: LegalDocumentType.PERSONAL_DATA_CONSENT,
             documentVersion: serverPersonalDataConsentVersion,
             acceptanceSource: LegalAcceptanceSource.REGISTRATION,
-            ipAddress,
-            userAgent,
+            ipAddress: metadata.ipAddress,
+            userAgent: metadata.userAgent,
           },
         ],
       });
