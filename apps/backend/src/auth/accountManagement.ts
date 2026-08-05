@@ -128,21 +128,23 @@ accountManagementRouter.delete('/account', accountDeletionLimiter, async (req: A
     return res.status(400).json({ error: 'Не удалось подтвердить удаление аккаунта' });
   }
 
-  const user = await prisma.hostUser.findUnique({
-    where: { id: req.userId! },
-    select: { passwordHash: true },
-  });
-  if (!user || !await bcrypt.compare(payload.currentPassword, user.passwordHash)) {
-    res.locals.accountDeletionVerificationFailed = true;
-    return res.status(400).json({ error: 'Не удалось подтвердить удаление аккаунта' });
-  }
-
-  if (!beginAccountDeletion(req.userId!)) {
-    res.locals.accountDeletionVerificationFailed = true;
-    return res.status(409).json({ error: 'Удаление аккаунта уже выполняется' });
-  }
-
+  let deletionStarted = false;
   try {
+    const user = await prisma.hostUser.findUnique({
+      where: { id: req.userId! },
+      select: { passwordHash: true },
+    });
+    if (!user || !await bcrypt.compare(payload.currentPassword, user.passwordHash)) {
+      res.locals.accountDeletionVerificationFailed = true;
+      return res.status(400).json({ error: 'Не удалось подтвердить удаление аккаунта' });
+    }
+
+    if (!beginAccountDeletion(req.userId!)) {
+      res.locals.accountDeletionVerificationFailed = true;
+      return res.status(409).json({ error: 'Удаление аккаунта уже выполняется' });
+    }
+    deletionStarted = true;
+
     const archiveSubjectId = randomUUID();
     const assetUrls = await prisma.$transaction(async (tx) => {
       const now = new Date();
@@ -289,6 +291,6 @@ accountManagementRouter.delete('/account', accountDeletionLimiter, async (req: A
     }
     return res.status(500).json({ error: 'Не удалось удалить аккаунт' });
   } finally {
-    endAccountDeletion(req.userId!);
+    if (deletionStarted) endAccountDeletion(req.userId!);
   }
 });

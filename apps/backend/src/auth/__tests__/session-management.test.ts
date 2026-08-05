@@ -8,12 +8,20 @@ import { appEvents } from '../../events';
 import { LegalDocumentType, legalBackendConfig } from '../../legal/config';
 import { prisma } from '../../prisma';
 import { authRouter } from '../index';
+import { beginAccountDeletion, endAccountDeletion } from '../accountDeletionState';
+import { validateHostSession } from '../session';
 
 const app = express();
 app.set('trust proxy', 'loopback');
 app.use(express.json());
 app.use(cookieParser());
 app.use('/auth', authRouter);
+
+const untrustedProxyApp = express();
+untrustedProxyApp.set('trust proxy', false);
+untrustedProxyApp.use(express.json());
+untrustedProxyApp.use(cookieParser());
+untrustedProxyApp.use('/auth', authRouter);
 
 const prefix = `session-management-${Date.now()}`;
 const email = `${prefix}@example.com`;
@@ -123,6 +131,18 @@ describe('session management storage', () => {
     });
   });
 
+  it('ignores a spoofed forwarded IP when trust proxy is disabled', async () => {
+    const login = await request(untrustedProxyApp)
+      .post('/auth/login')
+      .set('X-Forwarded-For', '198.51.100.99')
+      .send({ email, password })
+      .expect(200);
+    const session = sessionIdFrom(login);
+
+    const stored = await prisma.session.findUniqueOrThrow({ where: { id: session.sessionId } });
+    expect(stored.ipAddress).not.toBe('198.51.100.99');
+  });
+
   it('updates lastSeenAt after five minutes but throttles recent activity', async () => {
     const login = await request(app).post('/auth/login').send({ email, password }).expect(200);
     const session = sessionIdFrom(login);
@@ -154,6 +174,37 @@ describe('session management storage', () => {
       userAgent: null,
       lastSeenAt: expect.any(Date),
     });
+  });
+
+  it('rejects a session when account deletion starts during the database lookup', async () => {
+    const user = await createSessionUser('deletion-lookup-race');
+    const session = await prisma.session.create({
+      data: { userId: user.id, expiresAt: new Date(Date.now() + 60_000), lastSeenAt: new Date() },
+    });
+    let releaseLookup!: () => void;
+    let markLookupStarted!: () => void;
+    const lookupStarted = new Promise<void>((resolve) => { markLookupStarted = resolve; });
+    const lookupRelease = new Promise<void>((resolve) => { releaseLookup = resolve; });
+    let interceptLookup = true;
+    prisma.$use(async (params, next) => {
+      if (interceptLookup && params.model === 'Session' && params.action === 'findUnique' && params.args.where.id === session.id) {
+        interceptLookup = false;
+        markLookupStarted();
+        await lookupRelease;
+      }
+      return next(params);
+    });
+
+    const validation = validateHostSession({ userId: user.id, sessionId: session.id });
+    await lookupStarted;
+    expect(beginAccountDeletion(user.id)).toBe(true);
+    releaseLookup();
+
+    try {
+      await expect(validation).resolves.toEqual({ valid: false, code: 'AUTH_SESSION_INVALID' });
+    } finally {
+      endAccountDeletion(user.id);
+    }
   });
 });
 

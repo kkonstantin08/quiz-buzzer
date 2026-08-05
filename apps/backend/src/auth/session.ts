@@ -90,6 +90,7 @@ export async function validateHostSession(identity: HostSessionIdentity): Promis
     });
   }
 
+  if (isAccountDeletionInProgress(identity.userId)) return { valid: false, code: 'AUTH_SESSION_INVALID' };
   return { valid: true, identity };
 }
 

@@ -219,6 +219,30 @@ describe('account deletion', () => {
       .expect(429);
   });
 
+  it('returns 500 and does not consume the verification limit when preflight storage fails', async () => {
+    const account = await createAccount('preflight-storage-error');
+    const ip = '198.51.100.241';
+    const findUnique = jest.spyOn(prisma.hostUser, 'findUnique').mockRejectedValue(new Error('storage unavailable'));
+
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      await request(app)
+        .delete('/auth/account')
+        .set('Cookie', account.cookie)
+        .set('X-Forwarded-For', ip)
+        .send(confirmation)
+        .timeout({ response: 1_000 })
+        .expect(500, { error: 'Не удалось удалить аккаунт' });
+    }
+
+    findUnique.mockRestore();
+    await request(app)
+      .delete('/auth/account')
+      .set('Cookie', account.cookie)
+      .set('X-Forwarded-For', ip)
+      .send({ ...confirmation, currentPassword: 'wrong-password' })
+      .expect(400);
+  });
+
   it('rejects revoked and expired current sessions before deletion', async () => {
     const revoked = await createAccount('revoked');
     await prisma.session.update({ where: { id: revoked.session.id }, data: { revokedAt: new Date() } });
