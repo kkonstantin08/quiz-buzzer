@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../services/api';
+import { api, type ActiveSession } from '../services/api';
 import { socket } from '../realtime/socket';
 import { emitRoomCreateWhenConnected } from '../realtime/roomCreate';
 import { useSocketAuthRecovery } from '../realtime/authRecovery';
@@ -10,10 +10,23 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { DashboardLayout } from '../components/DashboardLayout';
-import { Volume2, Image as ImageIcon, Crown, ExternalLink, Loader2, Check, AlertTriangle, Upload } from 'lucide-react';
+import { Volume2, Image as ImageIcon, Crown, ExternalLink, Loader2, Check, AlertTriangle, Upload, MonitorSmartphone, LogOut, Trash2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { resolveAssetUrl } from '../lib/assets';
+
+const sessionDateFormatter = new Intl.DateTimeFormat('ru-RU', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+});
+
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
+function formatSessionDate(value: string | null) {
+  return value ? sessionDateFormatter.format(new Date(value)) : null;
+}
 
 export function HostSettings() {
   const navigate = useNavigate();
@@ -43,6 +56,19 @@ export function HostSettings() {
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const [resetConfirmationText, setResetConfirmationText] = useState('');
   const [isResetting, setIsResetting] = useState(false);
+  const [sessions, setSessions] = useState<ActiveSession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [sessionsError, setSessionsError] = useState('');
+  const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
+  const [isLogoutAllDialogOpen, setIsLogoutAllDialogOpen] = useState(false);
+  const [isLoggingOutAll, setIsLoggingOutAll] = useState(false);
+  const [logoutAllError, setLogoutAllError] = useState('');
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deletePhrase, setDeletePhrase] = useState('');
+  const [deleteConfirmed, setDeleteConfirmed] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   // File Upload
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
@@ -113,6 +139,18 @@ export function HostSettings() {
     return () => clearTimeout(timer);
   }, [soundEnabled, soundTheme, bgTheme, isLoaded]);
 
+  const loadSessions = async () => {
+    try {
+      setSessionsLoading(true);
+      setSessionsError('');
+      setSessions(await api.getSessions());
+    } catch (error) {
+      setSessionsError(errorMessage(error, 'Не удалось загрузить активные сессии'));
+    } finally {
+      setSessionsLoading(false);
+    }
+  };
+
   const loadData = async () => {
     try {
       setLoading(true);
@@ -133,6 +171,7 @@ export function HostSettings() {
         setCustomBgUrl(settings.customBgUrl || '');
         setBgTheme(settings.bgTheme || 'light');
       }
+      await loadSessions();
     } catch (err) {
       navigate('/login', { replace: true });
     } finally {
@@ -211,9 +250,69 @@ export function HostSettings() {
   };
 
   const handleLogout = async () => {
-    socket.disconnect();
-    await api.logout();
-    navigate('/', { replace: true });
+    try {
+      await api.logout();
+      socket.disconnect();
+      navigate('/', { replace: true });
+    } catch (error) {
+      setSessionsError(errorMessage(error, 'Не удалось выйти'));
+    }
+  };
+
+  const handleRevokeSession = async (sessionId: string) => {
+    try {
+      setPendingSessionId(sessionId);
+      setSessionsError('');
+      await api.revokeSession(sessionId);
+      setSessions((current) => current.filter((session) => session.id !== sessionId));
+      toast.success('Сессия завершена');
+    } catch (error) {
+      setSessionsError(errorMessage(error, 'Не удалось завершить сессию'));
+    } finally {
+      setPendingSessionId(null);
+    }
+  };
+
+  const handleLogoutAll = async () => {
+    try {
+      setIsLoggingOutAll(true);
+      setLogoutAllError('');
+      await api.logoutAll();
+      socket.disconnect();
+      navigate('/login', { replace: true });
+    } catch (error) {
+      setLogoutAllError(errorMessage(error, 'Не удалось выйти на всех устройствах'));
+    } finally {
+      setIsLoggingOutAll(false);
+    }
+  };
+
+  const resetDeleteDialog = () => {
+    setDeletePassword('');
+    setDeletePhrase('');
+    setDeleteConfirmed(false);
+    setDeleteError('');
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!deletePassword || deletePhrase !== 'УДАЛИТЬ АККАУНТ' || !deleteConfirmed) return;
+    try {
+      setIsDeletingAccount(true);
+      setDeleteError('');
+      await api.deleteAccount({
+        currentPassword: deletePassword,
+        confirmationPhrase: deletePhrase,
+        irreversibleConfirmed: deleteConfirmed,
+      });
+      resetDeleteDialog();
+      setIsDeleteDialogOpen(false);
+      socket.disconnect();
+      navigate('/', { replace: true });
+    } catch (error) {
+      setDeleteError(errorMessage(error, 'Не удалось удалить аккаунт'));
+    } finally {
+      setIsDeletingAccount(false);
+    }
   };
 
   const handleResetStatistics = async () => {
@@ -484,6 +583,96 @@ export function HostSettings() {
             </CardContent>
           </Card>
 
+          <Card id="account-sessions" aria-labelledby="active-sessions-heading" className="border-slate-200 shadow-sm overflow-hidden">
+            <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <MonitorSmartphone className="text-slate-500" size={20} />
+                <h2 id="active-sessions-heading">Активные сессии</h2>
+              </CardTitle>
+              <CardDescription>Устройства, на которых выполнен вход в ваш аккаунт</CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6 space-y-4">
+              {sessionsLoading && <p role="status" className="text-sm text-slate-600">Загрузка сессий...</p>}
+
+              {!sessionsLoading && sessionsError && (
+                <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 space-y-3">
+                  <p>{sessionsError}</p>
+                  <Button type="button" variant="outline" onClick={loadSessions} className="min-h-11 bg-white">
+                    Повторить загрузку сессий
+                  </Button>
+                </div>
+              )}
+
+              {!sessionsLoading && !sessionsError && sessions.length === 0 && (
+                <p className="text-sm text-slate-600">Активные сессии не найдены.</p>
+              )}
+
+              {!sessionsLoading && sessions.length > 0 && (
+                <ul className="space-y-3">
+                  {sessions.map((session) => (
+                    <li key={session.id} className="flex flex-col gap-4 rounded-xl border border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-semibold text-slate-900 break-words">{session.device} · {session.browser}</p>
+                          {session.isCurrent && (
+                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">Текущая сессия</span>
+                          )}
+                        </div>
+                        <p className="text-sm text-slate-600">{session.ipAddress ? `IP: ${session.ipAddress}` : 'IP неизвестен'}</p>
+                        <p className="text-sm text-slate-600">
+                          Вход: <time dateTime={session.createdAt}>{formatSessionDate(session.createdAt)}</time>
+                        </p>
+                        <p className="text-sm text-slate-600">
+                          {session.lastSeenAt ? (
+                            <>Последняя активность: <time dateTime={session.lastSeenAt}>{formatSessionDate(session.lastSeenAt)}</time></>
+                          ) : 'Последняя активность неизвестна'}
+                        </p>
+                      </div>
+
+                      {session.isCurrent ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleLogout}
+                          aria-label="Выйти из текущей сессии"
+                          className="min-h-11 w-full shrink-0 sm:w-auto"
+                        >
+                          <LogOut size={16} />
+                          Выйти
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          onClick={() => handleRevokeSession(session.id)}
+                          disabled={pendingSessionId === session.id}
+                          aria-label={`Завершить сессию ${session.device}, ${session.browser}`}
+                          className="min-h-11 w-full shrink-0 sm:w-auto"
+                        >
+                          {pendingSessionId === session.id && <Loader2 className="h-4 w-4 animate-spin" />}
+                          Завершить
+                        </Button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <div className="border-t border-slate-100 pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsLogoutAllDialogOpen(true)}
+                  disabled={sessionsLoading}
+                  className="min-h-11 w-full border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800 sm:w-auto"
+                >
+                  <LogOut size={16} />
+                  Выйти на всех устройствах
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Billing Settings */}
           <Card className="border-slate-200 shadow-sm overflow-hidden">
             <CardHeader className="bg-slate-50/50 border-b border-slate-100 pb-4">
@@ -526,7 +715,7 @@ export function HostSettings() {
                 Необратимые действия с вашим аккаунтом и данными
               </CardDescription>
             </CardHeader>
-            <CardContent className="p-6">
+            <CardContent className="p-4 sm:p-6 space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="space-y-1">
                   <div className="font-semibold text-slate-900">Сброс статистики</div>
@@ -536,9 +725,25 @@ export function HostSettings() {
                 <Button 
                   variant="destructive" 
                   onClick={() => setIsResetDialogOpen(true)}
-                  className="shrink-0"
+                  className="min-h-11 w-full shrink-0 sm:w-auto"
                 >
                   Сбросить статистику
+                </Button>
+              </div>
+
+              <div className="flex flex-col gap-4 border-t border-red-100 pt-6 sm:flex-row sm:items-center sm:justify-between">
+                <div className="space-y-1">
+                  <div className="font-semibold text-slate-900">Удаление аккаунта</div>
+                  <p className="text-sm text-slate-600">Навсегда удаляет аккаунт, игровые данные и активные сессии. Восстановление невозможно.</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={() => setIsDeleteDialogOpen(true)}
+                  className="min-h-11 w-full shrink-0 sm:w-auto"
+                >
+                  <Trash2 size={16} />
+                  Удалить аккаунт
                 </Button>
               </div>
             </CardContent>
@@ -602,6 +807,101 @@ export function HostSettings() {
               ) : (
                 'Я понимаю, удалить данные'
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isLogoutAllDialogOpen}
+        onOpenChange={(open) => {
+          setIsLogoutAllDialogOpen(open);
+          if (!open) setLogoutAllError('');
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Выйти на всех устройствах?</DialogTitle>
+            <DialogDescription>
+              Все активные сессии будут завершены, а открытые вами игровые комнаты — закрыты.
+            </DialogDescription>
+          </DialogHeader>
+          {logoutAllError && <p role="alert" className="text-sm text-red-700">{logoutAllError}</p>}
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setIsLogoutAllDialogOpen(false)} className="min-h-11 w-full sm:w-auto">
+              Отмена
+            </Button>
+            <Button type="button" variant="destructive" onClick={handleLogoutAll} disabled={isLoggingOutAll} className="min-h-11 w-full sm:w-auto">
+              {isLoggingOutAll && <Loader2 className="h-4 w-4 animate-spin" />}
+              Подтвердить выход
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isDeleteDialogOpen}
+        onOpenChange={(open) => {
+          setIsDeleteDialogOpen(open);
+          if (!open) resetDeleteDialog();
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-700">Удалить аккаунт навсегда?</DialogTitle>
+            <DialogDescription>
+              Это действие необратимо. Аккаунт, настройки, история игр и активные сессии будут удалены.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="delete-current-password">Текущий пароль</Label>
+              <Input
+                id="delete-current-password"
+                type="password"
+                autoComplete="current-password"
+                value={deletePassword}
+                onChange={(event) => setDeletePassword(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="delete-confirmation-phrase">Фраза подтверждения</Label>
+              <Input
+                id="delete-confirmation-phrase"
+                autoComplete="off"
+                value={deletePhrase}
+                onChange={(event) => setDeletePhrase(event.target.value)}
+                placeholder="УДАЛИТЬ АККАУНТ"
+              />
+              <p className="text-xs text-slate-600">Введите точно: <strong>УДАЛИТЬ АККАУНТ</strong></p>
+            </div>
+            <div className="flex items-start gap-3">
+              <input
+                id="delete-irreversible"
+                type="checkbox"
+                checked={deleteConfirmed}
+                onChange={(event) => setDeleteConfirmed(event.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-slate-300 accent-red-600"
+              />
+              <Label htmlFor="delete-irreversible" className="font-normal leading-5">
+                Я понимаю, что аккаунт и данные нельзя восстановить
+              </Label>
+            </div>
+            {deleteError && <p role="alert" className="text-sm text-red-700">{deleteError}</p>}
+          </div>
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setIsDeleteDialogOpen(false)} className="min-h-11 w-full sm:w-auto">
+              Отмена
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDeleteAccount}
+              disabled={!deletePassword || deletePhrase !== 'УДАЛИТЬ АККАУНТ' || !deleteConfirmed || isDeletingAccount}
+              className="min-h-11 w-full sm:w-auto"
+            >
+              {isDeletingAccount && <Loader2 className="h-4 w-4 animate-spin" />}
+              Удалить аккаунт навсегда
             </Button>
           </DialogFooter>
         </DialogContent>
