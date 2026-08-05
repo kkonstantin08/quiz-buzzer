@@ -18,6 +18,7 @@ jest.mock('../../prisma', () => ({
       findUnique: jest.fn(),
       findFirst: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 } as never),
     },
     gameHistory: {
       create: jest.fn().mockResolvedValue({} as never),
@@ -37,6 +38,9 @@ function session(overrides: Partial<{ userId: string; expiresAt: Date; revokedAt
     createdAt: new Date(),
     expiresAt: new Date(Date.now() + 60_000),
     revokedAt: null,
+    ipAddress: null,
+    userAgent: null,
+    lastSeenAt: new Date(),
     ...overrides,
   };
 }
@@ -240,5 +244,59 @@ describe('Socket.IO host session authentication', () => {
     expect(hostDisconnectTimers.has(roomId)).toBe(true);
     cancelHostReconnectTimeout(roomId);
     expect(hostDisconnectTimers.has(roomId)).toBe(false);
+  });
+
+  it('closes every target host room and socket on logout-all without affecting another host', async () => {
+    const { appEvents } = require('../../events');
+    const firstSessionId = 'logout-all-first';
+    const secondSessionId = 'logout-all-second';
+    const otherSessionId = 'logout-all-other';
+    (sessionFindUnique as unknown as jest.Mock).mockImplementation((args: unknown) => {
+      const sessionLookup = args as { where: { id: string } };
+      return Promise.resolve(session({
+        userId: sessionLookup.where.id === otherSessionId ? 'other-host' : userId,
+      }));
+    });
+
+    const first = createClient(jwt.sign({ userId, sessionId: firstSessionId }, config.jwtSecret));
+    const second = createClient(jwt.sign({ userId, sessionId: secondSessionId }, config.jwtSecret));
+    const other = createClient(jwt.sign({ userId: 'other-host', sessionId: otherSessionId }, config.jwtSecret));
+    await expect(Promise.all([waitForConnection(first), waitForConnection(second), waitForConnection(other)]))
+      .resolves.toEqual(['connected', 'connected', 'connected']);
+
+    const [firstRoom, secondRoom, otherRoom] = await Promise.all([
+      createRoom(first), createRoom(second), createRoom(other),
+    ]);
+    for (const [index, roomId] of [firstRoom.room!.roomId, secondRoom.room!.roomId].entries()) {
+      rooms.get(roomId)!.participants.push({
+        id: `target-participant-${index}`,
+        displayName: 'Игрок',
+        socketId: `participant-${index}`,
+        joinedAt: Date.now(),
+        isConnected: true,
+        score: 1,
+      });
+    }
+    const disconnects = Promise.all([
+      new Promise((resolve) => first.once('disconnect', resolve)),
+      new Promise((resolve) => second.once('disconnect', resolve)),
+    ]);
+
+    appEvents.emit('host_logout_all', userId, [firstSessionId, secondSessionId]);
+    await disconnects;
+    for (let attempt = 0; attempt < 20 && rooms.size !== 1; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    expect(first.connected).toBe(false);
+    expect(second.connected).toBe(false);
+    expect(other.connected).toBe(true);
+    expect(rooms.has(firstRoom.room!.roomId)).toBe(false);
+    expect(rooms.has(secondRoom.room!.roomId)).toBe(false);
+    expect(rooms.has(otherRoom.room!.roomId)).toBe(true);
+    expect(prisma.gameHistory.create).toHaveBeenCalledTimes(2);
+    expect(prisma.gameHistory.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ hostUserId: userId }),
+    }));
   });
 });

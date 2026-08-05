@@ -187,6 +187,33 @@ export function setupSocketIO(io: RealtimeServer) {
     }
   });
 
+  appEvents.on('host_logout_all', (userId, sessionIds) => {
+    const revokedSessionIds = new Set(sessionIds);
+    for (const socket of io.sockets.sockets.values()) {
+      if (socket.data.userId === userId && socket.data.sessionId && revokedSessionIds.has(socket.data.sessionId)) {
+        socket.data.intentionalLogout = true;
+      }
+    }
+    for (const room of rooms.values()) {
+      if (room.hostUserId === userId) {
+        void finishAndDeleteRoom(
+          room.roomId,
+          'Ведущий вышел на всех устройствах',
+          'Error saving history on logout all:',
+          io,
+          buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>,
+          [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers],
+          participantDisconnectTimers,
+        );
+      }
+    }
+    for (const socket of io.sockets.sockets.values()) {
+      if (socket.data.userId === userId && socket.data.sessionId && revokedSessionIds.has(socket.data.sessionId)) {
+        socket.disconnect(true);
+      }
+    }
+  });
+
   io.on('connection', (socket: RealtimeSocket) => {
 
     // Time Sync
