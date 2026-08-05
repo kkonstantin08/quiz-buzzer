@@ -647,7 +647,7 @@ export function HostSettings() {
                           onClick={() => handleRevokeSession(session.id)}
                           disabled={pendingSessionId === session.id}
                           aria-label={`Завершить сессию ${session.device}, ${session.browser}`}
-                          className="min-h-11 w-full shrink-0 sm:w-auto"
+                          className="min-h-11 w-full shrink-0 bg-red-700 hover:bg-red-800 sm:w-auto"
                         >
                           {pendingSessionId === session.id && <Loader2 className="h-4 w-4 animate-spin" />}
                           Завершить
@@ -740,7 +740,7 @@ export function HostSettings() {
                   type="button"
                   variant="destructive"
                   onClick={() => setIsDeleteDialogOpen(true)}
-                  className="min-h-11 w-full shrink-0 sm:w-auto"
+                  className="min-h-11 w-full shrink-0 bg-red-700 hover:bg-red-800 sm:w-auto"
                 >
                   <Trash2 size={16} />
                   Удалить аккаунт
@@ -831,7 +831,7 @@ export function HostSettings() {
             <Button type="button" variant="outline" onClick={() => setIsLogoutAllDialogOpen(false)} className="min-h-11 w-full sm:w-auto">
               Отмена
             </Button>
-            <Button type="button" variant="destructive" onClick={handleLogoutAll} disabled={isLoggingOutAll} className="min-h-11 w-full sm:w-auto">
+            <Button type="button" variant="destructive" onClick={handleLogoutAll} disabled={isLoggingOutAll} className="min-h-11 w-full bg-red-700 hover:bg-red-800 sm:w-auto">
               {isLoggingOutAll && <Loader2 className="h-4 w-4 animate-spin" />}
               Подтвердить выход
             </Button>
@@ -898,7 +898,7 @@ export function HostSettings() {
               variant="destructive"
               onClick={handleDeleteAccount}
               disabled={!deletePassword || deletePhrase !== 'УДАЛИТЬ АККАУНТ' || !deleteConfirmed || isDeletingAccount}
-              className="min-h-11 w-full sm:w-auto"
+              className="min-h-11 w-full bg-red-700 hover:bg-red-800 sm:w-auto"
             >
               {isDeletingAccount && <Loader2 className="h-4 w-4 animate-spin" />}
               Удалить аккаунт навсегда
