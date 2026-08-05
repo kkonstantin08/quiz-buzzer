@@ -2,6 +2,7 @@ import { Request } from 'express';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../prisma';
 import { config } from '../config';
+import { isAccountDeletionInProgress } from './accountDeletionState';
 
 const LAST_SEEN_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -67,6 +68,7 @@ export function describeUserAgent(value: string | null) {
 }
 
 export async function validateHostSession(identity: HostSessionIdentity): Promise<HostSessionValidation> {
+  if (isAccountDeletionInProgress(identity.userId)) return { valid: false, code: 'AUTH_SESSION_INVALID' };
   const session = await prisma.session.findUnique({ where: { id: identity.sessionId } });
   if (!session) return { valid: false, code: 'AUTH_SESSION_MISSING' };
   if (session.userId !== identity.userId) return { valid: false, code: 'AUTH_SESSION_INVALID' };
