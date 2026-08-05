@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { InternalRoomData, RoomState, GameResult } from 'shared';
 import { rooms, deleteRoom } from '../rooms';
 import { prisma } from '../prisma';
+import { isAccountDeletionInProgress } from '../auth/accountDeletionState';
 
 // ---------------------------------------------------------------------------
 // Timer registries
@@ -51,6 +52,7 @@ export async function saveGameHistory(
   prisma: PrismaClient
 ): Promise<void> {
   if (room.historySaved) return; // Already saved — skip
+  if (isAccountDeletionInProgress(room.hostUserId)) return;
 
   // Do not save to history if there were no participants
   if (room.participants.length === 0) {
@@ -76,9 +78,13 @@ export async function saveGameHistory(
     participants: room.participants.length,
   };
   const savePromise = Promise.resolve()
-    .then(() => prisma.gameHistory.create({ data }))
-    .then(() => {
-      room.historySaved = true;
+    .then(async () => {
+      if (isAccountDeletionInProgress(room.hostUserId)) return false;
+      await prisma.gameHistory.create({ data });
+      return true;
+    })
+    .then((saved) => {
+      if (saved) room.historySaved = true;
     })
     .catch(err => {
       room.historySaved = false;

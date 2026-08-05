@@ -1,7 +1,7 @@
 import { DefaultEventsMap, Server, Socket } from 'socket.io';
 import { prisma } from '../prisma';
 import { HostSessionAuthCode, validateHostSession, validateHostToken } from '../auth/session';
-import { rooms, socketToRoom, createRoom, getRoomByCode } from '../rooms';
+import { rooms, socketToRoom, createRoom, deleteRoom, getRoomByCode } from '../rooms';
 import { BuzzSubmitResult, ClientToServerEvents, InternalRoomData, PublicRoomData, RoomCreateResult, RoomState, ServerToClientEvents, SocketErrorResult, GameResult } from 'shared';
 import xss from 'xss';
 import { reattachHostToRoom, startHostReconnectTimeout } from './host-reconnect';
@@ -209,6 +209,27 @@ export function setupSocketIO(io: RealtimeServer) {
     }
     for (const socket of io.sockets.sockets.values()) {
       if (socket.data.userId === userId && socket.data.sessionId && revokedSessionIds.has(socket.data.sessionId)) {
+        socket.disconnect(true);
+      }
+    }
+  });
+
+  appEvents.on('host_account_deleted', (userId) => {
+    for (const room of [...rooms.values()]) {
+      if (room.hostUserId === userId) {
+        deleteRoom(
+          room.roomId,
+          'Аккаунт ведущего удалён',
+          io,
+          buzzBuffers as Map<string, { timer: NodeJS.Timeout; buzzes: unknown[] }>,
+          [hostDisconnectTimers, postFinishTimers, maxLifetimeTimers],
+          participantDisconnectTimers,
+        );
+      }
+    }
+    for (const socket of io.sockets.sockets.values()) {
+      if (socket.data.userId === userId) {
+        socket.data.intentionalLogout = true;
         socket.disconnect(true);
       }
     }

@@ -8,6 +8,7 @@ import { postFinishTimers, maxLifetimeTimers } from '../room-lifecycle';
 import { closeRoomAfterHostTimeout, hostDisconnectTimers } from '../host-reconnect';
 import { describe, it, expect, beforeAll, afterAll, afterEach, jest } from '@jest/globals';
 import { GameResult, RoomState, type PublicRoomData } from 'shared';
+import { beginAccountDeletion, endAccountDeletion } from '../../auth/accountDeletionState';
 
 jest.mock('../../prisma', () => ({
   prisma: {
@@ -19,6 +20,7 @@ jest.mock('../../prisma', () => ({
     },
     session: {
       findUnique: jest.fn(),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 } as never),
     }
   },
 }));
@@ -45,6 +47,7 @@ describe('State Machine Transitions', () => {
   });
 
   afterEach(() => {
+    endAccountDeletion('mock_host_id');
     if (hostSocket && hostSocket.connected) hostSocket.disconnect();
     for (const timer of postFinishTimers.values()) clearTimeout(timer);
     for (const timer of maxLifetimeTimers.values()) clearTimeout(timer);
@@ -74,7 +77,8 @@ describe('State Machine Transitions', () => {
       id: 'mock_session_id',
       userId: 'mock_host_id',
       expiresAt: new Date(Date.now() + 100000000),
-      revokedAt: null
+      revokedAt: null,
+      lastSeenAt: new Date(),
     } as unknown as never);
 
     mockToken = jwt.sign({ userId: 'mock_host_id', sessionId: 'mock_session_id' }, config.jwtSecret);
@@ -93,6 +97,21 @@ describe('State Machine Transitions', () => {
       });
     });
   };
+
+  it('rejects ROOM_FINISH while account deletion is in progress', async () => {
+    await new Promise<void>((resolve, reject) => setupRoom(error => error ? reject(error) : resolve()));
+    const room = Array.from(rooms.values()).find(r => r.roomCode === createdRoomCode);
+    if (!room) throw new Error('Room not found');
+    room.participants.push({
+      id: 'participant', displayName: 'Игрок', socketId: 'participant-socket', joinedAt: 1, isConnected: true, score: 1,
+    });
+    expect(beginAccountDeletion('mock_host_id')).toBe(true);
+
+    const result = await new Promise<{ success: boolean }>((resolve) => hostSocket.emit('ROOM_FINISH', resolve));
+
+    expect(result.success).toBe(false);
+    expect(prisma.gameHistory.create).not.toHaveBeenCalled();
+  });
 
   it('should prevent ROUND_START if not in WAITING state', (done) => {
     setupRoom(() => {

@@ -7,6 +7,7 @@ import { appEvents } from '../events';
 import { AuthRequest, requireAuth } from './middleware';
 import { describeUserAgent, hostCookieOptions } from './session';
 import { beginAccountDeletion, endAccountDeletion } from './accountDeletionState';
+import { countUploadReferences, deleteUploadedFile } from '../utils/upload';
 
 export const accountManagementRouter = Router();
 
@@ -143,7 +144,7 @@ accountManagementRouter.delete('/account', accountDeletionLimiter, async (req: A
 
   try {
     const archiveSubjectId = randomUUID();
-    await prisma.$transaction(async (tx) => {
+    const assetUrls = await prisma.$transaction(async (tx) => {
       const now = new Date();
       const [currentUser, currentSession] = await Promise.all([
         tx.hostUser.findUnique({
@@ -269,6 +270,17 @@ accountManagementRouter.delete('/account', accountDeletionLimiter, async (req: A
 
     appEvents.emit('host_account_deleted', req.userId!);
     res.clearCookie('hostToken', hostCookieOptions());
+    for (const url of new Set(assetUrls)) {
+      try {
+        if (await countUploadReferences(prisma, url) === 0) await deleteUploadedFile(url);
+      } catch (error) {
+        const code = typeof error === 'object' && error !== null && 'code' in error
+          && typeof error.code === 'string' && /^[A-Z0-9_]{1,32}$/.test(error.code)
+          ? error.code
+          : 'UNKNOWN';
+        console.error(JSON.stringify({ event: 'account_upload_delete_failed', code }));
+      }
+    }
     return res.json({ success: true });
   } catch (error) {
     if (error instanceof StaleAccountDeletionError) {

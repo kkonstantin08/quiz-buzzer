@@ -1,7 +1,10 @@
 import bcrypt from 'bcrypt';
 import cookieParser from 'cookie-parser';
 import express from 'express';
+import { promises as fsPromises } from 'node:fs';
 import jwt from 'jsonwebtoken';
+import os from 'node:os';
+import path from 'node:path';
 import request from 'supertest';
 import { jest } from '@jest/globals';
 import { config } from '../../config';
@@ -23,6 +26,8 @@ const confirmation = {
   irreversibleConfirmed: true,
 };
 const userIds = new Set<string>();
+const originalUploadDir = config.uploadDir;
+let uploadRoot: string | null = null;
 let requestNumber = 20;
 
 function cookieFor(userId: string, sessionId: string) {
@@ -168,6 +173,9 @@ function compareBarrier(count: number) {
 
 afterEach(async () => {
   jest.restoreAllMocks();
+  config.uploadDir = originalUploadDir;
+  if (uploadRoot) await fsPromises.rm(uploadRoot, { recursive: true, force: true });
+  uploadRoot = null;
   await prisma.hostUser.deleteMany({ where: { id: { in: [...userIds] } } });
   userIds.clear();
   await prisma.archivedRefund.deleteMany();
@@ -230,6 +238,19 @@ describe('account deletion', () => {
         where: { id: account.user.id },
         data: { passwordHash: await bcrypt.hash('changed-password123', 10) },
       });
+      return result;
+    });
+
+    await deleteRequest(account.cookie).send(confirmation).expect(409);
+    await expect(prisma.hostUser.findUnique({ where: { id: account.user.id } })).resolves.toBeTruthy();
+  });
+
+  it('fails closed when the current session is revoked after password verification', async () => {
+    const account = await createAccount('session-race');
+    const compare = bcrypt.compare.bind(bcrypt);
+    jest.spyOn(bcrypt, 'compare').mockImplementationOnce(async (candidate, hash) => {
+      const result = await compare(candidate, hash);
+      await prisma.session.update({ where: { id: account.session.id }, data: { revokedAt: new Date() } });
       return result;
     });
 
@@ -325,6 +346,7 @@ describe('account deletion', () => {
 
   it('rolls back every archive and deletion write when archiving fails', async () => {
     const account = await createPopulatedAccount('rollback');
+    const emit = jest.spyOn(appEvents, 'emit');
     const now = new Date();
     await prisma.archivedPayment.create({
       data: {
@@ -348,5 +370,58 @@ describe('account deletion', () => {
     await expect(prisma.legalAcceptance.count({ where: { hostUserId: account.user.id } })).resolves.toBe(1);
     await expect(prisma.archivedLegalAcceptance.count()).resolves.toBe(0);
     await expect(prisma.archivedPayment.count()).resolves.toBe(1);
+    expect(emit).not.toHaveBeenCalledWith('host_account_deleted', account.user.id);
+  });
+
+  it('deletes owned upload files after commit but preserves a shared file', async () => {
+    uploadRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'account-deletion-files-'));
+    config.uploadDir = uploadRoot;
+    const account = await createAccount('files');
+    const other = await createAccount('files-other');
+    const ownAvatar = `/uploads/${'a'.repeat(32)}.png`;
+    const ownBackground = `/uploads/${'b'.repeat(32)}.png`;
+    const sharedLogo = `/uploads/${'c'.repeat(32)}.png`;
+    for (const url of [ownAvatar, ownBackground, sharedLogo]) {
+      await fsPromises.writeFile(path.join(uploadRoot, path.basename(url)), 'test-file');
+    }
+    await prisma.hostUser.update({ where: { id: account.user.id }, data: { avatarUrl: ownAvatar } });
+    await prisma.hostUser.update({ where: { id: other.user.id }, data: { avatarUrl: sharedLogo } });
+    await prisma.hostSettings.create({
+      data: { hostUserId: account.user.id, customLogoUrl: sharedLogo, customBgUrl: ownBackground },
+    });
+
+    await deleteRequest(account.cookie).send(confirmation).expect(200);
+
+    await expect(fsPromises.stat(path.join(uploadRoot, path.basename(ownAvatar)))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(fsPromises.stat(path.join(uploadRoot, path.basename(ownBackground)))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(fsPromises.stat(path.join(uploadRoot, path.basename(sharedLogo)))).resolves.toBeTruthy();
+  });
+
+  it('keeps account deletion successful and logs no personal data when a file cannot be removed', async () => {
+    uploadRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'account-deletion-error-'));
+    config.uploadDir = uploadRoot;
+    const account = await createAccount('file-error');
+    const avatarUrl = `/uploads/${'d'.repeat(32)}.png`;
+    const avatarPath = path.join(uploadRoot, path.basename(avatarUrl));
+    await fsPromises.writeFile(avatarPath, 'test-file');
+    await prisma.hostUser.update({ where: { id: account.user.id }, data: { avatarUrl } });
+    const unlink = fsPromises.unlink.bind(fsPromises);
+    jest.spyOn(fsPromises, 'unlink').mockImplementation(async (filePath) => {
+      if (filePath === avatarPath) throw Object.assign(new Error('disk path failed'), { code: 'EIO' });
+      return unlink(filePath);
+    });
+    const errorLog = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await deleteRequest(account.cookie).send(confirmation).expect(200, { success: true });
+
+    await expect(prisma.hostUser.findUnique({ where: { id: account.user.id } })).resolves.toBeNull();
+    await expect(fsPromises.stat(avatarPath)).resolves.toBeTruthy();
+    const log = errorLog.mock.calls.flat().join(' ');
+    expect(log).toContain('account_upload_delete_failed');
+    expect(log).toContain('EIO');
+    expect(log).not.toContain(account.user.id);
+    expect(log).not.toContain(account.user.email);
+    expect(log).not.toContain(avatarUrl);
+    expect(log).not.toContain(avatarPath);
   });
 });

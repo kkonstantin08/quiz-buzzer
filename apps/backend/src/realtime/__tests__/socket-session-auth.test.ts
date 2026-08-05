@@ -8,6 +8,7 @@ import { prisma } from '../../prisma';
 import { rooms } from '../../rooms';
 import { participantDisconnectTimers, setupSocketIO } from '../index';
 import { cancelHostReconnectTimeout, hostDisconnectTimers } from '../host-reconnect';
+import { beginAccountDeletion, endAccountDeletion } from '../../auth/accountDeletionState';
 
 jest.mock('../../prisma', () => ({
   prisma: {
@@ -78,6 +79,8 @@ describe('Socket.IO host session authentication', () => {
   });
 
   afterEach(() => {
+    endAccountDeletion(userId);
+    endAccountDeletion('other-host');
     for (const client of clients.splice(0)) client.disconnect();
     for (const roomId of hostDisconnectTimers.keys()) cancelHostReconnectTimeout(roomId);
     rooms.clear();
@@ -298,5 +301,49 @@ describe('Socket.IO host session authentication', () => {
     expect(prisma.gameHistory.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ hostUserId: userId }),
     }));
+  });
+
+  it('rejects host mutations while account deletion is fenced', async () => {
+    const client = createClient(jwt.sign({ userId, sessionId }, config.jwtSecret));
+    await expect(waitForConnection(client)).resolves.toBe('connected');
+    const created = await createRoom(client);
+    expect(created.success).toBe(true);
+    expect(beginAccountDeletion(userId)).toBe(true);
+
+    const result = await new Promise<{ success: boolean }>((resolve) => client.emit('ROUND_START', resolve));
+
+    expect(result.success).toBe(false);
+    expect(rooms.get(created.room!.roomId)?.roundState).toBe('WAITING');
+  });
+
+  it('closes deleted-account rooms without history and leaves another host untouched', async () => {
+    const { appEvents } = require('../../events');
+    const targetSessionId = 'deleted-account-session';
+    const otherSessionId = 'deleted-account-other-session';
+    (sessionFindUnique as unknown as jest.Mock).mockImplementation((args: unknown) => {
+      const lookup = args as { where: { id: string } };
+      return Promise.resolve(session({ userId: lookup.where.id === otherSessionId ? 'other-host' : userId }));
+    });
+    const target = createClient(jwt.sign({ userId, sessionId: targetSessionId }, config.jwtSecret));
+    const other = createClient(jwt.sign({ userId: 'other-host', sessionId: otherSessionId }, config.jwtSecret));
+    await expect(Promise.all([waitForConnection(target), waitForConnection(other)]))
+      .resolves.toEqual(['connected', 'connected']);
+    const targetRoom = await createRoom(target);
+    const otherRoom = await createRoom(other);
+    rooms.get(targetRoom.room!.roomId)!.participants.push({
+      id: 'target-participant', displayName: 'Игрок', socketId: 'participant', joinedAt: 1, isConnected: true, score: 2,
+    });
+    jest.mocked(prisma.gameHistory.create).mockClear();
+    const disconnected = new Promise((resolve) => target.once('disconnect', resolve));
+
+    appEvents.emit('host_account_deleted', userId);
+    await disconnected;
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(target.connected).toBe(false);
+    expect(other.connected).toBe(true);
+    expect(rooms.has(targetRoom.room!.roomId)).toBe(false);
+    expect(rooms.has(otherRoom.room!.roomId)).toBe(true);
+    expect(prisma.gameHistory.create).not.toHaveBeenCalled();
   });
 });

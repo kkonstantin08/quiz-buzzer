@@ -10,7 +10,7 @@ import { type PublicRoomData, type SocketActionResult } from 'shared';
 jest.mock('../../prisma', () => ({
   prisma: {
     hostUser: { findUnique: jest.fn() },
-    session: { findUnique: jest.fn() },
+    session: { findUnique: jest.fn(), updateMany: jest.fn() },
   },
 }));
 
