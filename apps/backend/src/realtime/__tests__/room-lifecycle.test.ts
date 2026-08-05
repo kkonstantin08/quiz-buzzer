@@ -41,6 +41,7 @@ import {
   cancelRoomLifecycleTimers,
 } from '../room-lifecycle';
 import { RoomState, GameResult } from 'shared';
+import { beginAccountDeletion, endAccountDeletion } from '../../auth/accountDeletionState';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -92,12 +93,47 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  endAccountDeletion('deleting-host');
   jest.clearAllMocks();
 });
 
 // ── Test suite ────────────────────────────────────────────────────────────────
 
 describe('Room Lifecycle', () => {
+  it('does not finish a queued history write after account deletion begins', async () => {
+    const prisma = makeMockPrisma();
+    const room = createRoom('deleting-host', 'sock-delete');
+    room.participants.push({
+      id: 'participant', displayName: 'Игрок', socketId: 'participant-socket', joinedAt: 1, isConnected: true, score: 1,
+    });
+
+    const queuedSave = saveGameHistory(room, prisma);
+    expect(beginAccountDeletion('deleting-host')).toBe(true);
+    await queuedSave;
+
+    expect(prisma.gameHistory.create).not.toHaveBeenCalled();
+    expect(room.historySaved).toBe(false);
+  });
+
+  it('deletes a timed-out room without history while account deletion is fenced', async () => {
+    jest.useFakeTimers();
+    const io = makeMockIo();
+    const room = createRoom('deleting-host', 'sock-delete');
+    room.createdAt = Date.now() - 24 * 60 * 60 * 1000;
+    room.participants.push({
+      id: 'participant', displayName: 'Игрок', socketId: 'participant-socket', joinedAt: 1, isConnected: true, score: 1,
+    });
+    expect(beginAccountDeletion('deleting-host')).toBe(true);
+
+    scheduleMaxLifetimeCleanup(room.roomId, io, new Map(), []);
+    jest.runOnlyPendingTimers();
+    await flushMicrotasksUntil(() => !rooms.has(room.roomId));
+
+    expect(mockPrismaCreate).not.toHaveBeenCalled();
+    io.close();
+    jest.useRealTimers();
+  });
+
   // ── 1. Post-finish 5-minute cleanup ───────────────────────────────────────
   it('1. Finished room is deleted 5 minutes after ROOM_FINISH', () => {
     jest.useFakeTimers();

@@ -8,6 +8,22 @@ const cleanBaseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
 // If the URL already ends with /api, use it as is, otherwise append /api
 const API_URL = cleanBaseUrl.endsWith('/api') ? cleanBaseUrl : `${cleanBaseUrl}/api`;
 
+export interface ActiveSession {
+  id: string;
+  device: string;
+  browser: string;
+  ipAddress: string | null;
+  createdAt: string;
+  lastSeenAt: string | null;
+  isCurrent: boolean;
+}
+
+export interface DeleteAccountPayload {
+  currentPassword: string;
+  confirmationPhrase: string;
+  irreversibleConfirmed: boolean;
+}
+
 const translateError = (errorMsg: string) => {
   if (errorMsg === 'Internal server error') return 'Внутренняя ошибка сервера. Пожалуйста, попробуйте позже.';
   if (errorMsg === 'Unauthorized') return 'Необходима авторизация';
@@ -19,6 +35,12 @@ const translateError = (errorMsg: string) => {
   if (errorMsg === 'Email already in use') return 'Этот email уже зарегистрирован';
   if (errorMsg === 'Unable to update email') return 'Не удалось изменить email. Проверьте текущий пароль.';
   if (errorMsg === 'Invalid password change') return 'Не удалось изменить пароль';
+  if (errorMsg === 'Unable to load sessions') return 'Не удалось загрузить активные сессии';
+  if (errorMsg === 'Use logout for the current session') return 'Для текущей сессии используйте обычный выход';
+  if (errorMsg === 'Session not found') return 'Сессия не найдена или уже завершена';
+  if (errorMsg === 'Unable to revoke session') return 'Не удалось завершить сессию';
+  if (errorMsg === 'Session no longer active') return 'Текущая сессия уже завершена';
+  if (errorMsg === 'Unable to log out all sessions') return 'Не удалось выйти на всех устройствах';
   if (errorMsg === 'Too many password attempts, please try again after 15 minutes') return 'Слишком много попыток. Попробуйте позже.';
   if (errorMsg === 'Failed to fetch') return 'Сервер недоступен. Пожалуйста, проверьте подключение к интернету или попробуйте позже.';
   if (errorMsg === 'Failed to activate') return 'Ошибка активации. Пожалуйста, попробуйте позже.';
@@ -32,6 +54,11 @@ const customFetch = async (url: string, options?: RequestInit) => {
   } catch (error: any) {
     throw new Error(translateError(error.message || 'Failed to fetch'));
   }
+};
+
+const throwApiError = async (res: Response, fallback: string): Promise<never> => {
+  const payload = await res.json().catch(() => ({})) as { error?: string };
+  throw new Error(translateError(payload.error || fallback));
 };
 
 const deleteImage = async (path: string, fallbackError: string) => {
@@ -94,7 +121,37 @@ export const api = {
 
   async logout() {
     // Clears the httpOnly cookie server-side
-    await customFetch(`${API_URL}/auth/logout`, { method: 'POST' });
+    const res = await customFetch(`${API_URL}/auth/logout`, { method: 'POST' });
+    if (!res.ok) await throwApiError(res, 'Не удалось выйти');
+  },
+
+  async getSessions(): Promise<ActiveSession[]> {
+    const res = await customFetch(`${API_URL}/auth/sessions`);
+    if (!res.ok) await throwApiError(res, 'Не удалось загрузить активные сессии');
+    const payload = await res.json() as { sessions: ActiveSession[] };
+    return payload.sessions;
+  },
+
+  async revokeSession(sessionId: string) {
+    const res = await customFetch(`${API_URL}/auth/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+    if (!res.ok) await throwApiError(res, 'Не удалось завершить сессию');
+    return res.json();
+  },
+
+  async logoutAll() {
+    const res = await customFetch(`${API_URL}/auth/logout-all`, { method: 'POST' });
+    if (!res.ok) await throwApiError(res, 'Не удалось выйти на всех устройствах');
+    return res.json();
+  },
+
+  async deleteAccount(payload: DeleteAccountPayload) {
+    const res = await customFetch(`${API_URL}/auth/account`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) await throwApiError(res, 'Не удалось удалить аккаунт');
+    return res.json();
   },
 
   async clearSession() {

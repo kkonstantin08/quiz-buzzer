@@ -34,9 +34,14 @@ model Session {
   id         String    @id @default(uuid())
   userId     String
   user       HostUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ipAddress  String?
+  userAgent  String?
+  lastSeenAt DateTime?
   createdAt  DateTime  @default(now())
   expiresAt  DateTime
   revokedAt  DateTime?
+
+  @@index([userId, revokedAt, expiresAt])
 }
 
 model PasswordResetToken {
@@ -154,4 +159,82 @@ model Refund {
   updatedAt        DateTime @updatedAt
 
   payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+}
+
+model ArchivedLegalAcceptance {
+  id               String   @id @default(uuid())
+  archiveSubjectId String
+  documentType     String
+  documentVersion  String
+  acceptanceSource String
+  acceptedAt       DateTime
+  archivedAt       DateTime @default(now())
+
+  @@index([archiveSubjectId])
+}
+
+model ArchivedSubscription {
+  id                      String   @id @default(uuid())
+  archiveSubjectId        String
+  status                  String
+  currentPeriodStart      DateTime
+  currentPeriodEnd        DateTime
+  autoRenew               Boolean
+  cancelAtPeriodEnd       Boolean
+  canceledAt              DateTime?
+  nextChargeAt            DateTime?
+  lastPaymentId           String?
+  providerPaymentMethodId String?
+  createdAt               DateTime
+  updatedAt               DateTime
+  archivedAt              DateTime @default(now())
+
+  @@index([archiveSubjectId])
+}
+
+model ArchivedPayment {
+  id                String   @id @default(uuid())
+  archiveSubjectId  String
+  provider          String
+  providerPaymentId String   @unique
+  idempotencyKey    String   @unique
+  amountMinor       Int
+  currency          String
+  status            String
+  createdAt         DateTime
+  paidAt            DateTime?
+  updatedAt         DateTime
+  archivedAt        DateTime @default(now())
+
+  @@index([archiveSubjectId])
+}
+
+model ArchivedRefund {
+  id                String   @id @default(uuid())
+  archiveSubjectId  String
+  providerPaymentId String
+  providerRefundId  String   @unique
+  amountMinor       Int
+  currency          String
+  status            String
+  createdAt         DateTime
+  updatedAt         DateTime
+  archivedAt        DateTime @default(now())
+
+  @@index([archiveSubjectId])
+}
+
+model ArchivedPaymentMethod {
+  id                      String   @id @default(uuid())
+  archiveSubjectId        String
+  provider                String
+  providerPaymentMethodId String   @unique
+  recurringEnabled        Boolean
+  consentedAt             DateTime?
+  disabledAt              DateTime?
+  createdAt               DateTime
+  updatedAt               DateTime
+  archivedAt              DateTime @default(now())
+
+  @@index([archiveSubjectId])
 }

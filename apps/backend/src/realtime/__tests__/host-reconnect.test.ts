@@ -23,6 +23,7 @@ jest.mock('../../prisma', () => ({
     },
     session: {
       findUnique: jest.fn(),
+      updateMany: jest.fn(),
     },
     gameHistory: {
       create: jest.fn().mockResolvedValue({} as never),
