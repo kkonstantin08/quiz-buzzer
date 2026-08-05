@@ -91,6 +91,9 @@ test('account security settings stay usable on mobile and with a keyboard', asyn
   await expect(deleteDialog).toBeVisible();
   await expect(deleteDialog.getByLabel('Текущий пароль')).toBeVisible();
   await expect(deleteDialog.getByRole('checkbox', { name: 'Я понимаю, что аккаунт и данные нельзя восстановить' })).toBeVisible();
+  await page.evaluate(async () => {
+    await Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined)));
+  });
 
   const accessibility = await new AxeBuilder({ page })
     .include('[role="dialog"]')
