@@ -12,18 +12,12 @@ import { appEvents } from '../events';
 import { LegalDocumentType, LegalAcceptanceSource, legalBackendConfig } from '../legal/config';
 import { normalizeEmail, normalizeName } from './validation';
 import { sendPasswordResetEmail } from './passwordResetEmail';
-import { sessionMetadata } from './session';
+import { hostCookieOptions, sessionMetadata } from './session';
+import { accountManagementRouter } from './accountManagement';
 export const authRouter = Router();
 
 const passwordResetConfirmation = 'Если аккаунт с таким email существует, мы отправили инструкции по восстановлению пароля';
 const invalidResetTokenMessage = 'Ссылка недействительна или срок её действия истёк';
-
-const hostCookieOptions = () => ({
-  httpOnly: true,
-  secure: config.cookieSecure,
-  sameSite: 'lax' as const,
-  path: '/',
-});
 
 export const createLoginLimiter = () => rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -648,3 +642,5 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+authRouter.use(accountManagementRouter);

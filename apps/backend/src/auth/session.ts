@@ -39,6 +39,13 @@ export function sessionMetadata(req: Request) {
   };
 }
 
+export const hostCookieOptions = () => ({
+  httpOnly: true,
+  secure: config.cookieSecure,
+  sameSite: 'lax' as const,
+  path: '/',
+});
+
 export function describeUserAgent(value: string | null) {
   if (!value) return { device: 'Неизвестное устройство', browser: 'Неизвестный браузер' };
 
@@ -46,14 +53,14 @@ export function describeUserAgent(value: string | null) {
     : value.includes('iPhone') ? 'iPhone'
       : value.includes('Android') ? 'Android'
         : value.includes('Windows') ? 'Windows'
-          : value.includes('Macintosh') ? 'Mac'
+          : value.includes('Macintosh') ? 'macOS'
             : value.includes('Linux') ? 'Linux'
               : 'Неизвестное устройство';
-  const browser = /Edg(?:A|iOS)?\//.test(value) ? 'Microsoft Edge'
+  const browser = /Edg(?:A|iOS)?\//.test(value) ? 'Edge'
     : /OPR\//.test(value) ? 'Opera'
       : /YaBrowser\//.test(value) ? 'Яндекс Браузер'
-        : /(?:Chrome|CriOS)\//.test(value) ? 'Google Chrome'
-          : /(?:Firefox|FxiOS)\//.test(value) ? 'Mozilla Firefox'
+        : /(?:Chrome|CriOS)\//.test(value) ? 'Chrome'
+          : /(?:Firefox|FxiOS)\//.test(value) ? 'Firefox'
             : /Safari\//.test(value) ? 'Safari'
               : 'Неизвестный браузер';
   return { device, browser };
