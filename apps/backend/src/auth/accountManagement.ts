@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { prisma } from '../prisma';
-import { appEvents } from '../events';
+import { emitAppEventBestEffort } from '../events';
 import { AuthRequest, requireAuth } from './middleware';
 import { describeUserAgent, hostCookieOptions } from './session';
 import { beginAccountDeletion, endAccountDeletion } from './accountDeletionState';
@@ -73,7 +73,7 @@ accountManagementRouter.delete('/sessions/:sessionId', async (req: AuthRequest, 
     });
     if (result.count !== 1) return res.status(404).json({ error: 'Session not found' });
 
-    appEvents.emit('host_sessions_revoked', [req.params.sessionId]);
+    emitAppEventBestEffort('host_sessions_revoked', [req.params.sessionId]);
     return res.json({ success: true });
   } catch {
     return res.status(500).json({ error: 'Unable to revoke session' });
@@ -110,7 +110,7 @@ accountManagementRouter.post('/logout-all', async (req: AuthRequest, res) => {
     if (!sessionIds) return res.status(401).json({ error: 'Session no longer active' });
 
     res.clearCookie('hostToken', hostCookieOptions());
-    appEvents.emit('host_logout_all', req.userId!, sessionIds);
+    emitAppEventBestEffort('host_logout_all', req.userId!, sessionIds);
     return res.json({ success: true });
   } catch {
     return res.status(500).json({ error: 'Unable to log out all sessions' });
@@ -270,8 +270,8 @@ accountManagementRouter.delete('/account', accountDeletionLimiter, async (req: A
       );
     });
 
-    appEvents.emit('host_account_deleted', req.userId!);
     res.clearCookie('hostToken', hostCookieOptions());
+    emitAppEventBestEffort('host_account_deleted', req.userId!);
     for (const url of new Set(assetUrls)) {
       try {
         if (await countUploadReferences(prisma, url) === 0) await deleteUploadedFile(url);

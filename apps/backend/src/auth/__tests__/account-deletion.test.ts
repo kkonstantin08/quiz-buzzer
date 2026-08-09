@@ -340,6 +340,19 @@ describe('account deletion', () => {
       'amountMinor', 'archiveSubjectId', 'archivedAt', 'createdAt', 'currency', 'id', 'idempotencyKey', 'paidAt',
       'provider', 'providerPaymentId', 'status', 'updatedAt',
     ]);
+    expect(Object.keys(subscriptions[0]).sort()).toEqual([
+      'archiveSubjectId', 'archivedAt', 'autoRenew', 'cancelAtPeriodEnd', 'canceledAt', 'createdAt',
+      'currentPeriodEnd', 'currentPeriodStart', 'id', 'lastPaymentId', 'nextChargeAt',
+      'providerPaymentMethodId', 'status', 'updatedAt',
+    ]);
+    expect(Object.keys(refunds[0]).sort()).toEqual([
+      'amountMinor', 'archiveSubjectId', 'archivedAt', 'createdAt', 'currency', 'id', 'providerPaymentId',
+      'providerRefundId', 'status', 'updatedAt',
+    ]);
+    expect(Object.keys(methods[0]).sort()).toEqual([
+      'archiveSubjectId', 'archivedAt', 'consentedAt', 'createdAt', 'disabledAt', 'id', 'provider',
+      'providerPaymentMethodId', 'recurringEnabled', 'updatedAt',
+    ]);
     expect(refunds[0]).toMatchObject({ providerPaymentId: account.providerPaymentId });
     const subjects = [legal[0], subscriptions[0], payments[0], refunds[0], methods[0]]
       .map((record) => record.archiveSubjectId);
@@ -439,6 +452,7 @@ describe('account deletion', () => {
     await deleteRequest(account.cookie).send(confirmation).expect(200, { success: true });
 
     await expect(prisma.hostUser.findUnique({ where: { id: account.user.id } })).resolves.toBeNull();
+    await request(app).get('/auth/me').set('Cookie', account.cookie).expect(401);
     await expect(fsPromises.stat(avatarPath)).resolves.toBeTruthy();
     const log = errorLog.mock.calls.flat().join(' ');
     expect(log).toContain('account_upload_delete_failed');
@@ -447,5 +461,25 @@ describe('account deletion', () => {
     expect(log).not.toContain(account.user.email);
     expect(log).not.toContain(avatarUrl);
     expect(log).not.toContain(avatarPath);
+  });
+
+  it('returns success and clears authentication when realtime cleanup throws after DB deletion', async () => {
+    const account = await createAccount('realtime-error');
+    const errorLog = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    appEvents.prependOnceListener('host_account_deleted', () => {
+      throw Object.assign(new Error('realtime cleanup failed'), { code: 'EIO' });
+    });
+
+    const response = await deleteRequest(account.cookie).send(confirmation).expect(200, { success: true });
+
+    expect(response.headers['set-cookie']?.[0] ?? '').toContain('Expires=Thu, 01 Jan 1970');
+    await expect(prisma.hostUser.findUnique({ where: { id: account.user.id } })).resolves.toBeNull();
+    await expect(prisma.session.findUnique({ where: { id: account.session.id } })).resolves.toBeNull();
+    await request(app).get('/auth/me').set('Cookie', account.cookie).expect(401);
+    const log = errorLog.mock.calls.flat().join(' ');
+    expect(log).toContain('auth_realtime_cleanup_failed');
+    expect(log).not.toContain(account.user.id);
+    expect(log).not.toContain(account.user.email);
+    expect(log).not.toContain(account.session.id);
   });
 });

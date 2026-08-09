@@ -8,7 +8,7 @@ import { countUploadReferences, InvalidUploadError, receiveUpload, saveUploadedF
 import { prisma } from '../prisma';
 import { config } from '../config';
 import { requireAuth, AuthRequest } from './middleware';
-import { appEvents } from '../events';
+import { appEvents, emitAppEventBestEffort } from '../events';
 import { LegalDocumentType, LegalAcceptanceSource, legalBackendConfig } from '../legal/config';
 import { normalizeEmail, normalizeName } from './validation';
 import { sendPasswordResetEmail } from './passwordResetEmail';
@@ -305,13 +305,18 @@ authRouter.get('/me', requireAuth, async (req: AuthRequest, res) => {
 });
 
 authRouter.post('/logout', requireAuth, async (req: AuthRequest, res) => {
-  await prisma.session.update({
-    where: { id: req.sessionId! },
-    data: { revokedAt: new Date() }
-  });
-  appEvents.emit('host_logout', req.sessionId!);
-  res.clearCookie('hostToken', hostCookieOptions());
-  return res.json({ success: true });
+  try {
+    await prisma.session.update({
+      where: { id: req.sessionId! },
+      data: { revokedAt: new Date() }
+    });
+    res.clearCookie('hostToken', hostCookieOptions());
+    emitAppEventBestEffort('host_logout', req.sessionId!);
+    return res.json({ success: true });
+  } catch {
+    console.error('Logout session revocation failed');
+    return res.status(500).json({ error: 'Unable to log out' });
+  }
 });
 
 authRouter.post('/clear-session', (_req, res) => {

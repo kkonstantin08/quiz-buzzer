@@ -564,3 +564,121 @@ Body обязан содержать:
 - [ ] **Step 6: Финальный отчёт**
 
 Сообщить issue/branch, root cause/gap, implementation, changed files, acceptance criteria, local/CI checks, artifacts, limitations, commit SHAs и ссылку на draft PR. Merge/deployment не выполнять.
+
+---
+
+## Итерация 5 — Final destructive-path hardening
+
+### Task 11: Ограничить retention неактивных Session
+
+**Files:**
+- Create: `apps/backend/src/auth/sessionCleanup.ts`
+- Create: `apps/backend/src/auth/__tests__/session-cleanup.test.ts`
+- Modify: `apps/backend/src/auth/__tests__/session-management.test.ts`
+- Modify: `apps/backend/src/__tests__/startup.test.ts`
+- Modify: `apps/backend/src/server.ts`
+- Modify: `docs/superpowers/specs/2026-08-05-account-session-management-design.md`
+
+**Interfaces:**
+- Produces: `sessionRetentionCutoff(now): Date` — три календарных месяца назад.
+- Produces: `cleanupInactiveSessions(prisma, now)` — удаляет Session, если `expiresAt <= cutoff` или `revokedAt <= cutoff`.
+- Produces: `startSessionCleanup(prisma)` — один best-effort запуск при старте и далее раз в сутки.
+
+- [ ] **Step 1: Добавить integration RED-test retention**
+
+Создать active, recent expired/revoked, boundary expired/revoked и более старые expired/revoked Session в реальной изолированной SQLite. После `cleanupInactiveSessions(prisma, now)` должны остаться active, recent и записи новее boundary; записи ровно на boundary и старше должны исчезнуть.
+
+- [ ] **Step 2: Подтвердить RED**
+
+Run: `npm run test -w backend -- session-management.test.ts --runInBand`
+
+Expected: import `sessionCleanup` отсутствует.
+
+- [ ] **Step 3: Реализовать минимальный daily cleanup**
+
+```ts
+export function sessionRetentionCutoff(now = new Date()) {
+  const cutoff = new Date(now);
+  cutoff.setDate(1);
+  cutoff.setMonth(cutoff.getMonth() - 3);
+  cutoff.setDate(Math.min(now.getDate(), new Date(cutoff.getFullYear(), cutoff.getMonth() + 1, 0).getDate()));
+  return cutoff;
+}
+
+export function cleanupInactiveSessions(db: Pick<PrismaClient, 'session'>, now = new Date()) {
+  const cutoff = sessionRetentionCutoff(now);
+  return db.session.deleteMany({
+    where: { OR: [{ expiresAt: { lte: cutoff } }, { revokedAt: { lte: cutoff } }] },
+  });
+}
+```
+
+`startSessionCleanup` не подключать к request middleware; вызвать из `server.ts` рядом с `startGameHistoryCleanup`.
+
+- [ ] **Step 4: Проверить startup wiring и документацию**
+
+Startup test должен ожидать ровно один вызов `startSessionCleanup`. В design-документе зафиксировать три календарных месяца и daily best-effort запуск; юридические тексты не менять.
+
+- [ ] **Step 5: Focused GREEN**
+
+Run: `npm run test -w backend -- session-management.test.ts startup.test.ts --runInBand`
+
+### Task 12: Провести явную post-commit границу
+
+**Files:**
+- Modify: `apps/backend/src/events.ts`
+- Modify: `apps/backend/src/auth/accountManagement.ts`
+- Modify: `apps/backend/src/auth/index.ts`
+- Modify: `apps/backend/src/auth/__tests__/account-deletion.test.ts`
+- Modify: `apps/backend/src/auth/__tests__/session-management.test.ts`
+
+**Interfaces:**
+- Produces: `emitAppEventBestEffort(event, ...args)` — event listener exception безопасно логируется без аргументов события и не меняет HTTP-result после DB commit.
+- Changes: logout, individual revoke, logout-all и account deletion очищают cookie/возвращают success после authoritative DB write независимо от realtime cleanup exception.
+
+- [ ] **Step 1: Добавить RED-tests для post-commit exception**
+
+Через временный throwing listener заставить `host_logout`, `host_sessions_revoked`, `host_logout_all` и `host_account_deleted` выбросить исключение. Проверить success, cleared cookie для logout/logout-all/deletion, revoked/deleted DB state и 401 старой cookie.
+
+- [ ] **Step 2: Подтвердить RED**
+
+Run: `npm run test -w backend -- session-management.test.ts account-deletion.test.ts --runInBand`
+
+Expected: endpoints возвращают 500/не завершают response после уже выполненной DB mutation.
+
+- [ ] **Step 3: Реализовать shared best-effort emitter и явную границу**
+
+До commit оставлять существующий rollback/catch. После commit сначала очищать `hostToken` там, где текущая session прекращена, затем вызывать best-effort realtime event и filesystem cleanup, после чего всегда отвечать `{ success: true }`. Лог содержит только fixed event name и нормализованный error code.
+
+- [ ] **Step 4: Усилить archive whitelist**
+
+В integration test независимо проверить точные ключи `ArchivedLegalAcceptance`, `ArchivedSubscription`, `ArchivedPayment`, `ArchivedRefund`, `ArchivedPaymentMethod` и отсутствие PII/working IDs.
+
+- [ ] **Step 5: Focused GREEN**
+
+Run: `npm run test -w backend -- session-management.test.ts account-deletion.test.ts --runInBand`
+
+### Task 13: Реальная HTTP + Socket.IO destructive интеграция
+
+**Files:**
+- Create: `apps/backend/src/auth/__tests__/account-management-realtime.test.ts`
+
+**Interfaces:**
+- Verifies: revoked/deleted Session remains authoritative even if physical disconnect cleanup fails.
+- Verifies: active room deletion, host isolation, queued `ROOM_FINISH`/timeout/deletion and no post-fence history write.
+
+- [ ] **Step 1: Поднять test-only Socket.IO вокруг настоящих auth routes и Prisma**
+
+Использовать временный HTTP server, `setupSocketIO`, реальные cookies/Sessions и test subscription. Не мокать API или session DB.
+
+- [ ] **Step 2: Проверить logout-all realtime failure**
+
+После throwing cleanup listener endpoint должен вернуть success и очистить cookie; физически подключённый socket может остаться, но следующая host mutation обязана получить rejection из `validateHostSession`.
+
+- [ ] **Step 3: Проверить account deletion с активной комнатой и гонкой lifecycle**
+
+Остановить deletion transaction после установки fence, параллельно отправить `ROOM_FINISH` и запустить host-timeout cleanup, затем завершить deletion. Проверить отсутствие HostUser/Session/GameHistory, закрытие только target room и сохранность другой комнаты.
+
+- [ ] **Step 4: Полная проверка и публикация**
+
+Выполнить обязательный repository verification из запроса, закоммитить только in-scope files, push в существующую `69-account-session-management`, обновить body существующего draft PR #70 и дождаться всех GitHub Actions. Не создавать branch/PR, не merge и не deploy.

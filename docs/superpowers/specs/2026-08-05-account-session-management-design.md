@@ -36,6 +36,8 @@ IP ограничивается 64 символами, User-Agent — 512 сим
 
 `validateHostSession` остаётся общей точкой HTTP и Socket.IO авторизации. После успешной проверки она обновляет `lastSeenAt`, только если значение отсутствует или старше пяти минут. Условный `updateMany` повторно ограничивается `sessionId`, `userId`, `revokedAt: null` и актуальным `expiresAt`, поэтому устаревшая параллельная проверка не оживляет отозванную сессию.
 
+Неактивные строки удаляются ежедневным best-effort cleanup, который также запускается один раз при старте backend. Expired session удаляется через три календарных месяца от `expiresAt`, revoked — через три календарных месяца от `revokedAt`; строки ровно на границе удаляются. Активные сессии не попадают под условие.
+
 ## Представление устройства
 
 Небольшой локальный parser распознаёт распространённые семейства:
@@ -75,6 +77,7 @@ IP ограничивается 64 символами, User-Agent — 512 сим
 - Атомарно обновляет только активную строку с target `id` и текущим `userId`.
 - Чужая и несуществующая сессии получают одинаковый нейтральный `404`.
 - После commit отправляет `host_sessions_revoked` с единственным session ID.
+- Ошибка post-commit realtime cleanup безопасно логируется и не меняет успешный HTTP-результат DB-отзыва.
 
 ### `POST /api/auth/logout-all`
 
@@ -83,6 +86,7 @@ IP ограничивается 64 символами, User-Agent — 512 сим
 - Очищает `hostToken` теми же cookie options.
 - Отправляет отдельное событие logout-all с `userId` и отозванными session IDs.
 - Socket.IO помечает соответствующие host sockets как intentional logout, отключает их и штатно завершает все комнаты этого `hostUserId` через существующий history/finalization flow.
+- DB-отзыв является authoritative: после него cookie очищается и endpoint возвращает success, даже если realtime cleanup бросил исключение. Следующая host mutation всё равно отклоняется server-side Session check.
 
 Endpoint не возвращает session IDs или другие внутренние данные.
 
@@ -166,11 +170,10 @@ Endpoint использует отдельный лимитер: не более
 8. В транзакции создаются все архивные строки.
 9. В транзакции явно удаляются рабочие записи в порядке: refunds, payments, payment methods, legal acceptances, subscription, game history, password-reset tokens, sessions, settings, затем `HostUser`.
 10. Финальное удаление `HostUser` выполняется условно по `id` и неизменному password hash; ожидается ровно одна удалённая строка.
-11. Только после commit отправляется `host_account_deleted`.
-12. Socket.IO синхронно закрывает без сохранения истории все комнаты с данным `hostUserId`, очищает timers/buffers/mappings и отключает все сокеты этого пользователя.
-13. Cookie очищается.
-14. После commit для уникальных avatar/logo/background URL повторно считаются ссылки оставшихся пользователей. Файл удаляется только при нулевом числе ссылок.
-15. Ошибка удаления отдельного файла не меняет успешный результат DB-операции.
+11. Сразу после commit очищается cookie; с этого момента DB-удаление считается успешным.
+12. Best-effort отправляется `host_account_deleted`. Socket.IO синхронно закрывает без сохранения истории все комнаты с данным `hostUserId`, очищает timers/buffers/mappings и отключает все сокеты этого пользователя.
+13. После commit для уникальных avatar/logo/background URL повторно считаются ссылки оставшихся пользователей. Файл удаляется только при нулевом числе ссылок.
+14. Ошибка realtime или удаления отдельного файла безопасно логируется и не меняет успешный результат DB-операции.
 
 При любой ошибке до commit Prisma откатывает архив и удаления. Событие realtime cleanup не отправляется, файлы не трогаются, deletion fence снимается, аккаунт и комнаты остаются доступными.
 
@@ -239,13 +242,16 @@ Logout-all открывает отдельный confirmation dialog. После
 ### Backend integration
 
 - metadata при регистрации и входе;
+- ограничение User-Agent до 512 символов;
 - trusted-proxy IP и игнорирование spoofed forwarded headers без trust;
 - nullable legacy metadata;
+- daily session cleanup: active/recent rows сохраняются, expired/revoked удаляются на границе трёх календарных месяцев;
 - обновление отсутствующего/устаревшего `lastSeenAt` и отсутствие записи внутри пятиминутного окна;
 - список только собственных активных сессий и `isCurrent`;
 - individual revoke другой сессии;
 - запрет current/foreign revoke;
 - logout-all, все активные sessions revoked, cookie cleared;
+- authoritative success для individual revoke, logout и logout-all при post-commit realtime exception;
 - неправильный пароль, phrase и boolean confirmation;
 - пять неуспешных попыток и `429`;
 - stale/revoked current session;
@@ -256,7 +262,8 @@ Logout-all открывает отдельный confirmation dialog. После
 - явное удаление profile/settings/subscription/history/sessions/reset/legal/payment данных;
 - удаление собственных временных upload-файлов;
 - сохранение shared-файла;
-- filesystem failure после commit без восстановления аккаунта и без PII в логе.
+- filesystem failure после commit без восстановления аккаунта и без PII в логе;
+- realtime exception после commit без ложного `500`, с очисткой cookie и закрытой повторной авторизацией.
 
 ### Realtime regression
 

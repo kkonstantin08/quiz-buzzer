@@ -3,6 +3,7 @@ import cookieParser from 'cookie-parser';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
+import { jest } from '@jest/globals';
 import { config } from '../../config';
 import { appEvents } from '../../events';
 import { LegalDocumentType, legalBackendConfig } from '../../legal/config';
@@ -10,6 +11,7 @@ import { prisma } from '../../prisma';
 import { authRouter } from '../index';
 import { beginAccountDeletion, endAccountDeletion } from '../accountDeletionState';
 import { validateHostSession } from '../session';
+import { cleanupInactiveSessions } from '../sessionCleanup';
 
 const app = express();
 app.set('trust proxy', 'loopback');
@@ -65,6 +67,59 @@ afterAll(async () => {
 });
 
 describe('session management storage', () => {
+  it('deletes expired and revoked sessions at the three-calendar-month boundary while preserving active and recent rows', async () => {
+    const user = await createSessionUser('retention');
+    const now = new Date('2026-05-31T12:00:00.000Z');
+    const cutoff = new Date('2026-02-28T12:00:00.000Z');
+    const rows = await Promise.all([
+      prisma.session.create({
+        data: { userId: user.id, expiresAt: new Date('2026-06-01T12:00:00.000Z'), ipAddress: 'active' },
+      }),
+      prisma.session.create({
+        data: { userId: user.id, expiresAt: new Date('2026-02-28T12:00:00.001Z'), ipAddress: 'recent-expired' },
+      }),
+      prisma.session.create({
+        data: { userId: user.id, expiresAt: cutoff, ipAddress: 'boundary-expired' },
+      }),
+      prisma.session.create({
+        data: { userId: user.id, expiresAt: new Date('2026-02-28T11:59:59.999Z'), ipAddress: 'old-expired' },
+      }),
+      prisma.session.create({
+        data: {
+          userId: user.id,
+          expiresAt: new Date('2026-06-01T12:00:00.000Z'),
+          revokedAt: new Date('2026-02-28T12:00:00.001Z'),
+          ipAddress: 'recent-revoked',
+        },
+      }),
+      prisma.session.create({
+        data: {
+          userId: user.id,
+          expiresAt: new Date('2026-06-01T12:00:00.000Z'),
+          revokedAt: cutoff,
+          ipAddress: 'boundary-revoked',
+        },
+      }),
+      prisma.session.create({
+        data: {
+          userId: user.id,
+          expiresAt: new Date('2026-06-01T12:00:00.000Z'),
+          revokedAt: new Date('2026-02-28T11:59:59.999Z'),
+          ipAddress: 'old-revoked',
+        },
+      }),
+    ]);
+
+    await cleanupInactiveSessions(prisma, now);
+
+    const remaining = await prisma.session.findMany({
+      where: { id: { in: rows.map((row) => row.id) } },
+      select: { ipAddress: true },
+      orderBy: { ipAddress: 'asc' },
+    });
+    expect(remaining.map((row) => row.ipAddress)).toEqual(['active', 'recent-expired', 'recent-revoked']);
+  });
+
   it('stores optional session metadata while keeping legacy sessions valid', async () => {
     const user = await prisma.hostUser.findUniqueOrThrow({ where: { email } });
 
@@ -129,6 +184,16 @@ describe('session management storage', () => {
       userAgent: 'Mozilla/5.0 Firefox/141.0',
       lastSeenAt: expect.any(Date),
     });
+
+    const longUserAgent = `Browser/${'x'.repeat(600)}`;
+    const longUserAgentLogin = await request(app)
+      .post('/auth/login')
+      .set('User-Agent', longUserAgent)
+      .send({ email, password })
+      .expect(200);
+    const longUserAgentSession = sessionIdFrom(longUserAgentLogin);
+    const stored = await prisma.session.findUniqueOrThrow({ where: { id: longUserAgentSession.sessionId } });
+    expect(stored.userAgent).toBe(longUserAgent.slice(0, 512));
   });
 
   it('ignores a spoofed forwarded IP when trust proxy is disabled', async () => {
@@ -308,6 +373,74 @@ describe('session management API', () => {
     await expect(prisma.session.findUnique({ where: { id: foreign.id } })).resolves.toMatchObject({ revokedAt: null });
   });
 
+  it('keeps another-session revoke successful when realtime cleanup throws after the DB update', async () => {
+    const user = await createSessionUser('revoke-cleanup-error');
+    const expiresAt = new Date(Date.now() + 60_000);
+    const current = await prisma.session.create({ data: { userId: user.id, expiresAt, lastSeenAt: new Date() } });
+    const other = await prisma.session.create({ data: { userId: user.id, expiresAt } });
+    const errorLog = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    appEvents.prependOnceListener('host_sessions_revoked', () => {
+      throw Object.assign(new Error('realtime cleanup failed'), { code: 'EIO' });
+    });
+
+    await request(app)
+      .delete(`/auth/sessions/${other.id}`)
+      .set('Cookie', cookieFor(user.id, current.id))
+      .expect(200, { success: true });
+
+    await expect(prisma.session.findUnique({ where: { id: other.id } })).resolves.toMatchObject({
+      revokedAt: expect.any(Date),
+    });
+    const log = errorLog.mock.calls.flat().join(' ');
+    expect(log).toContain('auth_realtime_cleanup_failed');
+    expect(log).not.toContain(user.id);
+    expect(log).not.toContain(other.id);
+  });
+
+  it('keeps current-session logout successful when realtime cleanup throws after revocation', async () => {
+    const user = await createSessionUser('logout-cleanup-error');
+    const current = await prisma.session.create({
+      data: { userId: user.id, expiresAt: new Date(Date.now() + 60_000), lastSeenAt: new Date() },
+    });
+    const cookie = cookieFor(user.id, current.id);
+    const errorLog = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    appEvents.prependOnceListener('host_logout', () => {
+      throw Object.assign(new Error('realtime cleanup failed'), { code: 'EIO' });
+    });
+
+    const response = await request(app).post('/auth/logout').set('Cookie', cookie).expect(200, { success: true });
+
+    expect(response.headers['set-cookie']?.[0] ?? '').toContain('Expires=Thu, 01 Jan 1970');
+    await expect(prisma.session.findUnique({ where: { id: current.id } })).resolves.toMatchObject({
+      revokedAt: expect.any(Date),
+    });
+    await request(app).get('/auth/me').set('Cookie', cookie).expect(401);
+    const log = errorLog.mock.calls.flat().join(' ');
+    expect(log).toContain('auth_realtime_cleanup_failed');
+    expect(log).not.toContain(user.id);
+    expect(log).not.toContain(current.id);
+  });
+
+  it('keeps the current cookie when logout revocation fails before commit', async () => {
+    const user = await createSessionUser('logout-db-error');
+    const current = await prisma.session.create({
+      data: { userId: user.id, expiresAt: new Date(Date.now() + 60_000), lastSeenAt: new Date() },
+    });
+    const update = jest.spyOn(prisma.session, 'update').mockRejectedValueOnce(new Error('database unavailable'));
+    const errorLog = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const response = await request(app)
+      .post('/auth/logout')
+      .set('Cookie', cookieFor(user.id, current.id))
+      .expect(500, { error: 'Unable to log out' });
+
+    expect(response.headers['set-cookie']).toBeUndefined();
+    expect(update).toHaveBeenCalledTimes(1);
+    await expect(prisma.session.findUnique({ where: { id: current.id } })).resolves.toMatchObject({ revokedAt: null });
+    expect(errorLog).toHaveBeenCalledWith('Logout session revocation failed');
+    update.mockRestore();
+  });
+
   it('logs out every active session including the current one and clears the cookie', async () => {
     const user = await createSessionUser('logout-all');
     const foreignUser = await createSessionUser('logout-all-foreign');
@@ -335,5 +468,30 @@ describe('session management API', () => {
       where: { id: { in: [current.id, other.id] }, revokedAt: null },
     })).resolves.toBe(0);
     await expect(prisma.session.findUnique({ where: { id: foreign.id } })).resolves.toMatchObject({ revokedAt: null });
+  });
+
+  it('keeps logout-all successful when realtime cleanup throws after all sessions are revoked', async () => {
+    const user = await createSessionUser('logout-all-cleanup-error');
+    const expiresAt = new Date(Date.now() + 60_000);
+    const current = await prisma.session.create({ data: { userId: user.id, expiresAt, lastSeenAt: new Date() } });
+    const other = await prisma.session.create({ data: { userId: user.id, expiresAt } });
+    const cookie = cookieFor(user.id, current.id);
+    const errorLog = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    appEvents.prependOnceListener('host_logout_all', () => {
+      throw Object.assign(new Error('realtime cleanup failed'), { code: 'EIO' });
+    });
+
+    const response = await request(app).post('/auth/logout-all').set('Cookie', cookie).expect(200, { success: true });
+
+    expect(response.headers['set-cookie']?.[0] ?? '').toContain('Expires=Thu, 01 Jan 1970');
+    await expect(prisma.session.count({
+      where: { id: { in: [current.id, other.id] }, revokedAt: null },
+    })).resolves.toBe(0);
+    await request(app).get('/auth/me').set('Cookie', cookie).expect(401);
+    const log = errorLog.mock.calls.flat().join(' ');
+    expect(log).toContain('auth_realtime_cleanup_failed');
+    expect(log).not.toContain(user.id);
+    expect(log).not.toContain(current.id);
+    expect(log).not.toContain(other.id);
   });
 });
