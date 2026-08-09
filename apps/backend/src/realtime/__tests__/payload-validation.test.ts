@@ -112,7 +112,7 @@ describe('Socket Payload Validation', () => {
   });
 
   it('emits the shared ERROR_EVENT object for invalid payloads without a callback', (done) => {
-    clientSocket.emit('ROOM_LEAVE', { someRandomData: 123 }); // strict error
+    clientSocket.emit('SYNC_ACK', { invalidPayload: true });
     
     clientSocket.once('ERROR_EVENT', (payload: { message: string }) => {
       expect(payload).toEqual({ message: 'Некорректные данные' });

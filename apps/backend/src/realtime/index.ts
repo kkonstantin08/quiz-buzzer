@@ -446,6 +446,11 @@ export function setupSocketIO(io: RealtimeServer) {
 
     // Rejoin Room (Participant)
     socket.on('PARTICIPANT_REJOIN', withValidation(ParticipantRejoinSchema, 'PARTICIPANT_REJOIN', ({ roomCode, participantId, reconnectToken }, callback) => {
+      if (socket.data.role === 'host') {
+        if (callback) return callback(rejectSocketAction('PARTICIPANT_REJOIN', 'host_cannot_join', socket.id));
+        return;
+      }
+
       const room = getRoomByCode(roomCode);
       if (!room) {
         if (callback) return callback({ success: false, error: 'Комната не найдена' });
@@ -739,10 +744,6 @@ export function setupSocketIO(io: RealtimeServer) {
       );
 
       if (callback) callback({ success: true });
-    }));
-
-    socket.on('ROOM_LEAVE', withValidation(EmptyPayloadSchema, 'ROOM_LEAVE', () => {
-      handleDisconnect(socket);
     }));
 
     socket.on('disconnect', () => {
