@@ -104,7 +104,6 @@ export interface ClientToServerEvents {
   BUZZ_SUBMIT: (data: BuzzSubmitPayload, callback?: (res: BuzzSubmitResult) => void) => void;
   ROUND_RESET: (data?: RoundResetPayload, callback?: (res: SocketActionResult) => void) => void;
   ROOM_FINISH: (callback?: (res: SocketActionResult) => void) => void;
-  ROOM_LEAVE: () => void;
   SYNC_TIME: (clientTime: number, callback: (serverTime: number) => void) => void;
   SYNC_ACK: (data: SyncAckPayload) => void;
   HOST_CLEAR_SCORES: (callback?: (res: SocketActionResult) => void) => void;

@@ -15,7 +15,7 @@ const eventNames = (source: string, method: 'on' | 'emit') => {
 
 const clientToServerEvents = new Set([
   'ROOM_CREATE', 'ROOM_JOIN', 'PARTICIPANT_REJOIN', 'ROUND_START', 'BUZZ_SUBMIT',
-  'ROUND_RESET', 'ROOM_FINISH', 'ROOM_LEAVE', 'SYNC_TIME',
+  'ROUND_RESET', 'ROOM_FINISH', 'SYNC_TIME',
   'SYNC_ACK', 'HOST_CLEAR_SCORES', 'HOST_REJOIN_ROOM',
 ]);
 const serverToClientEvents = new Set([
