@@ -14,6 +14,7 @@ jest.mock('../../prisma', () => ({
     },
     session: {
       findUnique: jest.fn(),
+      updateMany: jest.fn(),
     },
   },
 }));

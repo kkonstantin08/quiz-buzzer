@@ -15,6 +15,7 @@ import { checkBillingReadiness } from './billing/readiness';
 import { roomsRouter } from './rooms/api';
 import { legalRouter } from './legal';
 import { startGameHistoryCleanup } from './history/cleanup';
+import { startSessionCleanup } from './auth/sessionCleanup';
 import { setupSocketIO } from './realtime';
 import { ClientToServerEvents, ServerToClientEvents } from 'shared';
 
@@ -90,6 +91,7 @@ if (process.env.NODE_ENV !== 'test') {
 
   ensureUploadDirExists();
   startGameHistoryCleanup(prisma);
+  startSessionCleanup(prisma);
   server.listen(Number(config.port), '0.0.0.0', () => {
     console.log(`Backend server listening on port ${config.port}`);
   });

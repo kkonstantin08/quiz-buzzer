@@ -9,6 +9,10 @@ jest.mock('../history/cleanup', () => ({
   startGameHistoryCleanup: jest.fn(),
 }));
 
+jest.mock('../auth/sessionCleanup', () => ({
+  startSessionCleanup: jest.fn(),
+}));
+
 // We need to mock config to change paymentsEnabled dynamically before importing server.ts
 jest.mock('../config', () => ({
   config: {
@@ -87,6 +91,8 @@ describe('Startup Guard', () => {
     expect(mockExit).not.toHaveBeenCalled();
     const { startGameHistoryCleanup } = require('../history/cleanup');
     expect(startGameHistoryCleanup).toHaveBeenCalledTimes(1);
+    const { startSessionCleanup } = require('../auth/sessionCleanup');
+    expect(startSessionCleanup).toHaveBeenCalledTimes(1);
     process.env.NODE_ENV = originalNodeEnv;
   });
 });
