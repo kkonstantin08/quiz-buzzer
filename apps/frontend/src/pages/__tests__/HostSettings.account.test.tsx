@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../../services/api';
+import { legalConfig } from '../../config/legal';
 import { socket } from '../../realtime/socket';
 import { HostSettings } from '../HostSettings';
 
@@ -107,9 +108,18 @@ beforeEach(() => {
   vi.mocked(accountApi.deleteAccount).mockResolvedValue({ success: true });
   vi.mocked(api.logout).mockResolvedValue(undefined);
   vi.mocked(api.updateSettings).mockResolvedValue({});
+  vi.spyOn(window, 'open').mockImplementation(() => null);
 });
 
 describe('HostSettings account security', () => {
+  it('uses the official legal contact for tariff management', async () => {
+    renderSettings();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Управление тарифом' }));
+
+    expect(window.open).toHaveBeenCalledWith(`mailto:${legalConfig.email}`);
+  });
+
   it('loads active sessions, marks the current one, and renders legacy unknown values', async () => {
     renderSettings();
 

@@ -108,7 +108,7 @@ describe("ParticipantRoom buzz timestamp", () => {
     );
 
     const buzzer = await screen.findByRole("button", {
-      name: "Игровой пульт (Buzzer)",
+      name: "Игровой пульт",
     });
     fireEvent.pointerDown(buzzer);
 

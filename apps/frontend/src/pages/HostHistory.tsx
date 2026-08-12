@@ -70,7 +70,7 @@ export function HostHistory() {
       try {
         const user = await api.getMe();
         setHasSubscription(user.hasActiveSubscription);
-        setEmail(user.email || 'host@example.com');
+        setEmail(user.email);
         setName(user.name);
         setAvatarUrl(user.avatarUrl ?? undefined);
         setCustomLogoUrl(user.customLogoUrl);

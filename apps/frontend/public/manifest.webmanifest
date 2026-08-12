@@ -1,0 +1,16 @@
+{
+  "name": "КвизПульт",
+  "short_name": "КвизПульт",
+  "description": "Сервис для проведения викторин с игровыми пультами",
+  "theme_color": "#0F172A",
+  "background_color": "#0F172A",
+  "display": "standalone",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

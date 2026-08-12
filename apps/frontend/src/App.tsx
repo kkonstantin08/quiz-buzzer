@@ -17,6 +17,7 @@ const HostHistory = React.lazy(() => import('./pages/HostHistory').then(m => ({ 
 const HostSettings = React.lazy(() => import('./pages/HostSettings').then(m => ({ default: m.HostSettings })));
 const HostRoom = React.lazy(() => import('./pages/HostRoom').then(m => ({ default: m.HostRoom })));
 const ParticipantRoom = React.lazy(() => import('./pages/ParticipantRoom').then(m => ({ default: m.ParticipantRoom })));
+const NotFound = React.lazy(() => import('./pages/NotFound').then(m => ({ default: m.NotFound })));
 
 const LegalLayout = React.lazy(() => import('./pages/legal/LegalLayout').then(m => ({ default: m.LegalLayout })));
 const DetailsPage = React.lazy(() => import('./pages/legal/DetailsPage').then(m => ({ default: m.DetailsPage })));
@@ -85,6 +86,7 @@ export default function App() {
               <Route path="/refunds" element={<RefundsPage />} />
               <Route path="/consent" element={<ConsentPage />} />
             </Route>
+            <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>
       </BrowserRouter>

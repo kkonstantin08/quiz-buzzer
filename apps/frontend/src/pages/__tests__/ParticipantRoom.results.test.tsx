@@ -71,7 +71,7 @@ describe("ParticipantRoom results", () => {
 
   it("renders WINNER state correctly", async () => {
     renderRoom();
-    await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" });
+    await screen.findByRole("button", { name: "Игровой пульт" });
     
     act(() => {
       handlers.get("ROOM_STATE_UPDATED")?.({
@@ -94,7 +94,7 @@ describe("ParticipantRoom results", () => {
 
   it("renders DRAW state correctly", async () => {
     renderRoom();
-    await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" });
+    await screen.findByRole("button", { name: "Игровой пульт" });
     
     act(() => {
       handlers.get("ROOM_STATE_UPDATED")?.({
@@ -117,7 +117,7 @@ describe("ParticipantRoom results", () => {
 
   it("renders NO_WINNER state correctly", async () => {
     renderRoom();
-    await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" });
+    await screen.findByRole("button", { name: "Игровой пульт" });
     
     act(() => {
       handlers.get("ROOM_STATE_UPDATED")?.({

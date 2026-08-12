@@ -38,7 +38,7 @@ export function HostDashboard() {
       setLoading(true);
       const data = await api.getMe();
       setHasSubscription(data.hasActiveSubscription);
-      setEmail(data.email || 'host@example.com');
+      setEmail(data.email);
       setName(data.name);
       setAvatarUrl(data.avatarUrl);
       setCustomLogoUrl(data.customLogoUrl);

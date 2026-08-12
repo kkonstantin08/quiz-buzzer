@@ -15,7 +15,7 @@ vi.mock('../../realtime/authRecovery', () => ({ useSocketAuthRecovery: vi.fn() }
 vi.mock('../../realtime/roomCreate', () => ({ emitRoomCreateWhenConnected: vi.fn() }));
 vi.mock('../../realtime/socket', () => ({ socket: { disconnect: vi.fn() } }));
 vi.mock('../../components/DashboardLayout', () => ({
-  DashboardLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
+  DashboardLayout: ({ children, email }: { children: React.ReactNode; email: string }) => <main><span data-testid="layout-email">{email}</span>{children}</main>,
 }));
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 vi.mock('../../services/api', () => ({
@@ -76,6 +76,23 @@ beforeEach(() => {
 });
 
 describe('HostDashboard recent history', () => {
+  it('does not invent a placeholder account email', async () => {
+    vi.mocked(api.getMe).mockResolvedValueOnce({
+      hasActiveSubscription: true,
+      email: '',
+      name: 'Host',
+      avatarUrl: null,
+      customLogoUrl: null,
+      subscription: null,
+    });
+
+    render(<MemoryRouter><HostDashboard /></MemoryRouter>);
+
+    await waitFor(() => expect(api.getMe).toHaveBeenCalledOnce());
+    expect(screen.getByTestId('layout-email')).toBeEmptyDOMElement();
+    expect(screen.queryByText('host@example.com')).not.toBeInTheDocument();
+  });
+
   it('requests a compact page and renders every result type honestly', async () => {
     render(<MemoryRouter><HostDashboard /></MemoryRouter>);
 
