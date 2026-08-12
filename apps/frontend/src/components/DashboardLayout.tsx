@@ -47,6 +47,7 @@ export function DashboardLayout({
   const location = useLocation();
 
   const isDashboard = location.pathname === '/dashboard';
+  const isHistory = location.pathname === '/history';
   const isSettings = location.pathname === '/settings';
 
   const [isProfileOpen, setIsProfileOpen] = React.useState(false);
@@ -189,11 +190,17 @@ export function DashboardLayout({
             variant="ghost" 
             className={`w-full justify-start gap-3 font-medium ${isDashboard ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`}
             onClick={() => navigate('/dashboard')}
+            aria-current={isDashboard ? 'page' : undefined}
           >
             <LayoutDashboard size={18} />
             Главная
           </Button>
-          <Button variant="ghost" className="w-full justify-start gap-3 text-slate-600 hover:text-slate-900 hover:bg-slate-50" disabled>
+          <Button
+            variant="ghost"
+            className={`w-full justify-start gap-3 font-medium ${isHistory ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`}
+            onClick={() => navigate('/history')}
+            aria-current={isHistory ? 'page' : undefined}
+          >
             <History size={18} />
             История игр
           </Button>
@@ -201,6 +208,7 @@ export function DashboardLayout({
             variant="ghost" 
             className={`w-full justify-start gap-3 font-medium ${isSettings ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`}
             onClick={() => navigate('/settings')}
+            aria-current={isSettings ? 'page' : undefined}
           >
             <Settings size={18} />
             Настройки
@@ -380,39 +388,46 @@ export function DashboardLayout({
       <main id="main-content" tabIndex={-1} className="flex-1 flex flex-col h-[100dvh] overflow-y-auto">
         {/* Mobile Header */}
         <header className="md:hidden h-16 bg-white border-b flex items-center justify-between px-4 shrink-0 shadow-sm z-10">
-          <Link to="/dashboard" className="flex items-center gap-2 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+          <Link to="/dashboard" className="flex min-w-0 items-center gap-2 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
             {customLogoUrl ? (
-            <img src={resolveAssetUrl(customLogoUrl) ?? undefined} alt="Logo" className="max-h-8 object-contain" />
+            <img src={resolveAssetUrl(customLogoUrl) ?? undefined} alt="Logo" className="max-h-8 max-w-20 object-contain sm:max-w-32" />
             ) : (
               <>
                 <LogoIcon />
-                <span className="font-black text-lg text-slate-800">КвизПульт</span>
+                <span className="hidden font-black text-lg text-slate-800 sm:inline">КвизПульт</span>
               </>
             )}
           </Link>
-          <div className="flex items-center gap-1">
+          <nav aria-label="Мобильная навигация" className="flex items-center gap-1">
             {hasSubscription && (
               <Button 
                 variant="ghost" 
                 size="icon" 
-                className="text-amber-500 hover:text-amber-600 hover:bg-amber-50"
+                aria-label="Статус тарифа PRO"
+                className="hidden min-h-11 min-w-11 text-amber-500 hover:bg-amber-50 hover:text-amber-600 sm:inline-flex"
                 onClick={() => toast.success('Тариф PRO активен', { description: 'Все премиум-функции разблокированы!' })}
               >
                 <Crown size={20} />
               </Button>
             )}
             <DialogTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label="Открыть профиль" className="text-slate-600 hover:bg-slate-100">
+              <Button variant="ghost" size="icon" aria-label="Открыть профиль" className="min-h-11 min-w-11 text-slate-600 hover:bg-slate-100">
                 <User size={20} />
               </Button>
             </DialogTrigger>
-            <Button variant="ghost" size="icon" onClick={() => navigate(isDashboard ? '/settings' : '/dashboard')} className="text-slate-600 hover:bg-slate-100">
-              {isDashboard ? <Settings size={20} /> : <LayoutDashboard size={20} />}
+            <Button variant="ghost" size="icon" aria-label="Открыть главную" aria-current={isDashboard ? 'page' : undefined} onClick={() => navigate('/dashboard')} className="min-h-11 min-w-11 text-slate-600 hover:bg-slate-100">
+              <LayoutDashboard size={20} />
             </Button>
-            <Button variant="ghost" size="icon" onClick={() => setShowLogoutDialog(true)} className="text-slate-600 hover:text-red-600">
+            <Button variant="ghost" size="icon" aria-label="Открыть историю игр" aria-current={isHistory ? 'page' : undefined} onClick={() => navigate('/history')} className="min-h-11 min-w-11 text-slate-600 hover:bg-slate-100">
+              <History size={20} />
+            </Button>
+            <Button variant="ghost" size="icon" aria-label="Открыть настройки" aria-current={isSettings ? 'page' : undefined} onClick={() => navigate('/settings')} className="min-h-11 min-w-11 text-slate-600 hover:bg-slate-100">
+              <Settings size={20} />
+            </Button>
+            <Button variant="ghost" size="icon" aria-label="Выйти из аккаунта" onClick={() => setShowLogoutDialog(true)} className="min-h-11 min-w-11 text-slate-600 hover:text-red-600">
               <LogOut size={20} />
             </Button>
-          </div>
+          </nav>
         </header>
 
         {children}

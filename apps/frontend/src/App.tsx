@@ -13,6 +13,7 @@ const HostAuth = React.lazy(() => import('./pages/HostAuth').then(m => ({ defaul
 const ForgotPassword = React.lazy(() => import('./pages/ForgotPassword').then(m => ({ default: m.ForgotPassword })));
 const ResetPassword = React.lazy(() => import('./pages/ResetPassword').then(m => ({ default: m.ResetPassword })));
 const HostDashboard = React.lazy(() => import('./pages/HostDashboard').then(m => ({ default: m.HostDashboard })));
+const HostHistory = React.lazy(() => import('./pages/HostHistory').then(m => ({ default: m.HostHistory })));
 const HostSettings = React.lazy(() => import('./pages/HostSettings').then(m => ({ default: m.HostSettings })));
 const HostRoom = React.lazy(() => import('./pages/HostRoom').then(m => ({ default: m.HostRoom })));
 const ParticipantRoom = React.lazy(() => import('./pages/ParticipantRoom').then(m => ({ default: m.ParticipantRoom })));
@@ -70,6 +71,7 @@ export default function App() {
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/dashboard" element={<HostDashboard />} />
+            <Route path="/history" element={<HostHistory />} />
             <Route path="/settings" element={<HostSettings />} />
             <Route path="/host/room/:roomId" element={<HostRoom />} />
 

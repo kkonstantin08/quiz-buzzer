@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DashboardLayout } from '../DashboardLayout';
 import { api } from '../../services/api';
@@ -16,9 +16,13 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const onProfileUpdated = vi.fn();
 
-function renderProfile() {
+function LocationProbe() {
+  return <output>{useLocation().pathname}</output>;
+}
+
+function renderProfile(initialEntry = '/') {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <DashboardLayout
         email="host@example.com"
         hasSubscription
@@ -28,6 +32,7 @@ function renderProfile() {
       >
         <div>Dashboard</div>
       </DashboardLayout>
+      <LocationProbe />
     </MemoryRouter>,
   );
 }
@@ -109,5 +114,17 @@ describe('DashboardLayout profile security', () => {
 
     expect(screen.getByLabelText('Текущий пароль')).toHaveValue('');
     expect(screen.getAllByText('Профиль')).toHaveLength(1);
+  });
+
+  it('provides current desktop and labelled mobile navigation to game history', () => {
+    renderProfile('/dashboard');
+
+    fireEvent.click(screen.getByRole('button', { name: 'История игр' }));
+    expect(screen.getByText('/history')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'История игр' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: 'Открыть историю игр' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Открыть главную' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Открыть настройки' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Выйти из аккаунта' })).toBeInTheDocument();
   });
 });
