@@ -83,7 +83,7 @@ export function TariffPage() {
                   'Высокоточное определение первого нажавшего',
                   'Управление раундами и начисление баллов',
                   'Кастомизация внешнего вида игровой комнаты',
-                  'Детальная история проведенных игр',
+                  'История проведённых игр',
                 ].map((feature) => (
                   <div key={feature} className="flex gap-3">
                     <div className="mt-1 w-5 h-5 rounded-full bg-green-100 flex items-center justify-center shrink-0">
