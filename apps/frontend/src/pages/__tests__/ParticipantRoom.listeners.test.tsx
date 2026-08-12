@@ -108,7 +108,7 @@ describe("ParticipantRoom state listener", () => {
       </AriaLiveProvider>,
     );
 
-    await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" });
+    await screen.findByRole("button", { name: "Игровой пульт" });
     expect(onStateUpdate).toBeDefined();
 
     act(() => {

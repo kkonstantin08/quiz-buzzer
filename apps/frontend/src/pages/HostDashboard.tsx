@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { api } from '../services/api';
+import { Link, useNavigate } from 'react-router-dom';
+import { api, type GameHistoryItem } from '../services/api';
 import { socket } from '../realtime/socket';
 import { emitRoomCreateWhenConnected } from '../realtime/roomCreate';
 import { useSocketAuthRecovery } from '../realtime/authRecovery';
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Play, History, Plus } from 'lucide-react';
 import { DashboardLayout } from '../components/DashboardLayout';
+import { GameHistoryResult } from '../components/GameHistoryResult';
 import { toast } from 'sonner';
 
 export function HostDashboard() {
@@ -19,7 +20,7 @@ export function HostDashboard() {
   const [customLogoUrl, setCustomLogoUrl] = useState<string | null>(null);
   const [subscriptionEndDate, setSubscriptionEndDate] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
-  const [history, setHistory] = useState<any[]>([]);
+  const [history, setHistory] = useState<GameHistoryItem[]>([]);
   const [gamesCount, setGamesCount] = useState(0);
   const [isCreating, setIsCreating] = useState(false);
 
@@ -37,7 +38,7 @@ export function HostDashboard() {
       setLoading(true);
       const data = await api.getMe();
       setHasSubscription(data.hasActiveSubscription);
-      setEmail(data.email || 'host@example.com');
+      setEmail(data.email);
       setName(data.name);
       setAvatarUrl(data.avatarUrl);
       setCustomLogoUrl(data.customLogoUrl);
@@ -46,7 +47,7 @@ export function HostDashboard() {
       }
       
       try {
-        const histData = await api.getHistory();
+        const histData = await api.getHistory(1, 5);
         setHistory(histData.history || []);
         setGamesCount(histData.count || 0);
       } catch (err) {
@@ -134,9 +135,14 @@ export function HostDashboard() {
         {/* Stats / Recent placeholder */}
         <div className="grid sm:grid-cols-2 gap-4 md:gap-6">
           <Card className="border-slate-200 shadow-sm">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base md:text-lg">Последние игры</CardTitle>
-              <CardDescription>История запущенных игр</CardDescription>
+            <CardHeader className="flex-row items-start justify-between gap-4 space-y-0 pb-2">
+              <div>
+                <CardTitle className="text-base md:text-lg">Последние игры</CardTitle>
+                <CardDescription>История проведённых игр</CardDescription>
+              </div>
+              <Button asChild variant="link" size="sm" className="h-auto shrink-0 p-0">
+                <Link to="/history">Вся история</Link>
+              </Button>
             </CardHeader>
             <CardContent>
               {history.length === 0 ? (
@@ -146,17 +152,15 @@ export function HostDashboard() {
                 </div>
               ) : (
                 <div className="space-y-4 pt-2">
-                  {history.slice(0, 5).map((game: any) => (
-                    <div key={game.id} className="flex justify-between items-center pb-3 border-b border-slate-100 last:border-0 last:pb-0">
-                      <div>
-                        <div className="font-medium text-slate-800">
-                          {game.winnerName} <span className="text-amber-500 text-xs">👑 {game.winnerScore}</span>
-                        </div>
+                  {history.map((game) => (
+                    <div key={game.id} className="flex items-center justify-between gap-3 border-b border-slate-100 pb-3 last:border-0 last:pb-0">
+                      <div className="min-w-0">
+                        <GameHistoryResult game={game} />
                         <div className="text-xs text-slate-500">
-                          Игроков: {game.participants} • {new Date(game.createdAt).toLocaleDateString()}
+                          Игроков: {game.participants} • {new Date(game.createdAt).toLocaleDateString('ru-RU')}
                         </div>
                       </div>
-                      <div className="text-xs font-mono bg-slate-100 px-2 py-1 rounded text-slate-600">
+                      <div className="shrink-0 rounded bg-slate-100 px-2 py-1 font-mono text-xs text-slate-600">
                         {game.roomCode}
                       </div>
                     </div>

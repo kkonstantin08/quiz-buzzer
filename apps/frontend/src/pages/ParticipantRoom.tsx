@@ -759,7 +759,7 @@ export function ParticipantRoom() {
               onPointerDown={handleBuzz}
               onKeyDown={handleBuzz}
               disabled={!isActive || buzzStatus !== "idle"}
-              aria-label="Игровой пульт (Buzzer)"
+              aria-label="Игровой пульт"
               aria-describedby="buzzer-status-text"
             >
               {isActive && buzzStatus === "idle" ? "ЖМИ!" : ""}

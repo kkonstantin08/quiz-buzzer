@@ -39,7 +39,7 @@ describe("ParticipantRoom interactions", () => {
     </AriaLiveProvider>,
   );
 
-  const buzzer = () => screen.getByRole("button", { name: "Игровой пульт (Buzzer)" });
+  const buzzer = () => screen.getByRole("button", { name: "Игровой пульт" });
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -80,7 +80,7 @@ describe("ParticipantRoom interactions", () => {
     });
 
     renderRoom();
-    fireEvent.pointerDown(await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" }));
+    fireEvent.pointerDown(await screen.findByRole("button", { name: "Игровой пульт" }));
 
     expect(buzzer()).toBeDisabled();
     expect(screen.getAllByText(/Отправляем сигнал/)[0]).toBeInTheDocument();
@@ -102,7 +102,7 @@ describe("ParticipantRoom interactions", () => {
     });
 
     renderRoom();
-    const btn = await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" });
+    const btn = await screen.findByRole("button", { name: "Игровой пульт" });
 
     vi.useFakeTimers();
     fireEvent.pointerDown(btn);
@@ -119,7 +119,7 @@ describe("ParticipantRoom interactions", () => {
 
   it("uses stable participantId to render a losing snapshot and clears local lock after reset", async () => {
     renderRoom();
-    await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" });
+    await screen.findByRole("button", { name: "Игровой пульт" });
     expect(mockSocket.emit).toHaveBeenCalledWith(
       "PARTICIPANT_REJOIN",
       { roomCode: "ABC123", participantId: participant.id, reconnectToken: "token" },
@@ -137,7 +137,7 @@ describe("ParticipantRoom interactions", () => {
   it("re-enables the button after a rejected buzz callback while the round remains active", async () => {
     buzzResult = { success: false, error: "Сигнал отклонён" };
     renderRoom();
-    fireEvent.pointerDown(await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" }));
+    fireEvent.pointerDown(await screen.findByRole("button", { name: "Игровой пульт" }));
 
     await waitFor(() => expect(buzzer()).toBeEnabled());
     expect(await screen.findByText("Сигнал отклонён")).toBeInTheDocument();
@@ -145,7 +145,7 @@ describe("ParticipantRoom interactions", () => {
 
   it("submits exactly once for keyboard activation and ignores the native click that follows", async () => {
     renderRoom();
-    const button = await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" });
+    const button = await screen.findByRole("button", { name: "Игровой пульт" });
     fireEvent.keyDown(button, { key: "Enter" });
     fireEvent.click(button);
 
@@ -154,12 +154,12 @@ describe("ParticipantRoom interactions", () => {
 
   it("supports Space and pointer input with one submit per component mount", async () => {
     const first = renderRoom();
-    fireEvent.keyDown(await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" }), { key: " " });
+    fireEvent.keyDown(await screen.findByRole("button", { name: "Игровой пульт" }), { key: " " });
     expect(mockSocket.emit.mock.calls.filter(([event]) => event === "BUZZ_SUBMIT")).toHaveLength(1);
     first.unmount();
 
     renderRoom();
-    fireEvent.pointerDown(await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" }));
+    fireEvent.pointerDown(await screen.findByRole("button", { name: "Игровой пульт" }));
     expect(mockSocket.emit.mock.calls.filter(([event]) => event === "BUZZ_SUBMIT")).toHaveLength(2);
   });
 
@@ -172,7 +172,7 @@ describe("ParticipantRoom interactions", () => {
     });
 
     renderRoom();
-    const btn = await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" });
+    const btn = await screen.findByRole("button", { name: "Игровой пульт" });
     fireEvent.pointerDown(btn);
 
     expect(screen.getAllByText(/Отправляем сигнал/)[0]).toBeInTheDocument();
@@ -198,7 +198,7 @@ describe("ParticipantRoom interactions", () => {
     });
 
     renderRoom();
-    const btn = await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" });
+    const btn = await screen.findByRole("button", { name: "Игровой пульт" });
 
     vi.useFakeTimers();
     fireEvent.pointerDown(btn);
@@ -227,7 +227,7 @@ describe("ParticipantRoom interactions", () => {
     });
 
     renderRoom();
-    const btn = await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" });
+    const btn = await screen.findByRole("button", { name: "Игровой пульт" });
 
     vi.useFakeTimers();
     fireEvent.pointerDown(btn);
@@ -246,12 +246,12 @@ describe("ParticipantRoom interactions", () => {
 
   it("clears the saved session and blocks control after revocation", async () => {
     renderRoom();
-    await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" });
+    await screen.findByRole("button", { name: "Игровой пульт" });
     act(() => handlers.get("PARTICIPANT_CONTROL_REVOKED")?.());
 
     expect(localStorage.getItem("quiz_participant_ABC123")).toBeNull();
     expect(await screen.findByRole("alert")).toHaveTextContent("другого устройства или вкладки");
-    expect(screen.queryByRole("button", { name: "Игровой пульт (Buzzer)" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Игровой пульт" })).not.toBeInTheDocument();
   });
 
   it("removes an expired reconnect record instead of using it for rejoin", async () => {
@@ -281,7 +281,7 @@ describe("ParticipantRoom interactions", () => {
 
   it("removes the reconnect record when the room closes", async () => {
     renderRoom();
-    await screen.findByRole("button", { name: "Игровой пульт (Buzzer)" });
+    await screen.findByRole("button", { name: "Игровой пульт" });
 
     act(() => handlers.get("ROOM_CLOSED")?.({ reason: "время комнаты истекло" }));
 

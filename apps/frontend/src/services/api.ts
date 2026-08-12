@@ -1,3 +1,5 @@
+import { GameResult } from 'shared';
+
 const ENV_URL = import.meta.env.DEV
   ? (import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3001`)
   : (import.meta.env.VITE_APP_PUBLIC_URL || '/api');
@@ -22,6 +24,24 @@ export interface DeleteAccountPayload {
   currentPassword: string;
   confirmationPhrase: string;
   irreversibleConfirmed: boolean;
+}
+
+export interface GameHistoryItem {
+  id: string;
+  roomCode: string;
+  result: GameResult;
+  winnerName: string | null;
+  winnerScore: number;
+  participants: number;
+  createdAt: string;
+}
+
+export interface GameHistoryPage {
+  history: GameHistoryItem[];
+  count: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 const translateError = (errorMsg: string) => {
@@ -331,11 +351,10 @@ export const api = {
     return res.json();
   },
 
-  async getHistory() {
-    const res = await customFetch(`${API_URL}/history`);
-    if (!res.ok) {
-      throw new Error('Failed to fetch history');
-    }
+  async getHistory(page = 1, limit = 10): Promise<GameHistoryPage> {
+    const query = new URLSearchParams({ page: String(page), limit: String(limit) });
+    const res = await customFetch(`${API_URL}/history?${query}`);
+    if (!res.ok) await throwApiError(res, 'Не удалось загрузить историю');
     return res.json();
   },
 
@@ -343,9 +362,7 @@ export const api = {
     const res = await customFetch(`${API_URL}/history`, {
       method: 'DELETE',
     });
-    if (!res.ok) {
-      throw new Error('Failed to clear history');
-    }
+    if (!res.ok) await throwApiError(res, 'Не удалось очистить историю');
     return res.json();
   },
 

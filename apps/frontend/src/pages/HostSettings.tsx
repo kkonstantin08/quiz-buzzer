@@ -14,6 +14,7 @@ import { Volume2, Image as ImageIcon, Crown, ExternalLink, Loader2, Check, Alert
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { resolveAssetUrl } from '../lib/assets';
+import { legalConfig } from '../config/legal';
 
 const sessionDateFormatter = new Intl.DateTimeFormat('ru-RU', {
   dateStyle: 'medium',
@@ -156,7 +157,7 @@ export function HostSettings() {
       setLoading(true);
       const user = await api.getMe();
       setHasSubscription(user.hasActiveSubscription);
-      setEmail(user.email || 'host@example.com');
+      setEmail(user.email);
       setName(user.name);
       setAvatarUrl(user.avatarUrl);
       if (user.subscription) {
@@ -694,7 +695,7 @@ export function HostSettings() {
                   </div>
                   <p className="text-sm text-slate-600">Доступны все функции для ведущих</p>
                 </div>
-                <Button variant="outline" className="gap-2 shrink-0 bg-white" onClick={() => window.open('mailto:support@quizpult.ru')}>
+                <Button variant="outline" className="gap-2 shrink-0 bg-white" onClick={() => window.open(`mailto:${legalConfig.email}`)}>
                   Управление тарифом
                   <ExternalLink size={16} className="text-slate-500" />
                 </Button>

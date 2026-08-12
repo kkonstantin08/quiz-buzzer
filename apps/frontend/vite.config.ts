@@ -14,22 +14,8 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      manifest: {
-        name: 'Lockout Buzzer',
-        short_name: 'Buzzer',
-        description: 'MVP Lockout Buzzer System',
-        theme_color: '#0F172A',
-        background_color: '#0F172A',
-        display: 'standalone',
-        icons: [
-          {
-            src: '/icon.svg',
-            sizes: '192x192 512x512',
-            type: 'image/svg+xml',
-            purpose: 'any maskable'
-          }
-        ]
-      },
+      injectRegister: 'inline',
+      manifest: false,
       devOptions: {
         enabled: false
       }
