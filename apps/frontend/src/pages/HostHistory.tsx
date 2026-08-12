@@ -159,7 +159,7 @@ export function HostHistory() {
             <p className="text-sm text-slate-600 sm:text-base">Итоги проведённых игр в порядке от новых к старым.</p>
           </div>
           {count > 0 && (
-            <Button variant="destructive" className="min-h-11 w-full sm:w-auto" onClick={() => setClearOpen(true)}>
+            <Button variant="destructive" className="min-h-11 w-full bg-red-700 hover:bg-red-800 sm:w-auto" onClick={() => setClearOpen(true)}>
               <Trash2 aria-hidden="true" />
               Очистить историю
             </Button>
@@ -242,7 +242,7 @@ export function HostHistory() {
           {clearError && <p role="alert" className="text-sm font-medium text-red-700">{clearError}</p>}
           <DialogFooter className="flex-col gap-2 sm:flex-row sm:gap-0">
             <Button variant="outline" className="min-h-11 w-full sm:w-auto" onClick={() => setClearOpen(false)} disabled={clearing}>Отмена</Button>
-            <Button variant="destructive" className="min-h-11 w-full sm:w-auto" onClick={handleClear} disabled={confirmation !== 'ОЧИСТИТЬ' || clearing}>
+            <Button variant="destructive" className="min-h-11 w-full bg-red-700 hover:bg-red-800 sm:w-auto" onClick={handleClear} disabled={confirmation !== 'ОЧИСТИТЬ' || clearing}>
               {clearing ? 'Удаление…' : 'Удалить всю историю'}
             </Button>
           </DialogFooter>

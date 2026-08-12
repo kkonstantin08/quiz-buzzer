@@ -122,6 +122,7 @@ describe('DashboardLayout profile security', () => {
     fireEvent.click(screen.getByRole('button', { name: 'История игр' }));
     expect(screen.getByText('/history')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'История игр' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'На главную' })).toHaveAttribute('href', '/dashboard');
     expect(screen.getByRole('button', { name: 'Открыть историю игр' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Открыть главную' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Открыть настройки' })).toBeInTheDocument();

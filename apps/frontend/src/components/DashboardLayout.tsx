@@ -388,7 +388,7 @@ export function DashboardLayout({
       <main id="main-content" tabIndex={-1} className="flex-1 flex flex-col h-[100dvh] overflow-y-auto">
         {/* Mobile Header */}
         <header className="md:hidden h-16 bg-white border-b flex items-center justify-between px-4 shrink-0 shadow-sm z-10">
-          <Link to="/dashboard" className="flex min-w-0 items-center gap-2 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+          <Link to="/dashboard" aria-label="На главную" className="flex min-w-0 items-center gap-2 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
             {customLogoUrl ? (
             <img src={resolveAssetUrl(customLogoUrl) ?? undefined} alt="Logo" className="max-h-8 max-w-20 object-contain sm:max-w-32" />
             ) : (
